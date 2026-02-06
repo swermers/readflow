@@ -24,11 +24,11 @@ export default function RootLayout({
              <div className="mb-12">
                {/* Small Red Accent Line */}
                <div className="h-1 w-8 bg-[#FF4E4E] mb-6"></div> 
-               <div className="font-bold text-sm tracking-widest text-gray-400 uppercase">Menu</div>
+               <div className="font-bold text-sm tracking-widest text-gray-400 uppercase">Readflow</div>
              </div>
              
              {/* Navigation Links */}
-            <nav className="space-y-6 text-sm font-medium text-gray-500">
+             <nav className="space-y-6 text-sm font-medium text-gray-500">
                {/* The Main Feed */}
                <Link href="/" className="block text-black hover:translate-x-1 transition-transform">
                  Reading List
