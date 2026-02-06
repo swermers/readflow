@@ -45,14 +45,14 @@ export const MOCK_EMAILS = [
       <p>Is this the future of connectivity? Or just hipster nostalgia?</p>
     `
   },
-  // ... keep MOCK_EMAILS as is ...
+]; // <--- This closing bracket was likely missing
 
 export const MOCK_SUBSCRIPTIONS = [
   {
     id: 's1',
     name: 'Dan Koe',
     count: 3,
-    color: 'bg-black', // Aesthetic touch
+    color: 'bg-black',
     lastReceived: '2 hrs ago'
   },
   {
@@ -72,7 +72,7 @@ export const MOCK_SUBSCRIPTIONS = [
   {
     id: 's4',
     name: 'Farnam Street',
-    count: 0, // No new emails
+    count: 0,
     color: 'bg-yellow-600',
     lastReceived: 'Mon'
   },
