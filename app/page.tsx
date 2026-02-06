@@ -3,14 +3,6 @@ import Link from 'next/link';
 
 export default function Home() {
   return (
-    <div className={`group relative h-64 border border-gray-200 bg-white 
-  hover:-translate-y-1 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] 
-  hover:border-[#FF4E4E] transition-all duration-300 ease-out 
-  cursor-pointer flex flex-col justify-between p-6 
-  ${sub.count === 0 ? 'opacity-60 grayscale hover:grayscale-0 hover:opacity-100' : ''}`}
->
-    
-</div>
     <div className="p-8 md:p-12">
       
       {/* Header */}
@@ -26,7 +18,12 @@ export default function Home() {
         
         {MOCK_SUBSCRIPTIONS.map((sub) => (
           <Link href={`/sender/${sub.id}`} key={sub.id}>
-            <div className={`group relative h-64 border border-gray-200 bg-white hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col justify-between p-6 ${sub.count === 0 ? 'opacity-60 grayscale' : ''}`}>
+            <div className={`group relative h-64 border border-gray-200 bg-white 
+              hover:-translate-y-1 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] 
+              hover:border-[#FF4E4E] transition-all duration-300 ease-out 
+              cursor-pointer flex flex-col justify-between p-6 
+              ${sub.count === 0 ? 'opacity-60 grayscale hover:grayscale-0 hover:opacity-100' : ''}`}
+            >
               
               {/* Top Row: Status */}
               <div className="flex justify-between items-start">
