@@ -63,20 +63,26 @@ export default function Sidebar() {
              </Link>
           </div>
 
-          {/* Mobile Links */}
-          <div className="md:hidden flex space-x-6">
-             <Link href="/subscriptions" className={getLinkClass('/subscriptions')}>
-               Subscriptions
-             </Link>
-             <Link href="/archive" className={getLinkClass('/archive')}>
-               Archive
-             </Link>
-             <Link href="/settings" className={getLinkClass('/settings')}>
-               Settings
-             </Link>
-          </div>
-        </nav>
-      </div>
+{/* Mobile Links */}
+<div className="md:hidden flex items-center space-x-6 pr-4">
+   <Link href="/subscriptions" className={getLinkClass('/subscriptions')}>
+     Subscriptions
+   </Link>
+   <Link href="/archive" className={getLinkClass('/archive')}>
+     Archive
+   </Link>
+   <Link href="/settings" className={getLinkClass('/settings')}>
+     Settings
+   </Link>
+   
+   {/* Mobile Sign Out (Red Icon) */}
+   <button 
+     onClick={() => alert('Signing out...')} 
+     className="text-gray-400 hover:text-[#FF4E4E] transition-colors"
+   >
+     <LogOut className="w-4 h-4" />
+   </button>
+</div>
 
       {/* Utilities (Desktop Only - Pushed to Bottom) */}
       <div className="hidden md:block border-t border-gray-100 pt-6 pb-6 space-y-4">
