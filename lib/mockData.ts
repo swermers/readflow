@@ -45,4 +45,49 @@ export const MOCK_EMAILS = [
       <p>Is this the future of connectivity? Or just hipster nostalgia?</p>
     `
   },
+  // ... keep MOCK_EMAILS as is ...
+
+export const MOCK_SUBSCRIPTIONS = [
+  {
+    id: 's1',
+    name: 'Dan Koe',
+    count: 3,
+    color: 'bg-black', // Aesthetic touch
+    lastReceived: '2 hrs ago'
+  },
+  {
+    id: 's2',
+    name: 'James Clear',
+    count: 1,
+    color: 'bg-[#FF4E4E]',
+    lastReceived: 'Yesterday'
+  },
+  {
+    id: 's3',
+    name: 'The Verge',
+    count: 5,
+    color: 'bg-blue-600',
+    lastReceived: '10 mins ago'
+  },
+  {
+    id: 's4',
+    name: 'Farnam Street',
+    count: 0, // No new emails
+    color: 'bg-yellow-600',
+    lastReceived: 'Mon'
+  },
+  {
+    id: 's5',
+    name: 'Benedict Evans',
+    count: 2,
+    color: 'bg-purple-600',
+    lastReceived: 'Feb 02'
+  },
+  {
+    id: 's6',
+    name: 'Dense Discovery',
+    count: 1,
+    color: 'bg-green-600',
+    lastReceived: 'Feb 01'
+  }
 ];

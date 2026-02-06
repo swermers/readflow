@@ -1,49 +1,60 @@
-import { MOCK_EMAILS } from '@/lib/mockData';
+import { MOCK_SUBSCRIPTIONS } from '@/lib/mockData';
 import Link from 'next/link';
 
 export default function Home() {
   return (
-    <main className="p-8 md:p-12">
+    <div className="p-8 md:p-12">
       
       {/* Header */}
-      <header className="mb-16 border-b border-black pb-4 flex justify-between items-end">
+      <header className="mb-12 border-b border-black pb-4 flex justify-between items-end">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-[#1A1A1A]">Readflow.</h1>
-          <p className="text-sm text-gray-500 uppercase tracking-widest mt-1">Leysin, Switzerland</p>
-        </div>
-        {/* Counter */}
-        <div className="text-5xl font-light text-[#FF4E4E]">
-          {MOCK_EMAILS.filter(e => !e.read).length}
+          <h1 className="text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
+          <p className="text-sm text-gray-500 uppercase tracking-widest mt-1">Your Library</p>
         </div>
       </header>
 
-      {/* Email List */}
-      <div className="space-y-0">
-        {MOCK_EMAILS.map((email) => (
-          <Link href={`/newsletters/${email.id}`} key={email.id}>
-            <div className="group grid grid-cols-12 gap-4 py-5 border-b border-gray-100 hover:bg-white hover:pl-2 transition-all cursor-pointer items-baseline">
+      {/* The Magazine Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        
+        {MOCK_SUBSCRIPTIONS.map((sub) => (
+          <Link href={`/sender/${sub.id}`} key={sub.id}>
+            <div className={`group relative h-64 border border-gray-200 bg-white hover:shadow-xl hover:-translate-y-1 transition-all duration-300 cursor-pointer flex flex-col justify-between p-6 ${sub.count === 0 ? 'opacity-60 grayscale' : ''}`}>
               
-              {/* Sender */}
-              <div className="col-span-12 md:col-span-3 font-bold text-sm text-[#1A1A1A] flex items-center">
-                {email.senderName || "Unknown Sender"}
-                {!email.read && <span className="ml-2 w-1.5 h-1.5 bg-[#FF4E4E] rounded-full"></span>}
+              {/* Top Row: Status */}
+              <div className="flex justify-between items-start">
+                <div className={`w-3 h-3 rounded-full ${sub.count > 0 ? 'bg-[#FF4E4E] animate-pulse' : 'bg-gray-200'}`}></div>
+                <span className="font-mono text-xs text-gray-400">{sub.lastReceived}</span>
               </div>
 
-              {/* Subject & Snippet */}
-              <div className="col-span-12 md:col-span-7 text-sm">
-                <span className="font-semibold text-black mr-2">{email.subject}</span>
-                <span className="text-gray-400 font-light line-clamp-1">{email.snippet}</span>
+              {/* Middle: Name (Big Typography) */}
+              <div>
+                <h2 className="text-3xl font-bold leading-none tracking-tight text-gray-900 group-hover:text-[#FF4E4E] transition-colors">
+                  {sub.name}
+                </h2>
               </div>
 
-              {/* Date */}
-              <div className="col-span-12 md:col-span-2 text-right text-xs text-gray-300 font-mono group-hover:text-black transition-colors">
-                {email.date}
+              {/* Bottom: Count Badge */}
+              <div className="flex justify-between items-end border-t border-gray-100 pt-4">
+                 <span className="text-xs font-bold uppercase tracking-widest text-gray-400">Unread Issues</span>
+                 <span className="text-2xl font-light text-black">
+                   {sub.count}
+                 </span>
               </div>
+
             </div>
           </Link>
         ))}
+
+        {/* "Add New" Ghost Tile */}
+        <Link href="/review">
+          <div className="h-64 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-300 hover:border-gray-400 hover:text-gray-500 transition-colors cursor-pointer">
+            <span className="text-4xl font-light mb-2">+</span>
+            <span className="text-xs font-bold uppercase tracking-widest">Add Feed</span>
+          </div>
+        </Link>
+
       </div>
       
-    </main>
+    </div>
   )
 }
