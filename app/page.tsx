@@ -1,68 +1,73 @@
-import { MOCK_SUBSCRIPTIONS } from '@/lib/mockData';
+import { createClient } from '@/utils/supabase/server';
+import Sidebar from '@/components/Sidebar'; 
 import Link from 'next/link';
+import { Clock, ArrowUpRight } from 'lucide-react';
 
-export default function Home() {
+export default async function Home() {
+  // 1. Connect to the DB
+  const supabase = await createClient();
+
+  // 2. Fetch the issues (instead of using MOCK_EMAILS)
+  const { data: emails } = await supabase
+    .from('issues')
+    .select('*, senders(name)') // This joins the sender name automatically!
+    .order('received_at', { ascending: false });
+
   return (
-    // UPDATED: Changed p-8 to px-6 py-8
-    <div className="px-6 py-8 md:p-12">
-      
-      {/* Header - UPDATED: text-3xl on mobile */}
-      <header className="mb-8 md:mb-12 border-b border-black pb-4 flex justify-between items-end">
+    <div className="p-6 md:p-12 min-h-screen">
+      <header className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
-          <p className="text-sm text-gray-500 uppercase tracking-widest mt-1">Your Library</p>
+          <p className="text-sm text-gray-500 mt-1">
+            {emails?.length || 0} issues waiting for you.
+          </p>
         </div>
       </header>
 
-      {/* The Magazine Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        
-        {MOCK_SUBSCRIPTIONS.map((sub) => (
-          <Link href={`/sender/${sub.id}`} key={sub.id}>
-            <div className={`group relative h-64 border border-gray-200 bg-white 
-              hover:-translate-y-1 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] 
-              hover:border-[#FF4E4E] transition-all duration-300 ease-out 
-              cursor-pointer flex flex-col justify-between p-6 
-              ${sub.count === 0 ? 'opacity-60 grayscale hover:grayscale-0 hover:opacity-100' : ''}`}
-            >
-              
-              {/* Top Row: Identity */}
-              <div className="flex justify-between items-start mb-6">
-                <div className="w-10 h-10 bg-gray-50 border border-gray-200 flex items-center justify-center text-xs font-bold tracking-tighter text-black group-hover:bg-[#FF4E4E] group-hover:text-white group-hover:border-[#FF4E4E] transition-colors">
-                   {sub.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()}
-                </div>
-                <span className="font-mono text-[10px] text-gray-400 uppercase tracking-widest">{sub.lastReceived}</span>
-              </div>
-
-              {/* Middle: Name */}
-              <div>
-                <h2 className="text-3xl font-bold leading-none tracking-tight text-gray-900 group-hover:text-[#FF4E4E] transition-colors">
-                  {sub.name}
-                </h2>
-              </div>
-
-              {/* Bottom: Count Badge */}
-              <div className="flex justify-between items-end border-t border-gray-100 pt-4">
-                 <span className="text-xs font-bold uppercase tracking-widest text-gray-400">Unread Issues</span>
-                 <span className="text-2xl font-light text-black">
-                   {sub.count}
-                 </span>
-              </div>
-
+      {/* Grid Layout */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {emails?.map((email: any) => (
+          <div key={email.id} className="group relative bg-white border border-gray-100 p-6 hover:border-[#FF4E4E] transition-colors h-64 flex flex-col justify-between shadow-sm hover:shadow-md">
+            
+            {/* Header */}
+            <div className="flex justify-between items-start">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#FF4E4E]">
+                {email.senders?.name || 'Unknown'}
+              </span>
+              {/* Note: We'll format the date properly later */}
+              <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {new Date(email.received_at).toLocaleDateString()}
+              </span>
             </div>
-          </Link>
-        ))}
 
-        {/* "Add New" Ghost Tile */}
-        <Link href="/review">
-          <div className="h-64 border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-gray-300 hover:border-gray-400 hover:text-gray-500 transition-colors cursor-pointer">
-            <span className="text-4xl font-light mb-2">+</span>
-            <span className="text-xs font-bold uppercase tracking-widest">Add Feed</span>
+            {/* Content */}
+            <div>
+              <h3 className="text-lg font-bold leading-tight text-gray-900 mb-2 group-hover:text-[#FF4E4E] transition-colors">
+                {email.subject}
+              </h3>
+              <p className="text-sm text-gray-500 line-clamp-3 leading-relaxed">
+                {email.snippet}
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="pt-4 border-t border-gray-50 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+              <Link href={`/newsletters/${email.id}`} className="flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-[#FF4E4E]">
+                Read <ArrowUpRight className="w-3 h-3" />
+              </Link>
+            </div>
+
           </div>
-        </Link>
-
+        ))}
+        
+        {/* Empty State if no emails */}
+        {(!emails || emails.length === 0) && (
+           <div className="col-span-full py-12 text-center text-gray-400">
+             Your rack is empty.
+           </div>
+        )}
       </div>
-      
     </div>
-  )
+  );
 }
