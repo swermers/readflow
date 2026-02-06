@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Archive, Star, CheckCircle } from 'lucide-react'; 
 import { useState, useEffect } from 'react';
+import { triggerToast } from '@/components/Toast'; // Import the trigger
 
 export default function NewsletterPage({ params }: { params: { id: string } }) {
   const router = useRouter();
@@ -21,7 +22,8 @@ export default function NewsletterPage({ params }: { params: { id: string } }) {
   }
 
   const handleFinish = () => {
-    router.back(); 
+    triggerToast('Moved to Archive'); // Trigger the popup
+    setTimeout(() => router.back(), 800); // Wait 0.8s so user sees it, then go back
   };
 
   return (
