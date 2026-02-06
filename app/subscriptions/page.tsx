@@ -1,9 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { MoreHorizontal, Trash2, PauseCircle, PlayCircle, Settings } from 'lucide-react';
+import { Trash2, PauseCircle, PlayCircle, Settings, Plus } from 'lucide-react'; // Added Plus icon
 
-// Mock Data representing your "Approved" list
 const INITIAL_SUBS = [
   { id: '1', name: 'Dan Koe', email: 'dan@dankoe.com', frequency: 'Weekly', status: 'Active', color: 'bg-black' },
   { id: '2', name: 'James Clear', email: 'james@jamesclear.com', frequency: 'Weekly', status: 'Active', color: 'bg-[#FF4E4E]' },
@@ -31,28 +30,31 @@ export default function SubscriptionsPage() {
   };
 
   return (
-    <div className="p-8 md:p-12 min-h-screen">
+    // UPDATED: Changed p-8 to px-6 py-8 for better mobile spacing
+    <div className="px-6 py-8 md:p-12 min-h-screen">
       
-      {/* Header */}
-      <header className="mb-12 border-b border-black pb-4 flex justify-between items-end">
+      {/* Header - UPDATED: Flex-col for mobile (stacking), Flex-row for desktop */}
+      <header className="mb-8 md:mb-12 border-b border-black pb-6 md:pb-4 flex flex-col md:flex-row justify-between md:items-end gap-4">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-[#1A1A1A]">Subscriptions.</h1>
+          {/* UPDATED: Smaller text on mobile (text-3xl) */}
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">Subscriptions.</h1>
           <p className="text-sm text-gray-500 mt-1">
             Managing {subs.length} active connections.
           </p>
         </div>
-        <button className="text-xs font-bold uppercase tracking-widest bg-black text-white px-4 py-2 hover:bg-[#FF4E4E] transition-colors">
-          Add Manually
+        
+        {/* UPDATED: Button is full width on mobile for easier tapping */}
+        <button className="flex items-center justify-center gap-2 text-xs font-bold uppercase tracking-widest bg-black text-white px-6 py-3 md:py-2 hover:bg-[#FF4E4E] transition-colors w-full md:w-auto">
+          <Plus className="w-4 h-4 md:hidden" /> {/* Icon only shows on mobile to save space */}
+          <span>Add New</span>
         </button>
       </header>
 
       {/* List Container */}
       <div className="space-y-1">
         {subs.map((sub) => (
-          // Responsive Row: Stack on mobile, Row on desktop
           <div key={sub.id} className="group flex flex-col md:flex-row md:items-center justify-between py-6 border-b border-gray-100 hover:bg-gray-50 transition-colors px-2 gap-4 md:gap-0">
             
-            {/* Identity Section */}
             <div className="flex items-center gap-4 w-full md:w-auto">
               <div className={`w-3 h-3 rounded-full ${sub.status === 'Paused' ? 'bg-gray-300' : sub.color} flex-shrink-0`}></div>
               <div className="overflow-hidden">
@@ -63,10 +65,8 @@ export default function SubscriptionsPage() {
               </div>
             </div>
 
-            {/* Actions Section */}
             <div className="flex items-center justify-between md:justify-end gap-4 md:gap-8 w-full md:w-auto pl-7 md:pl-0">
               
-              {/* Meta Tags */}
               <div className="flex items-center gap-4">
                 <div className="hidden md:block text-xs font-medium uppercase tracking-widest text-gray-400">
                   {sub.frequency}
@@ -76,7 +76,6 @@ export default function SubscriptionsPage() {
                 </div>
               </div>
 
-              {/* Buttons */}
               <div className="flex items-center gap-2 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
                 <button 
                   onClick={() => toggleStatus(sub.id)}

@@ -3,12 +3,13 @@ import Link from 'next/link';
 
 export default function Home() {
   return (
-    <div className="p-8 md:p-12">
+    // UPDATED: Changed p-8 to px-6 py-8
+    <div className="px-6 py-8 md:p-12">
       
-      {/* Header */}
-      <header className="mb-12 border-b border-black pb-4 flex justify-between items-end">
+      {/* Header - UPDATED: text-3xl on mobile */}
+      <header className="mb-8 md:mb-12 border-b border-black pb-4 flex justify-between items-end">
         <div>
-          <h1 className="text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
           <p className="text-sm text-gray-500 uppercase tracking-widest mt-1">Your Library</p>
         </div>
       </header>
@@ -24,20 +25,16 @@ export default function Home() {
               cursor-pointer flex flex-col justify-between p-6 
               ${sub.count === 0 ? 'opacity-60 grayscale hover:grayscale-0 hover:opacity-100' : ''}`}
             >
+              
               {/* Top Row: Identity */}
-<div className="flex justify-between items-start mb-6">
-  <div className="w-10 h-10 bg-gray-50 border border-gray-200 flex items-center justify-center text-xs font-bold tracking-tighter text-black group-hover:bg-[#FF4E4E] group-hover:text-white group-hover:border-[#FF4E4E] transition-colors">
-     {sub.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()}
-  </div>
-  <span className="font-mono text-[10px] text-gray-400 uppercase tracking-widest">{sub.lastReceived}</span>
-</div>
-              {/* Top Row: Status */}
-              <div className="flex justify-between items-start">
-                <div className={`w-3 h-3 rounded-full ${sub.count > 0 ? 'bg-[#FF4E4E] animate-pulse' : 'bg-gray-200'}`}></div>
-                <span className="font-mono text-xs text-gray-400">{sub.lastReceived}</span>
+              <div className="flex justify-between items-start mb-6">
+                <div className="w-10 h-10 bg-gray-50 border border-gray-200 flex items-center justify-center text-xs font-bold tracking-tighter text-black group-hover:bg-[#FF4E4E] group-hover:text-white group-hover:border-[#FF4E4E] transition-colors">
+                   {sub.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()}
+                </div>
+                <span className="font-mono text-[10px] text-gray-400 uppercase tracking-widest">{sub.lastReceived}</span>
               </div>
 
-              {/* Middle: Name (Big Typography) */}
+              {/* Middle: Name */}
               <div>
                 <h2 className="text-3xl font-bold leading-none tracking-tight text-gray-900 group-hover:text-[#FF4E4E] transition-colors">
                   {sub.name}
