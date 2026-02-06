@@ -1,104 +1,84 @@
-'use client';
-
-import { MOCK_EMAILS } from '@/lib/mockData';
+import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { ArrowLeft, Archive, Star, CheckCircle } from 'lucide-react'; 
-import { useState, useEffect } from 'react';
-import { triggerToast } from '@/components/Toast'; // Import the trigger
+import { ArrowLeft, Clock, Globe } from 'lucide-react';
+import { notFound } from 'next/navigation';
 
-export default function NewsletterPage({ params }: { params: { id: string } }) {
-  const router = useRouter();
-  const [email, setEmail] = useState<any>(null);
+export default async function NewsletterPage({ params }: { params: { id: string } }) {
+  const supabase = await createClient();
 
-  // Simulate fetching data
-  useEffect(() => {
-    const found = MOCK_EMAILS.find((e) => e.id === params.id);
-    setEmail(found);
-  }, [params.id]);
+  // 1. Fetch the specific issue by ID
+  const { data: email, error } = await supabase
+    .from('issues')
+    .select('*, senders(*)') // Get the email AND the sender details
+    .eq('id', params.id)
+    .single();
 
-  if (!email) {
-    return <div className="p-12">Loading...</div>;
+  if (error || !email) {
+    return notFound(); // Shows the 404 page if ID is wrong
   }
 
-  const handleFinish = () => {
-    triggerToast('Moved to Archive'); // Trigger the popup
-    setTimeout(() => router.back(), 800); // Wait 0.8s so user sees it, then go back
-  };
-
   return (
-    <div className="min-h-screen bg-[#F5F5F0]">
-      {/* Top Navigation Bar */}
-      <nav className="sticky top-0 bg-[#F5F5F0]/95 backdrop-blur-sm border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10">
-        <button onClick={() => router.back()} className="flex items-center text-sm font-medium hover:text-[#FF4E4E] transition-colors">
+    <div className="max-w-3xl mx-auto p-6 md:p-12">
+      
+      {/* Navigation */}
+      <div className="mb-8">
+        <Link href="/" className="inline-flex items-center text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-[#FF4E4E] transition-colors">
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Back
-        </button>
-        
-        <div className="flex gap-4">
-          <button className="p-2 hover:bg-white rounded-full transition-colors text-gray-400 hover:text-yellow-500" title="Star / Save">
-            <Star className="w-4 h-4" />
-          </button>
-          <button 
-            onClick={handleFinish}
-            className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold uppercase tracking-wider hover:bg-[#1A1A1A] hover:text-white transition-colors"
-          >
-            <Archive className="w-3 h-3" />
-            Archive
-          </button>
-        </div>
-      </nav>
+          Back to Rack
+        </Link>
+      </div>
 
-      {/* Reading Container */}
-      <main className="max-w-2xl mx-auto px-6 py-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        
-        {/* Header Metadata */}
-        <header className="mb-12 border-b border-black/10 pb-8">
-          <div className="flex justify-between items-start mb-6">
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A] leading-tight">
-              {email.subject}
-            </h1>
-          </div>
-          
-          <div className="flex justify-between items-end font-mono text-xs text-gray-500 uppercase tracking-wider">
-            <div>
-              <span className="block text-black font-bold mb-1">{email.senderName}</span>
-              <span>{email.senderEmail}</span>
+      {/* Header */}
+      <header className="mb-12 pb-8 border-b border-gray-100">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center gap-3">
+            {/* Sender Avatar (or placeholder) */}
+            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-lg font-bold text-gray-400">
+              {email.senders?.name?.[0] || 'N'}
             </div>
-            <div>{email.date}</div>
+            <div>
+              <p className="text-sm font-bold text-[#1A1A1A]">{email.senders?.name}</p>
+              <p className="text-xs text-gray-400">{email.senders?.email}</p>
+            </div>
           </div>
-        </header>
-
-        {/* The Content - Editorial Design */}
-        <article className="prose prose-lg prose-neutral max-w-none mb-24
-          prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-[#1A1A1A]
-          prose-h1:text-3xl prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4
           
-          prose-p:text-gray-800 prose-p:leading-8 prose-p:mb-6
-          
-          prose-blockquote:border-l-4 prose-blockquote:border-[#FF4E4E] 
-          prose-blockquote:pl-6 prose-blockquote:py-2 prose-blockquote:my-8
-          prose-blockquote:text-xl prose-blockquote:font-medium prose-blockquote:italic prose-blockquote:bg-gray-50
-          
-          prose-a:text-[#FF4E4E] prose-a:no-underline prose-a:border-b prose-a:border-[#FF4E4E]/30 hover:prose-a:border-[#FF4E4E] hover:prose-a:bg-[#FF4E4E]/5 prose-a:transition-all
-          
-          prose-ul:list-disc prose-ul:pl-6 prose-li:mb-2 prose-li:marker:text-gray-300"
-          
-          dangerouslySetInnerHTML={{ __html: email.body || '' }}
-        />
-        
-        {/* "Done" Footer Action */}
-        <div className="mt-20 pt-12 border-t border-gray-200 flex flex-col items-center">
-           <button 
-             onClick={handleFinish}
-             className="group flex flex-col items-center gap-4 text-gray-400 hover:text-black transition-colors"
-           >
-             <CheckCircle className="w-12 h-12 stroke-1 group-hover:scale-110 transition-transform text-[#FF4E4E]" />
-             <span className="text-sm font-medium tracking-widest uppercase">Finish & Return to Shelf</span>
-           </button>
+          <span className="text-xs text-gray-400 flex items-center gap-2">
+            <Clock className="w-4 h-4" />
+            {new Date(email.received_at).toLocaleDateString(undefined, {
+              weekday: 'long',
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric'
+            })}
+          </span>
         </div>
 
-      </main>
+        <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-[#1A1A1A] leading-tight">
+          {email.subject}
+        </h1>
+      </header>
+
+      {/* The Content (Rendered HTML) */}
+      <article className="prose prose-lg prose-slate max-w-none prose-headings:font-bold prose-p:leading-relaxed prose-a:text-[#FF4E4E] prose-img:rounded-xl">
+        {/* We use dangerouslySetInnerHTML to render the HTML stored in Supabase */}
+        <div dangerouslySetInnerHTML={{ __html: email.body_html }} />
+      </article>
+
+      {/* Footer Actions */}
+      <div className="mt-20 pt-10 border-t border-gray-100 flex justify-between items-center">
+        <button className="text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-black transition-colors">
+          Archive Issue
+        </button>
+        <a 
+          href={email.senders?.website_url || '#'} 
+          target="_blank" 
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-[#FF4E4E] transition-colors"
+        >
+          Visit Website <Globe className="w-4 h-4" />
+        </a>
+      </div>
+
     </div>
   );
 }
