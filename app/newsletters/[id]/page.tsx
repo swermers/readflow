@@ -1,43 +1,56 @@
+'use client';
+
 import { MOCK_EMAILS } from '@/lib/mockData';
 import Link from 'next/link';
-import { ArrowLeft, Archive, Star } from 'lucide-react'; // Minimalist icons
-
-// This function tells Next.js which IDs exist (for static building)
-export function generateStaticParams() {
-  return MOCK_EMAILS.map((email) => ({
-    id: email.id,
-  }));
-}
+import { useRouter } from 'next/navigation';
+import { ArrowLeft, Archive, Star, CheckCircle } from 'lucide-react'; 
+import { useState, useEffect } from 'react';
 
 export default function NewsletterPage({ params }: { params: { id: string } }) {
-  // Find the specific email that matches the ID in the URL
-  const email = MOCK_EMAILS.find((e) => e.id === params.id);
+  const router = useRouter();
+  const [email, setEmail] = useState<any>(null);
+
+  // Simulate fetching data
+  useEffect(() => {
+    const found = MOCK_EMAILS.find((e) => e.id === params.id);
+    setEmail(found);
+  }, [params.id]);
 
   if (!email) {
-    return <div className="p-12">Email not found</div>;
+    return <div className="p-12">Loading...</div>;
   }
+
+  const handleFinish = () => {
+    // In the real app, this will mark the email as "Done" in the database
+    // For now, we simulate the satisfaction of finishing and going back
+    router.back(); 
+  };
 
   return (
     <div className="min-h-screen bg-[#F5F5F0]">
       {/* Top Navigation Bar */}
       <nav className="sticky top-0 bg-[#F5F5F0]/95 backdrop-blur-sm border-b border-gray-200 px-6 py-4 flex justify-between items-center z-10">
-        <Link href="/" className="flex items-center text-sm font-medium hover:text-[#FF4E4E] transition-colors">
+        <button onClick={() => router.back()} className="flex items-center text-sm font-medium hover:text-[#FF4E4E] transition-colors">
           <ArrowLeft className="w-4 h-4 mr-2" />
-          Inbox
-        </Link>
+          Back
+        </button>
         
         <div className="flex gap-4">
-          <button className="p-2 hover:bg-white rounded-full transition-colors" title="Star">
+          <button className="p-2 hover:bg-white rounded-full transition-colors text-gray-400 hover:text-yellow-500" title="Star / Save">
             <Star className="w-4 h-4" />
           </button>
-          <button className="p-2 hover:bg-white rounded-full transition-colors" title="Archive">
-            <Archive className="w-4 h-4" />
+          <button 
+            onClick={handleFinish}
+            className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-200 rounded-full text-xs font-bold uppercase tracking-wider hover:bg-[#1A1A1A] hover:text-white transition-colors"
+          >
+            <Archive className="w-3 h-3" />
+            Archive
           </button>
         </div>
       </nav>
 
-      {/* Reading Container - Centered & Narrow like a Book */}
-      <main className="max-w-2xl mx-auto px-6 py-12">
+      {/* Reading Container */}
+      <main className="max-w-2xl mx-auto px-6 py-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
         
         {/* Header Metadata */}
         <header className="mb-12 border-b border-black/10 pb-8">
@@ -56,7 +69,7 @@ export default function NewsletterPage({ params }: { params: { id: string } }) {
           </div>
         </header>
 
-        {/* The Content (Rendered HTML) */}
+        {/* The Content */}
         <article 
           className="prose prose-lg prose-neutral max-w-none 
           prose-headings:font-bold prose-headings:tracking-tight 
@@ -65,11 +78,15 @@ export default function NewsletterPage({ params }: { params: { id: string } }) {
           dangerouslySetInnerHTML={{ __html: email.body || '' }}
         />
         
-        {/* Footer */}
-        <div className="mt-20 pt-8 border-t border-gray-200 flex justify-center">
-           <Link href="/" className="text-sm text-gray-400 hover:text-black transition-colors">
-             End of Newsletter • Return to Inbox
-           </Link>
+        {/* "Done" Footer Action */}
+        <div className="mt-20 pt-12 border-t border-gray-200 flex flex-col items-center">
+           <button 
+             onClick={handleFinish}
+             className="group flex flex-col items-center gap-4 text-gray-400 hover:text-black transition-colors"
+           >
+             <CheckCircle className="w-12 h-12 stroke-1 group-hover:scale-110 transition-transform text-[#FF4E4E]" />
+             <span className="text-sm font-medium tracking-widest uppercase">Finish & Return to Shelf</span>
+           </button>
         </div>
 
       </main>
