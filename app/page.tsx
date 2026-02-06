@@ -24,7 +24,13 @@ export default function Home() {
               cursor-pointer flex flex-col justify-between p-6 
               ${sub.count === 0 ? 'opacity-60 grayscale hover:grayscale-0 hover:opacity-100' : ''}`}
             >
-              
+              {/* Top Row: Identity */}
+<div className="flex justify-between items-start mb-6">
+  <div className="w-10 h-10 bg-gray-50 border border-gray-200 flex items-center justify-center text-xs font-bold tracking-tighter text-black group-hover:bg-[#FF4E4E] group-hover:text-white group-hover:border-[#FF4E4E] transition-colors">
+     {sub.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase()}
+  </div>
+  <span className="font-mono text-[10px] text-gray-400 uppercase tracking-widest">{sub.lastReceived}</span>
+</div>
               {/* Top Row: Status */}
               <div className="flex justify-between items-start">
                 <div className={`w-3 h-3 rounded-full ${sub.count > 0 ? 'bg-[#FF4E4E] animate-pulse' : 'bg-gray-200'}`}></div>

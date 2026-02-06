@@ -54,11 +54,18 @@ export default function Sidebar() {
         {/* Library Section (Desktop Layout) */}
         <div className="hidden md:block pt-6 border-t border-gray-100">
            <div className="mb-4 text-xs font-bold tracking-widest text-gray-300 uppercase">Library</div>
+           
            <Link href="/subscriptions" className={`${getLinkClass('/subscriptions')} mb-3 block`}>
              Subscriptions
            </Link>
+           
            <Link href="/archive" className={`${getLinkClass('/archive')} block`}>
              Archive
+           </Link>
+
+           {/* Settings Link (Desktop - Distinct Section) */}
+           <Link href="/settings" className={`${getLinkClass('/settings')} block mt-8 pt-6 border-t border-gray-100`}>
+             Settings
            </Link>
         </div>
 
@@ -69,6 +76,9 @@ export default function Sidebar() {
            </Link>
            <Link href="/archive" className={getLinkClass('/archive')}>
              Archive
+           </Link>
+           <Link href="/settings" className={getLinkClass('/settings')}>
+             Settings
            </Link>
         </div>
 
