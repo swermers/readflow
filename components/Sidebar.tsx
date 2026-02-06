@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { Home, Inbox, User, LogOut, Layers } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useEffect, useState } from 'react';
+import AddSenderModal from './AddSenderModal';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -67,12 +68,13 @@ export default function Sidebar() {
         </Link>
       </nav>
 
-      {/* Library Section */}
+  {/* Library Section */}
       <div className="flex-1 px-4 overflow-y-auto mt-8">
         <div className="text-[10px] font-bold uppercase tracking-widest text-gray-400 mb-4 px-3">
           Library
         </div>
         <div className="space-y-1">
+          {/* 1. List the existing senders */}
           {senders.map((sender) => (
             <Link 
               key={sender.id}
@@ -85,10 +87,17 @@ export default function Sidebar() {
               <span className="truncate">{sender.name}</span>
             </Link>
           ))}
+          
+          {/* 2. THE MISSING PIECE: The Add Button! */}
+          <div className="px-3 pt-2">
+            <AddSenderModal />
+          </div>
 
-          {/* Fallback for empty library */}
+          {/* 3. Fallback message (only show if empty AND not loading) */}
           {senders.length === 0 && (
-             <p className="px-3 text-xs text-gray-300">No subscriptions yet.</p>
+             <p className="px-3 text-xs text-gray-300 mt-2 text-center">
+               Start by adding a newsletter above.
+             </p>
           )}
         </div>
       </div>
