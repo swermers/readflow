@@ -1,0 +1,78 @@
+'use client';
+
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+
+export default function Sidebar() {
+  const pathname = usePathname();
+
+  // Helper to check if a link is active
+  const isActive = (path: string) => {
+    if (path === '/') return pathname === '/';
+    return pathname.startsWith(path);
+  };
+
+  // Helper to generate classes based on state
+  const getLinkClass = (path: string) => {
+    const baseClass = "block transition-transform hover:translate-x-1";
+    if (isActive(path)) {
+      return `${baseClass} text-black font-bold border-l-2 border-[#FF4E4E] pl-2 -ml-2.5`; 
+    }
+    return `${baseClass} hover:text-black`; 
+  };
+
+  return (
+    <aside className="col-span-12 md:col-span-2 pt-6 md:pt-12 md:border-r border-[#E5E5E5] md:pr-6 pb-6 md:pb-0 border-b md:border-b-0 border-gray-100">
+      
+      {/* Brand / Logo */}
+      <div className="mb-6 md:mb-12 flex items-center md:block justify-between">
+        <div>
+           <div className="hidden md:block h-1 w-8 bg-[#FF4E4E] mb-6"></div> 
+           <div className="font-bold text-sm tracking-widest text-gray-400 uppercase">Readflow</div>
+        </div>
+        
+        {/* Mobile-only status badge */}
+        <div className="md:hidden text-xs font-bold text-[#FF4E4E] bg-[#FF4E4E]/10 px-2 py-1 rounded">
+          Beta
+        </div>
+      </div>
+      
+      {/* Navigation Links */}
+      <nav className="flex md:block space-x-6 md:space-x-0 md:space-y-6 text-sm font-medium text-gray-500 overflow-x-auto whitespace-nowrap pb-2 md:pb-0 hide-scrollbar">
+        
+        <Link href="/" className={getLinkClass('/')}>
+          Newsletters
+        </Link>
+        
+        <Link href="/review" className={getLinkClass('/review')}>
+          New Senders 
+          <span className={`text-[10px] px-1.5 py-0.5 rounded ml-2 align-middle ${isActive('/review') ? 'bg-[#FF4E4E] text-white' : 'bg-[#FF4E4E]/10 text-[#FF4E4E]'}`}>
+            3
+          </span>
+        </Link>
+
+        {/* Library Section (Desktop Layout) */}
+        <div className="hidden md:block pt-6 border-t border-gray-100">
+           <div className="mb-4 text-xs font-bold tracking-widest text-gray-300 uppercase">Library</div>
+           <Link href="/subscriptions" className={`${getLinkClass('/subscriptions')} mb-3 block`}>
+             Subscriptions
+           </Link>
+           <Link href="/archive" className={`${getLinkClass('/archive')} block`}>
+             Archive
+           </Link>
+        </div>
+
+        {/* Library Section (Mobile Layout - Inline) */}
+        <div className="md:hidden flex space-x-6">
+           <Link href="/subscriptions" className={getLinkClass('/subscriptions')}>
+             Subscriptions
+           </Link>
+           <Link href="/archive" className={getLinkClass('/archive')}>
+             Archive
+           </Link>
+        </div>
+
+      </nav>
+    </aside>
+  );
+}

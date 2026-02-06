@@ -3,6 +3,14 @@ import Link from 'next/link';
 
 export default function Home() {
   return (
+    <div className={`group relative h-64 border border-gray-200 bg-white 
+  hover:-translate-y-1 hover:shadow-[0_20px_40px_-15px_rgba(0,0,0,0.1)] 
+  hover:border-[#FF4E4E] transition-all duration-300 ease-out 
+  cursor-pointer flex flex-col justify-between p-6 
+  ${sub.count === 0 ? 'opacity-60 grayscale hover:grayscale-0 hover:opacity-100' : ''}`}
+>
+    
+</div>
     <div className="p-8 md:p-12">
       
       {/* Header */}

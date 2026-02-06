@@ -49,25 +49,28 @@ export default function NewsletterPage({ params }: { params: { id: string } }) {
         </div>
       </nav>
 
-      {/* Reading Container */}
-      <main className="max-w-2xl mx-auto px-6 py-12 animate-in fade-in slide-in-from-bottom-4 duration-500">
-        
-        {/* Header Metadata */}
-        <header className="mb-12 border-b border-black/10 pb-8">
-          <div className="flex justify-between items-start mb-6">
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A] leading-tight">
-              {email.subject}
-            </h1>
-          </div>
-          
-          <div className="flex justify-between items-end font-mono text-xs text-gray-500 uppercase tracking-wider">
-            <div>
-              <span className="block text-black font-bold mb-1">{email.senderName}</span>
-              <span>{email.senderEmail}</span>
-            </div>
-            <div>{email.date}</div>
-          </div>
-        </header>
+     {/* The Content - Editorial Design */}
+<article className="prose prose-lg prose-neutral max-w-none mb-24
+  /* Headers */
+  prose-headings:font-bold prose-headings:tracking-tight prose-headings:text-[#1A1A1A]
+  prose-h1:text-3xl prose-h2:text-2xl prose-h2:mt-8 prose-h2:mb-4
+  
+  /* Body Text */
+  prose-p:text-gray-800 prose-p:leading-8 prose-p:mb-6
+  
+  /* Blockquotes (The 'Swiss' Touch) */
+  prose-blockquote:border-l-4 prose-blockquote:border-[#FF4E4E] 
+  prose-blockquote:pl-6 prose-blockquote:py-2 prose-blockquote:my-8
+  prose-blockquote:text-xl prose-blockquote:font-medium prose-blockquote:italic prose-blockquote:bg-gray-50
+  
+  /* Links */
+  prose-a:text-[#FF4E4E] prose-a:no-underline prose-a:border-b prose-a:border-[#FF4E4E]/30 hover:prose-a:border-[#FF4E4E] hover:prose-a:bg-[#FF4E4E]/5 prose-a:transition-all
+  
+  /* Lists */
+  prose-ul:list-disc prose-ul:pl-6 prose-li:mb-2 prose-li:marker:text-gray-300"
+  
+  dangerouslySetInnerHTML={{ __html: email.body || '' }}
+/>
 
         {/* The Content */}
         <article 
