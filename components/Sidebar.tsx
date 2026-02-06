@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { LogOut, Settings } from 'lucide-react'; // Added Icons
+import { LogOut, Settings } from 'lucide-react';
 
 export default function Sidebar() {
   const pathname = usePathname();
@@ -37,7 +37,7 @@ export default function Sidebar() {
         </div>
         
         {/* Main Navigation */}
-        <nav className="flex md:block space-x-6 md:space-x-0 md:space-y-6 text-sm font-medium text-gray-500 overflow-x-auto whitespace-nowrap pb-2 md:pb-0 hide-scrollbar">
+        <nav className="flex md:block space-x-6 md:space-x-0 md:space-y-6 text-sm font-medium text-gray-500 overflow-x-auto whitespace-nowrap pb-2 md:pb-0 hide-scrollbar items-center">
           
           <Link href="/" className={getLinkClass('/')}>
             Newsletters
@@ -50,7 +50,7 @@ export default function Sidebar() {
             </span>
           </Link>
 
-          {/* Library Section */}
+          {/* Library Section (Desktop) */}
           <div className="hidden md:block pt-6 border-t border-gray-100">
              <div className="mb-4 text-xs font-bold tracking-widest text-gray-300 uppercase">Library</div>
              
@@ -63,28 +63,26 @@ export default function Sidebar() {
              </Link>
           </div>
 
-{/* Mobile Links */}
-<div className="md:hidden flex items-center space-x-6 pr-4">
-   <Link href="/subscriptions" className={getLinkClass('/subscriptions')}>
-     Subscriptions
-   </Link>
-   <Link href="/archive" className={getLinkClass('/archive')}>
-     Archive
-   </Link>
-   <Link href="/settings" className={getLinkClass('/settings')}>
-     Settings
-   </Link>
-   
-   {/* Mobile Sign Out (Red Icon) */}
-   <button 
-     onClick={() => alert('Signing out...')} 
-     className="text-gray-400 hover:text-[#FF4E4E] transition-colors"
-   >
-     <LogOut className="w-4 h-4" />
-   </button>
-</div>
+          {/* Mobile Links (WITH SIGN OUT) */}
+          <div className="md:hidden flex items-center space-x-6 pr-4">
+             <Link href="/subscriptions" className={getLinkClass('/subscriptions')}>
+               Subscriptions
+             </Link>
+             <Link href="/archive" className={getLinkClass('/archive')}>
+               Archive
+             </Link>
+             <Link href="/settings" className={getLinkClass('/settings')}>
+               Settings
+             </Link>
+             {/* The Mobile Sign Out Button */}
+             <button onClick={() => alert('Signing out...')} className="text-gray-400 hover:text-[#FF4E4E]">
+               <LogOut className="w-4 h-4" />
+             </button>
+          </div>
+        </nav>
+      </div>
 
-      {/* Utilities (Desktop Only - Pushed to Bottom) */}
+      {/* Utilities (Desktop Only - Bottom) */}
       <div className="hidden md:block border-t border-gray-100 pt-6 pb-6 space-y-4">
         
         <Link href="/settings" className={`flex items-center gap-2 text-sm font-medium transition-colors ${isActive('/settings') ? 'text-black' : 'text-gray-400 hover:text-black'}`}>
