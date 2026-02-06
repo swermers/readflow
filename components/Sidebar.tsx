@@ -1,8 +1,8 @@
-'use client'; // This must be at the top!
+'use client';
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Inbox, CheckCircle, User, LogOut, Layers } from 'lucide-react';
+import { Home, Inbox, User, LogOut, Layers } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useEffect, useState } from 'react';
 
@@ -85,15 +85,24 @@ export default function Sidebar() {
               <span className="truncate">{sender.name}</span>
             </Link>
           ))}
-          
+
+          {/* Fallback for empty library */}
           {senders.length === 0 && (
              <p className="px-3 text-xs text-gray-300">No subscriptions yet.</p>
           )}
         </div>
       </div>
 
-      {/* Footer / Sign Out */}
-      <div className="p-4 border-t border-gray-100">
+      {/* Footer: Settings & Sign Out */}
+      <div className="p-4 border-t border-gray-100 space-y-1">
+        <Link 
+          href="/settings"
+          className={`flex items-center text-xs font-bold uppercase tracking-widest transition-colors w-full px-3 py-2 ${isActive('/settings') ? 'text-[#1A1A1A]' : 'text-gray-400 hover:text-[#FF4E4E]'}`}
+        >
+          <User className="w-4 h-4 mr-2" />
+          Settings
+        </Link>
+        
         <button 
           onClick={handleSignOut}
           className="flex items-center text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-[#FF4E4E] transition-colors w-full px-3 py-2"
