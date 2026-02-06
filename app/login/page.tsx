@@ -1,5 +1,3 @@
-import { items } from '@/mockData'; // Just for the visual background, or we can use a clean color
-
 export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-white p-6">
@@ -15,7 +13,7 @@ export default function LoginPage() {
         {/* Login Form */}
         <form className="flex flex-col gap-4">
           <button 
-            formAction={/* We will add the Google Action here later */ undefined}
+            formAction={undefined}
             className="flex items-center justify-center gap-3 w-full bg-white border border-gray-200 text-[#1A1A1A] font-bold p-3 rounded hover:bg-gray-50 hover:border-gray-300 transition-all text-sm"
           >
             {/* Google Icon SVG */}
@@ -58,7 +56,7 @@ export default function LoginPage() {
                 required
              />
              <button 
-                formAction={/* We will add Email Action here later */ undefined}
+                formAction={undefined}
                 className="w-full bg-[#1A1A1A] text-white font-bold uppercase tracking-widest text-xs p-4 rounded hover:bg-[#FF4E4E] transition-colors"
              >
                 Send Magic Link
