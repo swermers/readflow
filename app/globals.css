@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-inter: 'Arial', sans-serif; /* Fallback until we load the real font */
+  --foreground-rgb: 26, 26, 26;
+  --background-rgb: 245, 245, 240; /* #F5F5F0 */
+}
+
+body {
+  color: rgb(var(--foreground-rgb));
+  background: rgb(var(--background-rgb));
+}
