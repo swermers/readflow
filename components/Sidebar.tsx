@@ -2,17 +2,16 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { LogOut, Settings } from 'lucide-react'; // Added Icons
 
 export default function Sidebar() {
   const pathname = usePathname();
 
-  // Helper to check if a link is active
   const isActive = (path: string) => {
     if (path === '/') return pathname === '/';
     return pathname.startsWith(path);
   };
 
-  // Helper to generate classes based on state
   const getLinkClass = (path: string) => {
     const baseClass = "block transition-transform hover:translate-x-1";
     if (isActive(path)) {
@@ -22,67 +21,81 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="col-span-12 md:col-span-2 pt-6 md:pt-12 md:border-r border-[#E5E5E5] md:pr-6 pb-6 md:pb-0 border-b md:border-b-0 border-gray-100">
+    <aside className="col-span-12 md:col-span-2 pt-6 md:pt-12 md:border-r border-[#E5E5E5] md:pr-6 pb-6 md:pb-0 border-b md:border-b-0 border-gray-100 flex flex-col justify-between h-auto md:h-screen sticky top-0">
       
-      {/* Brand / Logo */}
-      <div className="mb-6 md:mb-12 flex items-center md:block justify-between">
-        <div>
-           <div className="hidden md:block h-1 w-8 bg-[#FF4E4E] mb-6"></div> 
-           <div className="font-bold text-sm tracking-widest text-gray-400 uppercase">Readflow</div>
+      <div>
+        {/* Brand / Logo */}
+        <div className="mb-6 md:mb-12 flex items-center md:block justify-between">
+          <div>
+             <div className="hidden md:block h-1 w-8 bg-[#FF4E4E] mb-6"></div> 
+             <div className="font-bold text-sm tracking-widest text-gray-400 uppercase">Readflow</div>
+          </div>
+          
+          <div className="md:hidden text-xs font-bold text-[#FF4E4E] bg-[#FF4E4E]/10 px-2 py-1 rounded">
+            Beta
+          </div>
         </div>
         
-        {/* Mobile-only status badge */}
-        <div className="md:hidden text-xs font-bold text-[#FF4E4E] bg-[#FF4E4E]/10 px-2 py-1 rounded">
-          Beta
-        </div>
+        {/* Main Navigation */}
+        <nav className="flex md:block space-x-6 md:space-x-0 md:space-y-6 text-sm font-medium text-gray-500 overflow-x-auto whitespace-nowrap pb-2 md:pb-0 hide-scrollbar">
+          
+          <Link href="/" className={getLinkClass('/')}>
+            Newsletters
+          </Link>
+          
+          <Link href="/review" className={getLinkClass('/review')}>
+            New Senders 
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ml-2 align-middle ${isActive('/review') ? 'bg-[#FF4E4E] text-white' : 'bg-[#FF4E4E]/10 text-[#FF4E4E]'}`}>
+              3
+            </span>
+          </Link>
+
+          {/* Library Section */}
+          <div className="hidden md:block pt-6 border-t border-gray-100">
+             <div className="mb-4 text-xs font-bold tracking-widest text-gray-300 uppercase">Library</div>
+             
+             <Link href="/subscriptions" className={`${getLinkClass('/subscriptions')} mb-3 block`}>
+               Subscriptions
+             </Link>
+             
+             <Link href="/archive" className={`${getLinkClass('/archive')} block`}>
+               Archive
+             </Link>
+          </div>
+
+          {/* Mobile Links */}
+          <div className="md:hidden flex space-x-6">
+             <Link href="/subscriptions" className={getLinkClass('/subscriptions')}>
+               Subscriptions
+             </Link>
+             <Link href="/archive" className={getLinkClass('/archive')}>
+               Archive
+             </Link>
+             <Link href="/settings" className={getLinkClass('/settings')}>
+               Settings
+             </Link>
+          </div>
+        </nav>
       </div>
-      
-      {/* Navigation Links */}
-      <nav className="flex md:block space-x-6 md:space-x-0 md:space-y-6 text-sm font-medium text-gray-500 overflow-x-auto whitespace-nowrap pb-2 md:pb-0 hide-scrollbar">
+
+      {/* Utilities (Desktop Only - Pushed to Bottom) */}
+      <div className="hidden md:block border-t border-gray-100 pt-6 pb-6 space-y-4">
         
-        <Link href="/" className={getLinkClass('/')}>
-          Newsletters
+        <Link href="/settings" className={`flex items-center gap-2 text-sm font-medium transition-colors ${isActive('/settings') ? 'text-black' : 'text-gray-400 hover:text-black'}`}>
+          <Settings className="w-4 h-4" />
+          Settings
         </Link>
         
-        <Link href="/review" className={getLinkClass('/review')}>
-          New Senders 
-          <span className={`text-[10px] px-1.5 py-0.5 rounded ml-2 align-middle ${isActive('/review') ? 'bg-[#FF4E4E] text-white' : 'bg-[#FF4E4E]/10 text-[#FF4E4E]'}`}>
-            3
-          </span>
-        </Link>
+        <button 
+          onClick={() => alert('Signing out...')} 
+          className="flex items-center gap-2 text-sm font-medium text-gray-400 hover:text-[#FF4E4E] transition-colors w-full text-left"
+        >
+          <LogOut className="w-4 h-4" />
+          Sign Out
+        </button>
 
-        {/* Library Section (Desktop Layout) */}
-        <div className="hidden md:block pt-6 border-t border-gray-100">
-           <div className="mb-4 text-xs font-bold tracking-widest text-gray-300 uppercase">Library</div>
-           
-           <Link href="/subscriptions" className={`${getLinkClass('/subscriptions')} mb-3 block`}>
-             Subscriptions
-           </Link>
-           
-           <Link href="/archive" className={`${getLinkClass('/archive')} block`}>
-             Archive
-           </Link>
+      </div>
 
-           {/* Settings Link (Desktop - Distinct Section) */}
-           <Link href="/settings" className={`${getLinkClass('/settings')} block mt-8 pt-6 border-t border-gray-100`}>
-             Settings
-           </Link>
-        </div>
-
-        {/* Library Section (Mobile Layout - Inline) */}
-        <div className="md:hidden flex space-x-6">
-           <Link href="/subscriptions" className={getLinkClass('/subscriptions')}>
-             Subscriptions
-           </Link>
-           <Link href="/archive" className={getLinkClass('/archive')}>
-             Archive
-           </Link>
-           <Link href="/settings" className={getLinkClass('/settings')}>
-             Settings
-           </Link>
-        </div>
-
-      </nav>
     </aside>
   );
 }
