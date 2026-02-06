@@ -21,7 +21,8 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="col-span-12 md:col-span-2 pt-6 md:pt-12 md:border-r border-[#E5E5E5] md:pr-6 pb-6 md:pb-0 border-b md:border-b-0 border-gray-100 flex flex-col justify-between h-auto md:h-screen sticky top-0">
+    // UPDATED: Added 'px-6' for mobile padding, and 'md:pl-8' to align desktop sidebar nicely.
+    <aside className="col-span-12 md:col-span-2 pt-6 px-6 md:px-0 md:pl-8 md:pt-12 md:border-r border-[#E5E5E5] md:pr-6 pb-6 md:pb-0 border-b md:border-b-0 border-gray-100 flex flex-col justify-between h-auto md:h-screen sticky top-0 bg-white z-50">
       
       <div>
         {/* Brand / Logo */}
@@ -63,7 +64,7 @@ export default function Sidebar() {
              </Link>
           </div>
 
-          {/* Mobile Links (WITH SIGN OUT) */}
+          {/* Mobile Links */}
           <div className="md:hidden flex items-center space-x-6 pr-4">
              <Link href="/subscriptions" className={getLinkClass('/subscriptions')}>
                Subscriptions
@@ -74,7 +75,6 @@ export default function Sidebar() {
              <Link href="/settings" className={getLinkClass('/settings')}>
                Settings
              </Link>
-             {/* The Mobile Sign Out Button */}
              <button onClick={() => alert('Signing out...')} className="text-gray-400 hover:text-[#FF4E4E]">
                <LogOut className="w-4 h-4" />
              </button>
@@ -82,7 +82,7 @@ export default function Sidebar() {
         </nav>
       </div>
 
-      {/* Utilities (Desktop Only - Bottom) */}
+      {/* Utilities (Desktop Only) */}
       <div className="hidden md:block border-t border-gray-100 pt-6 pb-6 space-y-4">
         
         <Link href="/settings" className={`flex items-center gap-2 text-sm font-medium transition-colors ${isActive('/settings') ? 'text-black' : 'text-gray-400 hover:text-black'}`}>
