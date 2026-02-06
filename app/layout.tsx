@@ -28,19 +28,26 @@ export default function RootLayout({
              </div>
              
              {/* Navigation Links */}
-             <nav className="space-y-6 text-sm font-medium text-gray-500">
+            <nav className="space-y-6 text-sm font-medium text-gray-500">
+               {/* The Main Feed */}
                <Link href="/" className="block text-black hover:translate-x-1 transition-transform">
-                 Inbox
+                 Reading List
                </Link>
+               
+               {/* The Gatekeeper */}
                <Link href="/review" className="block hover:text-black hover:translate-x-1 transition-transform">
-                 Review Queue
+                 New Senders <span className="text-xs bg-[#FF4E4E]/10 text-[#FF4E4E] px-1.5 py-0.5 rounded ml-2">3</span>
                </Link>
-               <Link href="#" className="block hover:text-black hover:translate-x-1 transition-transform">
-                 Newsletters
-               </Link>
-               <Link href="#" className="block hover:text-black hover:translate-x-1 transition-transform">
-                 Archive
-               </Link>
+               
+               <div className="pt-6 border-t border-gray-100">
+                  <div className="mb-4 text-xs font-bold tracking-widest text-gray-300 uppercase">Library</div>
+                  <Link href="#" className="block hover:text-black hover:translate-x-1 transition-transform mb-3">
+                    Subscriptions
+                  </Link>
+                  <Link href="#" className="block hover:text-black hover:translate-x-1 transition-transform">
+                    Archive
+                  </Link>
+               </div>
              </nav>
           </aside>
 
