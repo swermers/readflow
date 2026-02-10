@@ -2,16 +2,14 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
-import { headers } from 'next/headers'; // <--- Make sure to add this import at the top!
 
+// --- 1. GOOGLE LOGIN ACTION ---
 export async function signInWithGoogle() {
   const supabase = await createClient();
-export async function login(formData: FormData) {
-  const supabase = await createClient();
-  const email = (formData.get('email') as string).trim(); // Clean extra spaces
   
   // Hardcoded for Vercel production
   const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
+
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
     options: {
@@ -29,6 +27,13 @@ export async function login(formData: FormData) {
   }
 }
 
+// --- 2. EMAIL MAGIC LINK ACTION ---
+export async function login(formData: FormData) {
+  const supabase = await createClient();
+  const email = (formData.get('email') as string).trim();
+  
+  const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
+
   const { error } = await supabase.auth.signInWithOtp({
     email,
     options: {
@@ -44,12 +49,12 @@ export async function login(formData: FormData) {
   return redirect('/login?message=Check your email for the magic link!');
 }
 
+// --- 3. VERIFY CODE ACTION ---
 export async function verifyOtp(formData: FormData) {
-  // 1. Clean the inputs
   const email = (formData.get('email') as string)?.trim();
   const rawToken = (formData.get('token') as string) || '';
   
-  // Remove ALL spaces from the token (handles "123 456" or " 123456 ")
+  // Remove ALL spaces from the token
   const token = rawToken.replace(/\s/g, ''); 
 
   const supabase = await createClient();
@@ -61,7 +66,6 @@ export async function verifyOtp(formData: FormData) {
   });
 
   if (error) {
-    // Send them back to the login page with the email pre-filled and the error
     return redirect(`/login?email=${encodeURIComponent(email)}&message=Invalid code`);
   }
 
