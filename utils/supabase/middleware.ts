@@ -16,7 +16,7 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
+        setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
@@ -31,32 +31,10 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // 1. Check User
-  const { data: { user }, error } = await supabase.auth.getUser();
+  // Refresh the session (so the cookie stays valid)
+  await supabase.auth.getUser();
 
-  // --- DEBUGGING LOGS (Check Vercel Function Logs) ---
-  console.log("Middleware Run:");
-  console.log("Path:", request.nextUrl.pathname);
-  console.log("Cookie Found?", request.cookies.getAll().some(c => c.name.startsWith('sb-')));
-  console.log("User Found?", !!user);
-  if (error) console.log("Supabase Error:", error.message);
-  // ---------------------------------------------------
-
-  // 2. Protected Routes
-  if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
-    console.log("Redirecting to /login"); // Log the redirect
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    return NextResponse.redirect(url);
-  }
-
-  // 3. Login Page Redirect
-  if (user && request.nextUrl.pathname.startsWith('/login')) {
-    console.log("Redirecting to /"); // Log the redirect
-    const url = request.nextUrl.clone();
-    url.pathname = '/';
-    return NextResponse.redirect(url);
-  }
-
+  // 🛑 DISABLE ALL REDIRECTS FOR DEBUGGING 🛑
+  // This lets you pass through to the homepage no matter what.
   return response;
 }
