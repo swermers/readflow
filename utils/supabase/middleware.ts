@@ -16,7 +16,8 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        // ADDED THE TYPE DEFINITION HERE vvv
+        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
@@ -31,7 +32,7 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // Refresh the session (so the cookie stays valid)
+  // Refresh the session
   await supabase.auth.getUser();
 
   // 🛑 DISABLE ALL REDIRECTS FOR DEBUGGING 🛑
