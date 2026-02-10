@@ -37,10 +37,14 @@ export async function updateSession(request: NextRequest) {
     return response;
   }
 
+// ... existing code ...
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
+  // TEMPORARILY COMMENT THESE OUT TO STOP THE LOOP
+  /*
   // Rule 1: Protected routes
   if (!user && !request.nextUrl.pathname.startsWith('/login')) {
     const url = request.nextUrl.clone();
@@ -54,6 +58,7 @@ export async function updateSession(request: NextRequest) {
     url.pathname = '/';
     return NextResponse.redirect(url);
   }
+  */
 
   return response;
 }
