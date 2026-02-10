@@ -1,88 +1,72 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
-import { Clock, ArrowUpRight } from 'lucide-react';
+import { redirect } from 'next/navigation';
 
-export default async function Home() {
-  const supabase = await createClient();
+export default async function Dashboard() {
+  const supabase = createClient();
 
-  // Fetch unread + read issues from approved senders (not archived)
-  const { data: emails, error } = await supabase
-    .from('issues')
-    .select('*, senders!inner(name, status)') 
-    .eq('senders.status', 'approved')
-    .in('status', ['unread', 'read'])
-    .order('received_at', { ascending: false });
+  const { data: { user } } = await supabase.auth.getUser();
 
-  if (error) {
-    console.error("Supabase error:", error);
+  if (!user) {
+    return redirect('/login');
   }
 
-  const unreadCount = emails?.filter(e => e.status === 'unread').length || 0;
+  // Fetch ONLY unread issues for the "Rack"
+  const { data: issues } = await supabase
+    .from('issues')
+    .select('*, senders(name, email)')
+    .eq('user_id', user.id)
+    .eq('status', 'unread')
+    .order('received_at', { ascending: false });
 
   return (
-    <div className="p-6 md:p-12 min-h-screen">
-      <header className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
-        <div>
-          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
-          <p className="text-sm text-gray-500 mt-1">
-            {unreadCount > 0 
-              ? `${unreadCount} unread issue${unreadCount !== 1 ? 's' : ''} waiting for you.`
-              : `${emails?.length || 0} issues on the rack.`
-            }
-          </p>
-        </div>
+    <div className="max-w-4xl mx-auto p-6 md:p-12">
+      <header className="mb-12">
+        <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">The Rack</h1>
+        <p className="text-gray-500 mt-2 text-lg">
+          {issues?.length 
+            ? `You have ${issues.length} unread newsletters.` 
+            : "You are all caught up."}
+        </p>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {emails?.map((email: any) => (
-          <Link key={email.id} href={`/newsletters/${email.id}`} className="block">
-            <div className={`group relative bg-white border p-6 transition-all h-64 flex flex-col justify-between shadow-sm hover:shadow-md ${
-              email.status === 'unread' 
-                ? 'border-gray-200 hover:border-[#FF4E4E]' 
-                : 'border-gray-100 opacity-75 hover:opacity-100 hover:border-gray-300'
-            }`}>
+      <div className="space-y-4">
+        {issues?.map((issue) => (
+          <Link 
+            key={issue.id} 
+            href={`/newsletters/${issue.id}`} // This links to the Reader page you just built
+            className="block group"
+          >
+            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer">
+              <div className="flex justify-between items-start mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">
+                    {issue.senders?.name || issue.from_email}
+                  </span>
+                  <span className="text-gray-300">•</span>
+                  <span className="text-xs text-gray-400">
+                    {new Date(issue.received_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
               
-              {/* Unread indicator */}
-              {email.status === 'unread' && (
-                <div className="absolute top-3 right-3 w-2 h-2 bg-[#FF4E4E] rounded-full"></div>
-              )}
-
-              <div className="flex justify-between items-start">
-                <span className="text-[10px] font-bold uppercase tracking-widest text-[#FF4E4E]">
-                  {email.senders?.name || 'Unknown'}
-                </span>
-                <span className="text-[10px] text-gray-400 flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {new Date(email.received_at).toLocaleDateString()}
-                </span>
-              </div>
-
-              <div>
-                <h3 className={`text-lg font-bold leading-tight mb-2 group-hover:text-[#FF4E4E] transition-colors ${
-                  email.status === 'unread' ? 'text-gray-900' : 'text-gray-600'
-                }`}>
-                  {email.subject}
-                </h3>
-                <p className="text-sm text-gray-500 line-clamp-3 leading-relaxed">
-                  {email.snippet}
-                </p>
-              </div>
-
-              <div className="pt-4 border-t border-gray-50 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-[#FF4E4E]">
-                  Read <ArrowUpRight className="w-3 h-3" />
-                </span>
-              </div>
-
+              <h3 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors mb-2">
+                {issue.subject}
+              </h3>
+              
+              <p className="text-gray-600 line-clamp-2 text-base leading-relaxed">
+                {issue.snippet}
+              </p>
             </div>
           </Link>
         ))}
-        
-        {(!emails || emails.length === 0) && (
-           <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
-             <p className="mb-2 font-bold text-gray-900">All caught up.</p>
-             <p className="text-xs">Approved newsletters will appear here when they arrive.</p>
-           </div>
+
+        {issues?.length === 0 && (
+          <div className="text-center py-24 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
+            <div className="text-4xl mb-4">🎉</div>
+            <h3 className="text-xl font-bold text-gray-900">Inbox Zero</h3>
+            <p className="text-gray-500 mt-2">Go read a book or touch some grass.</p>
+          </div>
         )}
       </div>
     </div>
