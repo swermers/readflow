@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useSearchParams } from 'next/navigation';
-import { verifyOtp } from './actions'; // <--- IMPORT THE SERVER ACTION
+import { verifyOtp } from './actions';
 
-export default function LoginPage() {
+// --- COMPONENT 1: The Logic (Wrapped) ---
+function LoginForm() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -14,18 +15,16 @@ export default function LoginPage() {
   const searchParams = useSearchParams();
   const supabase = createClient();
 
-  // Check for error messages from the server (e.g. if code was wrong)
   useEffect(() => {
     const message = searchParams.get('message');
     const emailParam = searchParams.get('email');
     if (message) setMsg(message);
     if (emailParam) {
         setEmail(emailParam);
-        setSent(true); // Jump straight to step 2 if we came back with an error
+        setSent(true); 
     }
   }, [searchParams]);
 
-  // STEP 1: Send the Code (Client-Side is fine here)
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -46,8 +45,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white p-6">
-      <div className="w-full max-w-sm text-center">
+    <div className="w-full max-w-sm text-center">
         <div className="inline-block h-1 w-8 bg-[#FF4E4E] mb-8"></div>
         <h1 className="text-2xl font-bold tracking-tight text-[#1A1A1A] mb-2">Readflow.</h1>
         <p className="text-gray-500 mb-8 text-sm">Your personal newsletter sanctuary.</p>
@@ -59,7 +57,6 @@ export default function LoginPage() {
         )}
 
         {!sent ? (
-          // STATE 1: Ask for Email
           <form onSubmit={handleSendCode} className="flex flex-col gap-4">
             <input 
               type="email" 
@@ -80,14 +77,12 @@ export default function LoginPage() {
             </button>
           </form>
         ) : (
-          // STATE 2: Ask for Code (Uses Server Action directly!)
           <form action={verifyOtp} className="flex flex-col gap-4">
              <div className="text-left text-xs text-gray-400 mb-1">
                 Sent to <span className="text-black font-bold">{email}</span>
                 <button type="button" onClick={() => setSent(false)} className="ml-2 underline hover:text-[#FF4E4E]">Change?</button>
              </div>
             
-            {/* HIDDEN INPUT: Sends the email to the server action */}
             <input type="hidden" name="email" value={email} />
 
             <input 
@@ -106,7 +101,17 @@ export default function LoginPage() {
             </button>
           </form>
         )}
-      </div>
+    </div>
+  );
+}
+
+// --- COMPONENT 2: The Main Page (The Suspense Boundary) ---
+export default function LoginPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-white p-6">
+      <Suspense fallback={<div className="text-sm text-gray-400">Loading...</div>}>
+        <LoginForm />
+      </Suspense>
     </div>
   );
 }
