@@ -2,7 +2,6 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function updateSession(request: NextRequest) {
-  // 1. Create the initial response
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -18,12 +17,9 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
-          // This ensures the request object is updated so getUser() sees the new cookies
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          
-          // This updates the outgoing response
           response = NextResponse.next({
             request,
           });
@@ -35,32 +31,28 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // 2. IMPORTANT: Do not run getUser() on auth routes (prevents conflict)
-  if (request.nextUrl.pathname.startsWith('/auth')) {
-    return response;
-  }
+  // 1. Check User
+  const { data: { user }, error } = await supabase.auth.getUser();
 
-  // 3. Check the user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // --- DEBUGGING LOGS (Check Vercel Function Logs) ---
+  console.log("Middleware Run:");
+  console.log("Path:", request.nextUrl.pathname);
+  console.log("Cookie Found?", request.cookies.getAll().some(c => c.name.startsWith('sb-')));
+  console.log("User Found?", !!user);
+  if (error) console.log("Supabase Error:", error.message);
+  // ---------------------------------------------------
 
-  // --- REDIRECT LOGIC ---
-  
-  // Rule A: Protected Routes (Redirect to Login if not logged in)
-  // We exclude /login and /auth to prevent loops
-  if (
-    !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth')
-  ) {
+  // 2. Protected Routes
+  if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
+    console.log("Redirecting to /login"); // Log the redirect
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
-  // Rule B: Public Routes (Redirect to Home if ALREADY logged in)
+  // 3. Login Page Redirect
   if (user && request.nextUrl.pathname.startsWith('/login')) {
+    console.log("Redirecting to /"); // Log the redirect
     const url = request.nextUrl.clone();
     url.pathname = '/';
     return NextResponse.redirect(url);
