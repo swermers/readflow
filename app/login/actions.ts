@@ -7,23 +7,26 @@ export async function login(formData: FormData) {
   const supabase = await createClient();
   const email = formData.get('email') as string;
   
-  // ⚠️ HARDCODED URL: We are manually typing your Vercel URL here.
-  // When you work on localhost, you will need to change this back to localhost.
-  const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
+// ... existing imports and login function ...
 
-  console.log('Sending magic link to:', redirectUrl);
+export async function verifyOtp(formData: FormData) {
+  'use server'; // Ensure this runs on the server
+  
+  const email = formData.get('email') as string;
+  const token = formData.get('token') as string;
+  const supabase = await createClient();
 
-  const { error } = await supabase.auth.signInWithOtp({
+  // Verify the 6-digit code (token)
+  const { error } = await supabase.auth.verifyOtp({
     email,
-    options: {
-      emailRedirectTo: redirectUrl,
-    },
+    token,
+    type: 'email',
   });
 
   if (error) {
-    console.error('Auth Error:', error);
-    return redirect('/login?message=Could not authenticate user');
+    return redirect(`/login?email=${email}&message=Invalid code`);
   }
 
-  return redirect('/login?message=Check your email for the magic link!');
+  // If successful, go to Dashboard
+  return redirect('/');
 }
