@@ -1,18 +1,31 @@
-'use client'; // Switch to Client Component to manage state (Show/Hide Input)
+'use client';
 
-import { useState } from 'react';
-import { createClient } from '@/utils/supabase/client'; // Use Client SDK here for cleaner UI flow
-import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
+import { createClient } from '@/utils/supabase/client';
+import { useSearchParams } from 'next/navigation';
+import { verifyOtp } from './actions'; // <--- IMPORT THE SERVER ACTION
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState('');
-  const router = useRouter();
+  
+  const searchParams = useSearchParams();
   const supabase = createClient();
 
-  // 1. Send the Code
+  // Check for error messages from the server (e.g. if code was wrong)
+  useEffect(() => {
+    const message = searchParams.get('message');
+    const emailParam = searchParams.get('email');
+    if (message) setMsg(message);
+    if (emailParam) {
+        setEmail(emailParam);
+        setSent(true); // Jump straight to step 2 if we came back with an error
+    }
+  }, [searchParams]);
+
+  // STEP 1: Send the Code (Client-Side is fine here)
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -20,38 +33,15 @@ export default function LoginPage() {
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      // No 'options' needed for generic OTP!
     });
 
     if (error) {
       setMsg(error.message);
-    } else {
-      setSent(true); // Flip the UI to show the "Code" input
-      setMsg('Check your email for the code!');
-    }
-    setLoading(false);
-  };
-
-  // 2. Verify the Code
-  const handleVerifyCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    const form = e.target as HTMLFormElement;
-    const token = (form.elements.namedItem('token') as HTMLInputElement).value;
-
-    const { error } = await supabase.auth.verifyOtp({
-      email,
-      token,
-      type: 'email',
-    });
-
-    if (error) {
-      setMsg('Invalid code. Try again.');
       setLoading(false);
     } else {
-      // Success! Force a hard refresh to update server components
-      router.refresh();
-      router.push('/');
+      setSent(true);
+      setMsg('Check your email for the code!');
+      setLoading(false);
     }
   };
 
@@ -73,6 +63,7 @@ export default function LoginPage() {
           <form onSubmit={handleSendCode} className="flex flex-col gap-4">
             <input 
               type="email" 
+              name="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="name@example.com"
@@ -89,12 +80,16 @@ export default function LoginPage() {
             </button>
           </form>
         ) : (
-          // STATE 2: Ask for Code
-          <form onSubmit={handleVerifyCode} className="flex flex-col gap-4">
+          // STATE 2: Ask for Code (Uses Server Action directly!)
+          <form action={verifyOtp} className="flex flex-col gap-4">
              <div className="text-left text-xs text-gray-400 mb-1">
                 Sent to <span className="text-black font-bold">{email}</span>
                 <button type="button" onClick={() => setSent(false)} className="ml-2 underline hover:text-[#FF4E4E]">Change?</button>
              </div>
+            
+            {/* HIDDEN INPUT: Sends the email to the server action */}
+            <input type="hidden" name="email" value={email} />
+
             <input 
               type="text" 
               name="token"
@@ -102,14 +97,12 @@ export default function LoginPage() {
               className="w-full bg-gray-50 border border-gray-100 p-3 rounded text-sm outline-none focus:border-[#FF4E4E] transition-colors text-center tracking-[0.5em] font-bold text-lg"
               autoFocus
               required
-              disabled={loading}
             />
             <button 
               type="submit"
-              disabled={loading}
-              className="w-full bg-[#1A1A1A] text-white font-bold uppercase tracking-widest text-xs p-4 rounded hover:bg-[#FF4E4E] transition-colors disabled:opacity-50"
+              className="w-full bg-[#1A1A1A] text-white font-bold uppercase tracking-widest text-xs p-4 rounded hover:bg-[#FF4E4E] transition-colors"
             >
-              {loading ? 'Verifying...' : 'Enter Code'}
+              Verify & Enter
             </button>
           </form>
         )}
