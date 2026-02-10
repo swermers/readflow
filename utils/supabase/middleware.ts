@@ -16,8 +16,7 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        // FIX: Added explicit type for 'cookiesToSet'
-        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
+        setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value, options }) =>
             request.cookies.set(name, value)
           );
@@ -32,22 +31,29 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
+  // --- NEW: THE AUTH BYPASS ---
+  // If we are on the callback route, don't call getUser(). 
+  // This prevents the middleware from interfering with the PKCE verifier cookie.
+  if (request.nextUrl.pathname.startsWith('/auth')) {
+    return response;
+  }
+  // -----------------------------
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // RULE 1: If no user, and trying to access a protected route -> Redirect to Login
+  // RULE 1: Protected Routes
   if (
     !user &&
-    !request.nextUrl.pathname.startsWith('/login') &&
-    !request.nextUrl.pathname.startsWith('/auth')
+    !request.nextUrl.pathname.startsWith('/login')
   ) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
-  // RULE 2: If user IS logged in, and tries to go to Login -> Redirect to Home
+  // RULE 2: Redirect logged-in users away from login
   if (user && request.nextUrl.pathname.startsWith('/login')) {
     const url = request.nextUrl.clone();
     url.pathname = '/';

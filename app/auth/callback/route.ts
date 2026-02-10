@@ -2,31 +2,28 @@ import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
+  const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
+  // If "next" is present, use it; otherwise, go to the dashboard/home
   const next = searchParams.get('next') ?? '/';
 
   if (code) {
     const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
     
+    // Exchange the code for a session. 
+    // This will look for the PKCE verifier cookie set by the browser.
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+
     if (!error) {
-      const forwardedHost = request.headers.get('x-forwarded-host');
-      const isLocalEnv = process.env.NODE_ENV === 'development';
-      
-      if (isLocalEnv) {
-        return NextResponse.redirect(`${origin}${next}`);
-      } else if (forwardedHost) {
-        return NextResponse.redirect(`https://${forwardedHost}${next}`);
-      } else {
-        return NextResponse.redirect(`${origin}${next}`);
-      }
-    } else {
-        // ERROR FOUND: Redirect to error page with the detailed message
-        console.error('Auth Error:', error.message);
-        return NextResponse.redirect(`${origin}/auth/auth-code-error?error=${encodeURIComponent(error.message)}`);
+      // Redirect to the intended page on the production domain
+      return NextResponse.redirect(`https://readflow-inky.vercel.app${next}`);
     }
+    
+    console.error('Auth Callback Error:', error);
   }
 
-  return NextResponse.redirect(`${origin}/auth/auth-code-error?error=NoCodeProvided`);
+  // If there's no code or an exchange error occurred
+  return NextResponse.redirect(
+  `https://readflow-inky.vercel.app/auth/auth-code-error?error=${encodeURIComponent(error.message)}`
+);
 }

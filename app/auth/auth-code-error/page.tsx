@@ -4,46 +4,67 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
-function ErrorMessage() {
+function ErrorContent() {
   const searchParams = useSearchParams();
   const error = searchParams.get('error');
+  const errorDescription = searchParams.get('error_description');
+
+  const isPkceError = error?.includes('PKCE') || errorDescription?.includes('code verifier');
 
   return (
-    <>
-      <p className="text-lg text-gray-700 mb-6">
-        {error ? (
-          <span className="font-mono text-red-600 bg-red-50 p-1 rounded text-sm break-all">
-            Error: {error}
-          </span>
-        ) : (
-          "We encountered an unknown error while logging you in."
-        )}
-      </p>
-      <p className="text-sm text-gray-500 mb-8">
-        {error?.includes('PKCE') 
-          ? "Your browser blocked the login cookie. Try opening this in a normal Chrome window (not Incognito)."
-          : "This usually happens if the link expired or was already used."}
-      </p>
-    </>
+    <div className="space-y-6">
+      <div className="inline-block h-1 w-8 bg-[#FF4E4E] mb-2"></div>
+      <h1 className="text-3xl font-bold tracking-tight text-[#1A1A1A]">Authentication Error</h1>
+      
+      <div className="bg-red-50 border border-red-100 p-4 rounded-lg">
+        <p className="text-sm font-mono text-red-600 break-all">
+          {errorDescription || error || "An unexpected error occurred during sign-in."}
+        </p>
+      </div>
+
+      <div className="text-left text-sm text-gray-600 space-y-4 bg-gray-50 p-6 rounded-lg">
+        <p className="font-semibold text-[#1A1A1A]">How to fix this:</p>
+        <ul className="list-disc ml-5 space-y-2">
+          {isPkceError ? (
+            <>
+              <li><strong>Check Incognito:</strong> If you are in private mode, try a standard window.</li>
+              <li><strong>Browser Settings:</strong> Ensure "Block all cookies" is disabled.</li>
+              <li><strong>Refresh:</strong> Sometimes a simple refresh of the login page clears the state.</li>
+            </>
+          ) : (
+            <>
+              <li>Ensure the login link hasn't expired (they usually last 10-20 minutes).</li>
+              <li>Make sure you are using the same device/browser where you started the login.</li>
+            </>
+          )}
+        </ul>
+      </div>
+
+      <div className="pt-4">
+        <Link 
+          href="/login"
+          className="inline-block w-full bg-[#1A1A1A] text-white font-medium text-sm p-4 rounded hover:bg-[#FF4E4E] transition-colors shadow-sm"
+        >
+          Return to Login
+        </Link>
+      </div>
+    </div>
   );
 }
 
 export default function AuthErrorPage() {
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white p-6 text-center">
-      <div className="max-w-md">
-        <h1 className="text-4xl font-bold mb-4 text-[#FF4E4E]">Oops!</h1>
-        
-        <Suspense fallback={<p>Loading error...</p>}>
-            <ErrorMessage />
+    <div className="min-h-screen flex items-center justify-center bg-white p-6">
+      <div className="w-full max-w-md text-center">
+        <Suspense fallback={
+          <div className="animate-pulse">
+            <div className="h-1 w-8 bg-gray-200 mx-auto mb-8"></div>
+            <div className="h-8 w-48 bg-gray-200 mx-auto mb-4"></div>
+            <div className="h-24 w-full bg-gray-100 rounded-lg"></div>
+          </div>
+        }>
+          <ErrorContent />
         </Suspense>
-
-        <Link 
-          href="/login"
-          className="bg-[#1A1A1A] text-white font-bold uppercase tracking-widest text-xs py-4 px-8 rounded hover:bg-[#FF4E4E] transition-colors"
-        >
-          Try Again
-        </Link>
       </div>
     </div>
   );
