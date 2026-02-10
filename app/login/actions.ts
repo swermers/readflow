@@ -2,13 +2,32 @@
 
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
+import { headers } from 'next/headers'; // <--- Make sure to add this import at the top!
 
+export async function signInWithGoogle() {
+  const supabase = await createClient();
 export async function login(formData: FormData) {
   const supabase = await createClient();
   const email = (formData.get('email') as string).trim(); // Clean extra spaces
   
   // Hardcoded for Vercel production
   const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: redirectUrl,
+    },
+  });
+
+  if (error) {
+    console.error(error);
+    return redirect('/auth/auth-code-error?error=Could not connect to Google');
+  }
+
+  if (data.url) {
+    return redirect(data.url);
+  }
+}
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
