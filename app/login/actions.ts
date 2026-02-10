@@ -3,10 +3,9 @@
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 
-// Function 1: Send the Magic Link (Used by the old server-side flow)
 export async function login(formData: FormData) {
   const supabase = await createClient();
-  const email = formData.get('email') as string;
+  const email = (formData.get('email') as string).trim(); // Clean extra spaces
   
   // Hardcoded for Vercel production
   const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
@@ -26,10 +25,14 @@ export async function login(formData: FormData) {
   return redirect('/login?message=Check your email for the magic link!');
 }
 
-// Function 2: Verify the Code (The new function you added)
 export async function verifyOtp(formData: FormData) {
-  const email = formData.get('email') as string;
-  const token = formData.get('token') as string;
+  // 1. Clean the inputs
+  const email = (formData.get('email') as string)?.trim();
+  const rawToken = (formData.get('token') as string) || '';
+  
+  // Remove ALL spaces from the token (handles "123 456" or " 123456 ")
+  const token = rawToken.replace(/\s/g, ''); 
+
   const supabase = await createClient();
 
   const { error } = await supabase.auth.verifyOtp({
@@ -39,7 +42,8 @@ export async function verifyOtp(formData: FormData) {
   });
 
   if (error) {
-    return redirect(`/login?email=${email}&message=Invalid code`);
+    // Send them back to the login page with the email pre-filled and the error
+    return redirect(`/login?email=${encodeURIComponent(email)}&message=Invalid code`);
   }
 
   return redirect('/');
