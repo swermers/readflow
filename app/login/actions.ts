@@ -3,20 +3,35 @@
 import { createClient } from '@/utils/supabase/server';
 import { redirect } from 'next/navigation';
 
+// Function 1: Send the Magic Link (Used by the old server-side flow)
 export async function login(formData: FormData) {
   const supabase = await createClient();
   const email = formData.get('email') as string;
   
-// ... existing imports and login function ...
+  // Hardcoded for Vercel production
+  const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
 
+  const { error } = await supabase.auth.signInWithOtp({
+    email,
+    options: {
+      emailRedirectTo: redirectUrl,
+    },
+  });
+
+  if (error) {
+    console.error('Auth Error:', error);
+    return redirect('/login?message=Could not authenticate user');
+  }
+
+  return redirect('/login?message=Check your email for the magic link!');
+}
+
+// Function 2: Verify the Code (The new function you added)
 export async function verifyOtp(formData: FormData) {
-  'use server'; // Ensure this runs on the server
-  
   const email = formData.get('email') as string;
   const token = formData.get('token') as string;
   const supabase = await createClient();
 
-  // Verify the 6-digit code (token)
   const { error } = await supabase.auth.verifyOtp({
     email,
     token,
@@ -27,6 +42,5 @@ export async function verifyOtp(formData: FormData) {
     return redirect(`/login?email=${email}&message=Invalid code`);
   }
 
-  // If successful, go to Dashboard
   return redirect('/');
 }
