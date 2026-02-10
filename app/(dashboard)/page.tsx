@@ -3,7 +3,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 
 export default async function Dashboard() {
-  const supabase = createClient();
+  // FIXED: Added 'await' here
+  const supabase = await createClient();
 
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -34,7 +35,7 @@ export default async function Dashboard() {
         {issues?.map((issue) => (
           <Link 
             key={issue.id} 
-            href={`/newsletters/${issue.id}`} // This links to the Reader page you just built
+            href={`/newsletters/${issue.id}`} 
             className="block group"
           >
             <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer">
