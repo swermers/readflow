@@ -1,6 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
-// import { redirect } from 'next/navigation'; // Commented out for debug
+import { redirect } from 'next/navigation'; // Check: Uncommented
 
 export default async function Dashboard() {
   const supabase = await createClient();
@@ -9,35 +9,17 @@ export default async function Dashboard() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  // 🛑 DEBUG: If no user, show this screen instead of redirecting 🛑
+  // Check: If no user, kick them back to login immediately
   if (!user) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center p-8 text-center bg-gray-50">
-        <div className="max-w-md w-full bg-white shadow-lg rounded-lg p-8 border border-red-100">
-          <div className="text-5xl mb-4">🕵️‍♂️</div>
-          <h1 className="text-2xl font-bold text-red-600 mb-2">Debug: No User Found</h1>
-          <p className="text-gray-600 mb-6">
-            The Middleware let you through, but the Page cannot find your session.
-          </p>
-          <div className="text-left text-sm bg-gray-100 p-4 rounded font-mono overflow-auto">
-            <p className="font-bold text-gray-700 mb-2">Check Vercel Logs for:</p>
-            <ul className="list-disc pl-4 space-y-1 text-gray-600">
-              <li>"Cookie Found?"</li>
-              <li>"User Authenticated?"</li>
-              <li>"Auth Error"</li>
-            </ul>
-          </div>
-        </div>
-      </div>
-    );
+    return redirect('/login');
   }
 
-  // --- Normal Code Below (Only runs if user exists) ---
+  // --- Normal Code (Only runs if user exists) ---
 
   const { data: issues } = await supabase
     .from('issues')
     .select('*, senders(name, email)')
-    .eq('user_id', user.id) // This is now safe because we handled the null case above
+    .eq('user_id', user.id)
     .eq('status', 'unread')
     .order('received_at', { ascending: false });
 
