@@ -2,7 +2,6 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function updateSession(request: NextRequest) {
-  // Create an unmodified response first
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -14,11 +13,11 @@ export async function updateSession(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        // Pass all cookies to the client so it can stitch the chunks together
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        // 👇 The fix is right here: we explicitly define the type
+        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
@@ -33,11 +32,8 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  // This will refresh the session if needed
   const { data: { user } } = await supabase.auth.getUser();
 
-  // PROTECTED ROUTE CHECK
-  // If no user, and trying to access a protected page, redirect to login
   if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';

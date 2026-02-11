@@ -9,11 +9,11 @@ export async function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
       cookies: {
-        // The vital part: 'getAll' reads all chunks (.0, .1, etc) automatically
         getAll() {
           return cookieStore.getAll();
         },
-        setAll(cookiesToSet) {
+        // 👇 Added the type definition here too
+        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
           try {
             cookiesToSet.forEach(({ name, value, options }) =>
               cookieStore.set(name, value, options)
