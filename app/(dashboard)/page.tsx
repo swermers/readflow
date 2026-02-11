@@ -1,82 +1,80 @@
 import { createClient } from '@/utils/supabase/server';
-import Link from 'next/link';
-import { redirect } from 'next/navigation'; // Check: Uncommented
+import { cookies } from 'next/headers';
 
 export default async function Dashboard() {
   const supabase = await createClient();
+  const { data: { user }, error } = await supabase.auth.getUser();
+  const allCookies = cookies().getAll();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // Calculate what the cookie name SHOULD be based on the Env Var
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || "MISSING";
+  const projectRef = supabaseUrl.replace("https://", "").split(".")[0];
+  const expectedCookieName = `sb-${projectRef}-auth-token`;
 
-  // Check: If no user, kick them back to login immediately
-  if (!user) {
-    return redirect('/login');
-  }
-
-  // --- Normal Code (Only runs if user exists) ---
-
-  const { data: issues } = await supabase
-    .from('issues')
-    .select('*, senders(name, email)')
-    .eq('user_id', user.id)
-    .eq('status', 'unread')
-    .order('received_at', { ascending: false });
+  const foundCookie = allCookies.find(c => c.name.startsWith(expectedCookieName));
 
   return (
-    <div className="max-w-4xl mx-auto p-6 md:p-12">
-      <header className="mb-12">
-        <h1 className="text-4xl font-extrabold tracking-tight text-gray-900">
-          The Rack
-        </h1>
-        <p className="text-gray-500 mt-2 text-lg">
-          {issues?.length
-            ? `You have ${issues.length} unread newsletters.`
-            : 'You are all caught up.'}
-        </p>
-      </header>
-
-      <div className="space-y-4">
-        {issues?.map((issue) => (
-          <Link
-            key={issue.id}
-            href={`/newsletters/${issue.id}`}
-            className="block group"
-          >
-            <div className="bg-white border border-gray-200 rounded-xl p-6 shadow-sm hover:shadow-md hover:border-blue-300 transition-all cursor-pointer">
-              <div className="flex justify-between items-start mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-blue-600 uppercase tracking-wider">
-                    {/* @ts-ignore - Supabase types sometimes act up with joins */}
-                    {issue.senders?.name || issue.from_email}
-                  </span>
-                  <span className="text-gray-300">•</span>
-                  <span className="text-xs text-gray-400">
-                    {new Date(issue.received_at).toLocaleDateString()}
-                  </span>
-                </div>
-              </div>
-
-              <h3 className="text-xl font-bold text-gray-900 group-hover:text-blue-600 transition-colors mb-2">
-                {issue.subject}
-              </h3>
-
-              <p className="text-gray-600 line-clamp-2 text-base leading-relaxed">
-                {issue.snippet}
-              </p>
+    <div className="min-h-screen p-12 bg-gray-50 font-mono text-sm">
+      <div className="max-w-3xl mx-auto bg-white p-8 rounded-xl shadow border border-gray-200">
+        <h1 className="text-2xl font-bold mb-6 text-blue-600">🔍 Configuration Diagnostic</h1>
+        
+        <div className="space-y-6">
+          <section>
+            <h2 className="font-bold border-b pb-2 mb-2">1. Environment Setup</h2>
+            <div className="grid grid-cols-[200px_1fr] gap-2">
+              <span className="text-gray-500">Supabase URL:</span>
+              <span className="break-all">{supabaseUrl}</span>
+              
+              <span className="text-gray-500">Project ID (Ref):</span>
+              <span className="font-bold bg-yellow-100 px-1">{projectRef}</span>
             </div>
-          </Link>
-        ))}
+          </section>
 
-        {issues?.length === 0 && (
-          <div className="text-center py-24 bg-gray-50 rounded-xl border-2 border-dashed border-gray-200">
-            <div className="text-4xl mb-4">🎉</div>
-            <h3 className="text-xl font-bold text-gray-900">Inbox Zero</h3>
-            <p className="text-gray-500 mt-2">
-              Go read a book or touch some grass.
-            </p>
-          </div>
-        )}
+          <section>
+            <h2 className="font-bold border-b pb-2 mb-2">2. Cookie Search</h2>
+            <div className="grid grid-cols-[200px_1fr] gap-2">
+              <span className="text-gray-500">Looking for Cookie:</span>
+              <span className="break-all">{expectedCookieName}</span>
+              
+              <span className="text-gray-500">Did we find it?</span>
+              <span className={foundCookie ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
+                {foundCookie ? "YES ✅" : "NO ❌"}
+              </span>
+            </div>
+          </section>
+
+          <section>
+            <h2 className="font-bold border-b pb-2 mb-2">3. Visible Cookies</h2>
+            <div className="bg-gray-100 p-4 rounded overflow-auto max-h-40">
+              {allCookies.length === 0 ? "No cookies found." : (
+                <ul className="list-disc pl-4">
+                  {allCookies.map(c => (
+                    <li key={c.name}>
+                      <span className="font-bold text-gray-700">{c.name}</span>
+                      <span className="text-gray-400 text-xs ml-2">({c.value.substring(0, 10)}...)</span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          </section>
+
+          <section>
+            <h2 className="font-bold border-b pb-2 mb-2">4. Auth Result</h2>
+             <div className="grid grid-cols-[200px_1fr] gap-2">
+              <span className="text-gray-500">User Status:</span>
+              <span className={user ? "text-green-600 font-bold" : "text-red-600 font-bold"}>
+                {user ? "LOGGED IN" : "LOGGED OUT"}
+              </span>
+              {error && (
+                <>
+                  <span className="text-gray-500">Error:</span>
+                  <span className="text-red-500">{error.message}</span>
+                </>
+              )}
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );
