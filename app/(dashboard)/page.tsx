@@ -8,9 +8,9 @@ export default async function Dashboard() {
 
   const { data: { user } } = await supabase.auth.getUser();
 
-  if (!user) {
-    return redirect('/login');
-  }
+  //if (!user) {
+  //  return redirect('/login');
+ // }
 
   // Fetch ONLY unread issues for the "Rack"
   const { data: issues } = await supabase
