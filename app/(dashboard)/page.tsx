@@ -1,37 +1,68 @@
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
+import Link from 'next/link';
+import { ArrowUpRight, Clock } from 'lucide-react';
 
-export default async function Dashboard() {
+export default async function Home() {
   const supabase = await createClient();
-  
-  // 1. Try to get the user
-  const { data: { user }, error } = await supabase.auth.getUser();
-  
-  // 2. Look at the raw cookies
-  const allCookies = cookies().getAll();
+
+  const { data: emails, error } = await supabase
+    .from('issues')
+    .select('*, senders!inner(name, status)')
+    .eq('senders.status', 'approved')
+    .order('received_at', { ascending: false });
+
+  if (error) {
+    console.error('Supabase error:', error);
+  }
 
   return (
-    <div className="p-12 space-y-6 max-w-2xl mx-auto font-mono text-sm bg-gray-50 min-h-screen">
-      <h1 className="text-2xl font-bold text-red-600">🛑 Loop Breaker Debug 🛑</h1>
-      
-      <div className="bg-white p-6 shadow rounded">
-        <h2 className="font-bold border-b pb-2 mb-4">1. Server Auth Status</h2>
-        <p>User Found: <strong className={user ? "text-green-600" : "text-red-600"}>{user ? "YES" : "NO"}</strong></p>
-        <p>Error: {error ? error.message : "None"}</p>
-      </div>
+    <div className="p-6 md:p-12 min-h-screen">
+      <header className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
+          <p className="text-sm text-gray-500 mt-1">{emails?.length || 0} issues waiting for you.</p>
+        </div>
+      </header>
 
-      <div className="bg-white p-6 shadow rounded">
-        <h2 className="font-bold border-b pb-2 mb-4">2. Raw Cookies Received by Server</h2>
-        {allCookies.length === 0 ? "No cookies found." : (
-          <ul className="list-disc pl-4 space-y-2 break-all">
-            {allCookies.map(c => (
-              <li key={c.name}>
-                <span className="font-bold text-blue-600">{c.name}</span>
-                <br/>
-                <span className="text-gray-500 text-xs">Len: {c.value.length}</span>
-              </li>
-            ))}
-          </ul>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {emails?.map((email: any) => (
+          <div
+            key={email.id}
+            className="group relative bg-white border border-gray-100 p-6 hover:border-[#FF4E4E] transition-colors h-64 flex flex-col justify-between shadow-sm hover:shadow-md"
+          >
+            <div className="flex justify-between items-start">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#FF4E4E]">
+                {email.senders?.name || 'Unknown'}
+              </span>
+              <span className="text-[10px] text-gray-400 flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {new Date(email.received_at).toLocaleDateString()}
+              </span>
+            </div>
+
+            <div>
+              <h3 className="text-lg font-bold leading-tight text-gray-900 mb-2 group-hover:text-[#FF4E4E] transition-colors">
+                {email.subject}
+              </h3>
+              <p className="text-sm text-gray-500 line-clamp-3 leading-relaxed">{email.snippet}</p>
+            </div>
+
+            <div className="pt-4 border-t border-gray-50 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+              <Link
+                href={`/newsletters/${email.id}`}
+                className="flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-[#FF4E4E]"
+              >
+                Read <ArrowUpRight className="w-3 h-3" />
+              </Link>
+            </div>
+          </div>
+        ))}
+
+        {(!emails || emails.length === 0) && (
+          <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
+            <p className="mb-2 font-bold text-gray-900">All caught up.</p>
+            <p className="text-xs">Approved newsletters will appear here when they arrive.</p>
+          </div>
         )}
       </div>
     </div>

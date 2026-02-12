@@ -7,8 +7,8 @@ import { redirect } from 'next/navigation';
 export async function signInWithGoogle() {
   const supabase = await createClient();
   
-  // Hardcoded for Vercel production
-  const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const redirectUrl = `${siteUrl}/auth/callback`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -32,7 +32,8 @@ export async function login(formData: FormData) {
   const supabase = await createClient();
   const email = (formData.get('email') as string).trim();
   
-  const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+  const redirectUrl = `${siteUrl}/auth/callback`;
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
