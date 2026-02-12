@@ -41,7 +41,8 @@ export default function LoginPage() {
     setError(null);
 
     // Always use the current origin so PKCE cookies and callback run on the same domain.
-    const redirectUrl = `${window.location.origin}/auth/callback`;
+    const redirectUrl = `${window.location.origin}/login`;
+
 
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
