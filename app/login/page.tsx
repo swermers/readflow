@@ -1,12 +1,14 @@
 'use client';
 
 import { createClient } from '@/utils/supabase/client';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
+  const router = useRouter();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -15,15 +17,24 @@ export default function LoginPage() {
     if (!code) return;
 
     const next = params.get('next');
-    const callbackUrl = new URL('/auth/callback', window.location.origin);
-    callbackUrl.searchParams.set('code', code);
+    const safeNext = next?.startsWith('/') ? next : '/';
 
-    if (next?.startsWith('/')) {
-      callbackUrl.searchParams.set('next', next);
-    }
+    const exchangeCode = async () => {
+      setLoading(true);
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
 
-    window.location.replace(callbackUrl.toString());
-  }, []);
+      if (exchangeError) {
+        console.error('Code exchange error on /login:', exchangeError);
+        setError(exchangeError.message);
+        setLoading(false);
+        return;
+      }
+
+      router.replace(safeNext);
+    };
+
+    void exchangeCode();
+  }, [router, supabase]);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
