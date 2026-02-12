@@ -7,8 +7,9 @@ export async function GET(request: Request) {
   const code = searchParams.get('code');
   const next = searchParams.get('next') ?? '/';
   
-  // Hardcode the site URL to ensure we redirect to the secure domain
-  const siteUrl = 'https://readflow-inky.vercel.app';
+  const requestUrl = new URL(request.url);
+  const originFromRequest = requestUrl.origin;
+  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? originFromRequest;
 
   if (code) {
     const cookieStore = cookies();
