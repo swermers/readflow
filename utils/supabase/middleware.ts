@@ -16,14 +16,13 @@ export async function updateSession(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        // 👇 The fix is right here: we explicitly define the type
         setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          );
+          cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
+
           response = NextResponse.next({
             request,
           });
+
           cookiesToSet.forEach(({ name, value, options }) =>
             response.cookies.set(name, value, options)
           );
@@ -32,16 +31,7 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-const { data: { user } } = await supabase.auth.getUser();
-
-  // 🛑 COMMENT OUT THIS WHOLE BLOCK TO STOP THE LOOP 🛑
-  /*
-  if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
-    const url = request.nextUrl.clone();
-    url.pathname = '/login';
-    return NextResponse.redirect(url);
-  }
-  */
+  await supabase.auth.getUser();
 
   return response;
 }

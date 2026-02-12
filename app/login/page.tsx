@@ -11,9 +11,9 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError(null);
-    
-    // We use the direct production URL to ensure the cookie is set on the correct domain
-    const redirectUrl = 'https://readflow-inky.vercel.app/auth/callback';
+
+    // Always use the current origin so PKCE cookies and callback run on the same domain.
+    const redirectUrl = `${window.location.origin}/auth/callback`;
 
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
