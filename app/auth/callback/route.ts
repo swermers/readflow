@@ -7,7 +7,7 @@ export async function GET(request: NextRequest) {
   const next = requestUrl.searchParams.get('next') ?? '/';
 
   const safeNext = next.startsWith('/') ? next : '/';
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? requestUrl.origin;
+  const siteUrl = requestUrl.origin;
 
   let response = NextResponse.redirect(`${siteUrl}${safeNext}`);
 

@@ -1,14 +1,26 @@
 'use server';
 
 import { createClient } from '@/utils/supabase/server';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
+
+function getRequestSiteUrl() {
+  const headerStore = headers();
+  const forwardedProto = headerStore.get('x-forwarded-proto') ?? 'https';
+  const forwardedHost = headerStore.get('x-forwarded-host') ?? headerStore.get('host');
+
+  if (forwardedHost) {
+    return `${forwardedProto}://${forwardedHost}`;
+  }
+
+  return process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
+}
 
 // --- 1. GOOGLE LOGIN ACTION ---
 export async function signInWithGoogle() {
   const supabase = await createClient();
-  
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
-  const redirectUrl = `${siteUrl}/auth/callback`;
+
+  const redirectUrl = `${getRequestSiteUrl()}/auth/callback`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
@@ -31,9 +43,8 @@ export async function signInWithGoogle() {
 export async function login(formData: FormData) {
   const supabase = await createClient();
   const email = (formData.get('email') as string).trim();
-  
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'http://localhost:3000';
-  const redirectUrl = `${siteUrl}/auth/callback`;
+
+  const redirectUrl = `${getRequestSiteUrl()}/auth/callback`;
 
   const { error } = await supabase.auth.signInWithOtp({
     email,
@@ -54,9 +65,9 @@ export async function login(formData: FormData) {
 export async function verifyOtp(formData: FormData) {
   const email = (formData.get('email') as string)?.trim();
   const rawToken = (formData.get('token') as string) || '';
-  
+
   // Remove ALL spaces from the token
-  const token = rawToken.replace(/\s/g, ''); 
+  const token = rawToken.replace(/\s/g, '');
 
   const supabase = await createClient();
 
