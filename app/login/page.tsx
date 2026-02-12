@@ -1,12 +1,29 @@
 'use client';
 
 import { createClient } from '@/utils/supabase/client';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+
+    if (!code) return;
+
+    const next = params.get('next');
+    const callbackUrl = new URL('/auth/callback', window.location.origin);
+    callbackUrl.searchParams.set('code', code);
+
+    if (next?.startsWith('/')) {
+      callbackUrl.searchParams.set('next', next);
+    }
+
+    window.location.replace(callbackUrl.toString());
+  }, []);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
