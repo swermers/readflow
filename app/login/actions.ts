@@ -20,7 +20,7 @@ function getRequestSiteUrl() {
 export async function signInWithGoogle() {
   const supabase = await createClient();
 
-  const redirectUrl = `${getRequestSiteUrl()}/login`;
+  const redirectUrl = `${getRequestSiteUrl()}/auth/callback`;
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
