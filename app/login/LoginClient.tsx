@@ -1,11 +1,6 @@
 'use client';
 
-import { useState } from 'react';
-import { signInWithGoogle } from './actions';
-
 export default function LoginClient() {
-  const [loading, setLoading] = useState(false);
-
   return (
     <div className="min-h-screen flex items-center justify-center bg-white p-6">
       <div className="w-full max-w-sm text-center">
@@ -13,16 +8,12 @@ export default function LoginClient() {
         <h1 className="text-2xl font-bold tracking-tight text-[#1A1A1A] mb-2">Readflow.</h1>
         <p className="text-gray-500 mb-8 text-sm">Your personal newsletter sanctuary.</p>
 
-        <form action={signInWithGoogle}>
-          <button
-            type="submit"
-            onClick={() => setLoading(true)}
-            disabled={loading}
-            className="w-full bg-white border border-gray-300 text-[#1A1A1A] font-medium text-sm p-3 rounded flex items-center justify-center gap-3 hover:bg-gray-50 transition-colors mb-6"
-          >
-            {loading ? 'Connecting...' : 'Continue with Google'}
-          </button>
-        </form>
+        <a
+          href="/auth/google"
+          className="w-full bg-white border border-gray-300 text-[#1A1A1A] font-medium text-sm p-3 rounded flex items-center justify-center gap-3 hover:bg-gray-50 transition-colors mb-6"
+        >
+          Continue with Google
+        </a>
 
         <div className="relative mb-6">
           <div className="absolute inset-0 flex items-center">
