@@ -35,8 +35,11 @@ export async function GET(request: NextRequest) {
       return response;
     }
 
-    console.error('Exchange Error:', error);
+    const encodedError = encodeURIComponent(error.message);
+    return NextResponse.redirect(
+      `${siteUrl}/login?code=${encodeURIComponent(code)}&next=${encodeURIComponent(safeNext)}&message=${encodedError}`
+    );
   }
 
-  return NextResponse.redirect(`${siteUrl}/auth/auth-code-error?error=LoginFailed`);
+  return NextResponse.redirect(`${siteUrl}/auth/auth-code-error?error=MissingCode`);
 }
