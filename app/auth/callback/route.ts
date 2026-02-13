@@ -36,9 +36,7 @@ export async function GET(request: NextRequest) {
     }
 
     const encodedError = encodeURIComponent(error.message);
-    return NextResponse.redirect(
-      `${siteUrl}/login?code=${encodeURIComponent(code)}&next=${encodeURIComponent(safeNext)}&message=${encodedError}`
-    );
+    return NextResponse.redirect(`${siteUrl}/login?message=${encodedError}`);
   }
 
   return NextResponse.redirect(`${siteUrl}/auth/auth-code-error?error=MissingCode`);
