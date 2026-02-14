@@ -1,10 +1,64 @@
 'use client';
 
+import { createClient } from '@/utils/supabase/client';
+import { useRouter } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+
 type LoginClientProps = {
+  code?: string;
+  next?: string;
   message?: string;
 };
 
-export default function LoginClient({ message }: LoginClientProps) {
+export default function LoginClient({ code, next, message }: LoginClientProps) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(message ?? null);
+  const router = useRouter();
+  const supabase = useMemo(() => createClient(), []);
+
+  useEffect(() => {
+    if (!code) return;
+
+    const safeNext = next?.startsWith('/') ? next : '/';
+
+    const exchange = async () => {
+      setLoading(true);
+      const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code);
+
+      if (exchangeError) {
+        setError(exchangeError.message);
+        setLoading(false);
+        return;
+      }
+
+      router.replace(safeNext);
+    };
+
+    void exchange();
+  }, [code, next, router, supabase]);
+
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+    setError(null);
+
+    const redirectUrl = `${window.location.origin}/login`;
+
+    const { error: authError } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+        queryParams: {
+          prompt: 'select_account',
+        },
+      },
+    });
+
+    if (authError) {
+      setError(authError.message);
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-white p-6">
       <div className="w-full max-w-sm text-center">
@@ -12,16 +66,17 @@ export default function LoginClient({ message }: LoginClientProps) {
         <h1 className="text-2xl font-bold tracking-tight text-[#1A1A1A] mb-2">Readflow.</h1>
         <p className="text-gray-500 mb-8 text-sm">Your personal newsletter sanctuary.</p>
 
-        {message && (
-          <div className="mb-4 p-3 text-xs text-red-500 bg-red-50 border border-red-100 rounded">{message}</div>
+        {error && (
+          <div className="mb-4 p-3 text-xs text-red-500 bg-red-50 border border-red-100 rounded">{error}</div>
         )}
 
-        <a
-          href="/auth/google"
-          className="w-full border border-gray-300 text-[#1A1A1A] font-medium text-sm p-3 rounded flex items-center justify-center gap-3 transition-colors mb-6 bg-white hover:bg-gray-50"
+        <button
+          onClick={handleGoogleLogin}
+          disabled={loading}
+          className="w-full border border-gray-300 text-[#1A1A1A] font-medium text-sm p-3 rounded flex items-center justify-center gap-3 transition-colors mb-6 bg-white hover:bg-gray-50 disabled:pointer-events-none disabled:bg-gray-50 disabled:text-gray-400"
         >
-          Continue with Google
-        </a>
+          {loading ? 'Connecting...' : 'Continue with Google'}
+        </button>
 
         <div className="relative mb-6">
           <div className="absolute inset-0 flex items-center">
