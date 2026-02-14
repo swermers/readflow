@@ -1,12 +1,22 @@
 'use client';
 
 import { createClient } from '@/utils/supabase/client';
-import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
+  const router = useRouter();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        router.replace('/');
+      }
+    });
+  }, []);
 
   const handleGoogleLogin = async () => {
     setLoading(true);
