@@ -1,8 +1,15 @@
-import { type NextRequest } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { updateSession } from '@/utils/supabase/middleware';
 
 export async function middleware(request: NextRequest) {
-  // Keep middleware focused on session refresh/cookie propagation.
+  const pathname = request.nextUrl.pathname;
+
+  // Do not run session-refresh middleware on auth callback routes.
+  // It can interfere with OAuth PKCE cookies while the code exchange is in progress.
+  if (pathname.startsWith('/auth')) {
+    return NextResponse.next();
+  }
+
   return await updateSession(request);
 }
 
