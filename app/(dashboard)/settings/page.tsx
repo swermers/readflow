@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Shield, Loader2, Save, Copy, Check } from 'lucide-react';
+import { User, Mail, LogOut, Shield, Loader2, Save, Copy, Check, ExternalLink, ArrowRight } from 'lucide-react';
 import { triggerToast } from '@/components/Toast';
 import { useRouter } from 'next/navigation';
 
@@ -14,6 +14,8 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [testSending, setTestSending] = useState(false);
+  const [testSent, setTestSent] = useState(false);
   const supabase = createClient();
   const router = useRouter();
 
@@ -84,6 +86,62 @@ export default function SettingsPage() {
     setCopied(true);
     triggerToast('Forwarding address copied');
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleTestConnection = async () => {
+    setTestSending(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setTestSending(false);
+      triggerToast('You need to be logged in', 'error');
+      return;
+    }
+
+    // Find or create a Readflow system sender
+    let { data: sender } = await supabase
+      .from('senders')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('email', 'hello@readflow.app')
+      .single();
+
+    if (!sender) {
+      const { data: newSender } = await supabase
+        .from('senders')
+        .insert({
+          user_id: user.id,
+          email: 'hello@readflow.app',
+          name: 'Readflow',
+          status: 'approved',
+        })
+        .select('id')
+        .single();
+      sender = newSender;
+    }
+
+    if (sender) {
+      const { error } = await supabase.from('issues').insert({
+        user_id: user.id,
+        sender_id: sender.id,
+        subject: 'Connection Test — Readflow',
+        snippet: 'This is a test issue to verify your Readflow pipeline is working correctly.',
+        body_html: '<div style="font-family: system-ui, sans-serif;"><h1>Connection Test</h1><p>If you can see this in The Rack, your Readflow pipeline is working correctly.</p></div>',
+        body_text: 'This is a test issue to verify your Readflow pipeline is working correctly.',
+        from_email: 'hello@readflow.app',
+        message_id: `test-${Date.now()}`,
+        received_at: new Date().toISOString(),
+        status: 'unread',
+      });
+
+      if (error) {
+        triggerToast('Failed to send test issue', 'error');
+      } else {
+        triggerToast('Test issue sent! Check The Rack.');
+        setTestSent(true);
+      }
+    }
+
+    setTestSending(false);
   };
 
   const handleDeleteAccount = async () => {
@@ -180,25 +238,82 @@ export default function SettingsPage() {
           </div>
           <div className="md:col-span-8 bg-white border border-gray-200">
 
-             <div className="p-6">
+             <div className="p-6 space-y-6">
                {forwardingAlias ? (
-                 <div className="space-y-4">
-                   <div className="flex items-center gap-3">
-                     <code className="flex-1 bg-[#F5F5F0] px-4 py-3 text-sm font-mono text-[#1A1A1A] border border-gray-200">
-                       {forwardingAlias}@ingest.readflow.app
-                     </code>
-                     <button
-                       onClick={handleCopyAlias}
-                       className="p-3 border border-gray-200 hover:border-[#FF4E4E] hover:text-[#FF4E4E] transition-colors"
-                       title="Copy address"
-                     >
-                       {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                     </button>
+                 <>
+                   {/* Address + copy */}
+                   <div className="space-y-2">
+                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Your Readflow Address</label>
+                     <div className="flex items-center gap-3">
+                       <code className="flex-1 bg-[#F5F5F0] px-4 py-3 text-sm font-mono text-[#1A1A1A] border border-gray-200">
+                         {forwardingAlias}@ingest.readflow.app
+                       </code>
+                       <button
+                         onClick={handleCopyAlias}
+                         className="p-3 border border-gray-200 hover:border-[#FF4E4E] hover:text-[#FF4E4E] transition-colors"
+                         title="Copy address"
+                       >
+                         {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+                       </button>
+                     </div>
                    </div>
-                   <p className="text-xs text-gray-400">
-                     Set up a Gmail/Outlook filter to forward newsletters to this address. They will appear in your Rack automatically.
-                   </p>
-                 </div>
+
+                   {/* Setup links */}
+                   <div className="space-y-3">
+                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Set Up Forwarding</label>
+
+                     <details className="group border border-gray-200">
+                       <summary className="flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium text-[#1A1A1A] hover:bg-gray-50">
+                         <span>Gmail</span>
+                         <ArrowRight className="w-4 h-4 text-gray-400 group-open:rotate-90 transition-transform" />
+                       </summary>
+                       <div className="px-4 pb-4 text-sm text-gray-600 space-y-2">
+                         <ol className="list-decimal list-inside space-y-1.5">
+                           <li>Open <a href="https://mail.google.com/mail/u/0/#settings/fwdandpop" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Forwarding Settings <ExternalLink className="w-3 h-3" /></a></li>
+                           <li>Click &quot;Add a forwarding address&quot;</li>
+                           <li>Paste: <code className="bg-gray-100 px-1 text-xs">{forwardingAlias}@ingest.readflow.app</code></li>
+                           <li>Enter the verification code Gmail sends (it will appear as an issue in The Rack)</li>
+                           <li>Go to <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Filters <ExternalLink className="w-3 h-3" /></a> and create a filter to forward newsletters</li>
+                         </ol>
+                       </div>
+                     </details>
+
+                     <details className="group border border-gray-200">
+                       <summary className="flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium text-[#1A1A1A] hover:bg-gray-50">
+                         <span>Outlook</span>
+                         <ArrowRight className="w-4 h-4 text-gray-400 group-open:rotate-90 transition-transform" />
+                       </summary>
+                       <div className="px-4 pb-4 text-sm text-gray-600 space-y-2">
+                         <ol className="list-decimal list-inside space-y-1.5">
+                           <li>Go to Settings &rarr; Mail &rarr; Rules</li>
+                           <li>Click &quot;Add new rule&quot;</li>
+                           <li>Condition: &quot;From&quot; contains your newsletter sender</li>
+                           <li>Action: &quot;Forward to&quot; &rarr; <code className="bg-gray-100 px-1 text-xs">{forwardingAlias}@ingest.readflow.app</code></li>
+                           <li>Save the rule</li>
+                         </ol>
+                       </div>
+                     </details>
+                   </div>
+
+                   {/* Test connection */}
+                   <div className="pt-2 border-t border-gray-100">
+                     {testSent ? (
+                       <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-4 py-3 border border-green-200">
+                         <Check className="w-4 h-4" />
+                         Test issue sent! Check The Rack to verify.
+                       </div>
+                     ) : (
+                       <button
+                         onClick={handleTestConnection}
+                         disabled={testSending}
+                         className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors disabled:opacity-50"
+                       >
+                         {testSending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                         Test Connection
+                       </button>
+                     )}
+                   </div>
+                 </>
                ) : (
                  <div className="text-center py-6">
                    <Shield className="w-8 h-8 text-gray-300 mx-auto mb-2" />

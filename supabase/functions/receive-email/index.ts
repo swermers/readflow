@@ -14,10 +14,23 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
 // Use service role to bypass RLS (this is server-to-server)
 const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
+const WEBHOOK_SECRET = Deno.env.get('WEBHOOK_SECRET');
+
 Deno.serve(async (req) => {
   // Only accept POST
   if (req.method !== 'POST') {
     return new Response('Method not allowed', { status: 405 });
+  }
+
+  // Verify webhook secret if configured
+  if (WEBHOOK_SECRET) {
+    const providedSecret = req.headers.get('x-webhook-secret');
+    if (providedSecret !== WEBHOOK_SECRET) {
+      return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+        status: 401,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
   }
 
   try {

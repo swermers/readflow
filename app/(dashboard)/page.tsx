@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { ArrowUpRight, Clock } from 'lucide-react';
+import SetupGuide from '@/components/SetupGuide';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -11,6 +12,17 @@ export default async function Home() {
     .eq('senders.status', 'approved')
     .eq('status', 'unread')
     .order('received_at', { ascending: false });
+
+  // Check if this is a new user (no issues at all, no senders)
+  const { count: totalIssues } = await supabase
+    .from('issues')
+    .select('*', { count: 'exact', head: true });
+
+  const { count: totalSenders } = await supabase
+    .from('senders')
+    .select('*', { count: 'exact', head: true });
+
+  const isNewUser = (totalIssues ?? 0) === 0 && (totalSenders ?? 0) === 0;
 
   if (error) {
     console.error('Supabase error:', error);
@@ -71,10 +83,14 @@ export default async function Home() {
         ))}
 
         {(!emails || emails.length === 0) && (
-          <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
-            <p className="mb-2 font-bold text-gray-900">All caught up.</p>
-            <p className="text-xs">Approved newsletters will appear here when they arrive.</p>
-          </div>
+          isNewUser ? (
+            <SetupGuide />
+          ) : (
+            <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
+              <p className="mb-2 font-bold text-gray-900">All caught up.</p>
+              <p className="text-xs">Approved newsletters will appear here when they arrive.</p>
+            </div>
+          )
         )}
       </div>
     </div>
