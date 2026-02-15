@@ -31,7 +31,7 @@ export default function AddSenderModal() {
       user_id: user.id,
       email: email,
       name: name || email.split('@')[0], // Use email prefix if no name provided
-      status: 'active'
+      status: 'approved'
     });
 
     if (error) {
