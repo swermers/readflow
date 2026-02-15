@@ -9,6 +9,7 @@ export default async function Home() {
     .from('issues')
     .select('*, senders!inner(name, status)')
     .eq('senders.status', 'approved')
+    .eq('status', 'unread')
     .order('received_at', { ascending: false });
 
   if (error) {

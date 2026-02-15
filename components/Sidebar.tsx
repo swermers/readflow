@@ -18,7 +18,7 @@ export default function Sidebar() {
   // Fetch the library list when the sidebar loads
   useEffect(() => {
     const getSenders = async () => {
-      const { data } = await supabase.from('senders').select('*');
+      const { data } = await supabase.from('senders').select('*').eq('status', 'approved');
       if (data) setSenders(data);
     };
     getSenders();
