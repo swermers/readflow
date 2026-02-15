@@ -14,6 +14,17 @@ export default async function Home() {
 
   if (error) {
     console.error('Supabase error:', error);
+    return (
+      <div className="p-6 md:p-12 min-h-screen">
+        <header className="mb-12">
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
+        </header>
+        <div className="text-center py-20 bg-red-50 rounded-lg border border-red-100">
+          <p className="text-gray-900 font-medium">Something went wrong loading your newsletters.</p>
+          <p className="text-sm text-gray-500 mt-1">Please refresh the page to try again.</p>
+        </div>
+      </div>
+    );
   }
 
   return (

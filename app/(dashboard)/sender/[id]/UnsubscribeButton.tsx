@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { triggerToast } from '@/components/Toast';
+import { refreshSidebar } from '@/components/Sidebar';
 
 export default function UnsubscribeButton({ senderId, senderName }: { senderId: string; senderName: string }) {
   const [loading, setLoading] = useState(false);
@@ -23,6 +24,7 @@ export default function UnsubscribeButton({ senderId, senderName }: { senderId: 
       console.error('Error blocking sender:', error);
     } else {
       triggerToast(`Blocked ${senderName}`);
+      refreshSidebar();
       router.push('/');
       router.refresh();
     }

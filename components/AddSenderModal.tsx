@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { Plus, X, Loader2 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
+import { triggerToast } from '@/components/Toast';
+import { refreshSidebar } from '@/components/Sidebar';
 
 export default function AddSenderModal() {
   const [isOpen, setIsOpen] = useState(false);
@@ -21,7 +23,7 @@ export default function AddSenderModal() {
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
-      alert('You need to be logged in to add a newsletter!');
+      triggerToast('You need to be logged in to add a newsletter', 'error');
       setIsLoading(false);
       return;
     }
@@ -35,12 +37,14 @@ export default function AddSenderModal() {
     });
 
     if (error) {
-      alert('Error adding newsletter: ' + error.message);
+      triggerToast('Error adding newsletter: ' + error.message, 'error');
     } else {
+      triggerToast('Newsletter added');
       setIsOpen(false);
       setEmail('');
       setName('');
-      router.refresh(); // Refresh the page to show the new link in Sidebar
+      refreshSidebar();
+      router.refresh();
     }
     
     setIsLoading(false);
