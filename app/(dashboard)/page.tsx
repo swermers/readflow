@@ -13,16 +13,19 @@ export default async function Home() {
     .eq('status', 'unread')
     .order('received_at', { ascending: false });
 
-  // Check if this is a new user (no issues at all, no senders)
-  const { count: totalIssues } = await supabase
-    .from('issues')
-    .select('*', { count: 'exact', head: true });
+  // Check if user has connected Gmail yet
+  const { data: { user } } = await supabase.auth.getUser();
+  let gmailConnected = false;
 
-  const { count: totalSenders } = await supabase
-    .from('senders')
-    .select('*', { count: 'exact', head: true });
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('gmail_connected')
+      .eq('id', user.id)
+      .single();
 
-  const isNewUser = (totalIssues ?? 0) === 0 && (totalSenders ?? 0) === 0;
+    gmailConnected = profile?.gmail_connected || false;
+  }
 
   if (error) {
     console.error('Supabase error:', error);
@@ -83,12 +86,12 @@ export default async function Home() {
         ))}
 
         {(!emails || emails.length === 0) && (
-          isNewUser ? (
+          !gmailConnected ? (
             <SetupGuide />
           ) : (
             <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
               <p className="mb-2 font-bold text-gray-900">All caught up.</p>
-              <p className="text-xs">Approved newsletters will appear here when they arrive.</p>
+              <p className="text-xs">Gmail connected. Sync from Settings to import newsletters.</p>
             </div>
           )
         )}

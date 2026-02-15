@@ -2,20 +2,20 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Shield, Loader2, Save, Copy, Check, ExternalLink, ArrowRight } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, ExternalLink, ArrowRight, RefreshCw } from 'lucide-react';
+import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter } from 'next/navigation';
 
 export default function SettingsPage() {
   const [email, setEmail] = useState('');
-  const [forwardingAlias, setForwardingAlias] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [testSending, setTestSending] = useState(false);
-  const [testSent, setTestSent] = useState(false);
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [lastSync, setLastSync] = useState<Date | null>(null);
   const supabase = createClient();
   const router = useRouter();
 
@@ -37,12 +37,13 @@ export default function SettingsPage() {
       .single();
 
     if (profile) {
-      setForwardingAlias(profile.forwarding_alias || '');
-      // Use metadata or profile fields for name
       setFirstName(profile.first_name || user.user_metadata?.full_name?.split(' ')[0] || '');
       setLastName(profile.last_name || user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '');
+      setGmailConnected(profile.gmail_connected || false);
+      if (profile.gmail_last_sync_at) {
+        setLastSync(new Date(profile.gmail_last_sync_at));
+      }
     } else {
-      // Fallback to auth metadata
       const fullName = user.user_metadata?.full_name || '';
       setFirstName(fullName.split(' ')[0] || '');
       setLastName(fullName.split(' ').slice(1).join(' ') || '');
@@ -79,69 +80,70 @@ export default function SettingsPage() {
     setSaving(false);
   };
 
-  const handleCopyAlias = () => {
-    if (!forwardingAlias) return;
-    const fullAddress = `${forwardingAlias}@ingest.readflow.app`;
-    navigator.clipboard.writeText(fullAddress);
-    setCopied(true);
-    triggerToast('Forwarding address copied');
-    setTimeout(() => setCopied(false), 2000);
+  const handleConnectGmail = async () => {
+    const redirectUrl = `${window.location.origin}/auth/callback?next=/settings`;
+
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: redirectUrl,
+        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
+        queryParams: {
+          access_type: 'offline',
+          prompt: 'consent',
+        },
+      },
+    });
   };
 
-  const handleTestConnection = async () => {
-    setTestSending(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setTestSending(false);
-      triggerToast('You need to be logged in', 'error');
+  const handleSyncNow = async () => {
+    setSyncing(true);
+
+    try {
+      const res = await fetch('/api/sync-gmail', {
+        method: 'POST',
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        triggerToast(data.error || 'Sync failed');
+        if (res.status === 401 && data.error?.includes('expired')) {
+          setGmailConnected(false);
+        }
+      } else {
+        triggerToast(data.message || `Imported ${data.imported} newsletters`);
+        setLastSync(new Date());
+        await loadProfile();
+      }
+    } catch (err) {
+      console.error('Sync error:', err);
+      triggerToast('Sync failed');
+    }
+
+    setSyncing(false);
+  };
+
+  const handleDisconnectGmail = async () => {
+    if (!confirm('Disconnect Gmail? You will need to reconnect to sync newsletters.')) {
       return;
     }
 
-    // Find or create a Readflow system sender
-    let { data: sender } = await supabase
-      .from('senders')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('email', 'hello@readflow.app')
-      .single();
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
 
-    if (!sender) {
-      const { data: newSender } = await supabase
-        .from('senders')
-        .insert({
-          user_id: user.id,
-          email: 'hello@readflow.app',
-          name: 'Readflow',
-          status: 'approved',
-        })
-        .select('id')
-        .single();
-      sender = newSender;
-    }
+    await supabase
+      .from('profiles')
+      .update({
+        gmail_connected: false,
+        gmail_access_token: null,
+        gmail_refresh_token: null,
+        gmail_token_expires_at: null,
+      })
+      .eq('id', user.id);
 
-    if (sender) {
-      const { error } = await supabase.from('issues').insert({
-        user_id: user.id,
-        sender_id: sender.id,
-        subject: 'Connection Test — Readflow',
-        snippet: 'This is a test issue to verify your Readflow pipeline is working correctly.',
-        body_html: '<div style="font-family: system-ui, sans-serif;"><h1>Connection Test</h1><p>If you can see this in The Rack, your Readflow pipeline is working correctly.</p></div>',
-        body_text: 'This is a test issue to verify your Readflow pipeline is working correctly.',
-        from_email: 'hello@readflow.app',
-        message_id: `test-${Date.now()}`,
-        received_at: new Date().toISOString(),
-        status: 'unread',
-      });
-
-      if (error) {
-        triggerToast('Failed to send test issue', 'error');
-      } else {
-        triggerToast('Test issue sent! Check The Rack.');
-        setTestSent(true);
-      }
-    }
-
-    setTestSending(false);
+    setGmailConnected(false);
+    triggerToast('Gmail disconnected');
   };
 
   const handleDeleteAccount = async () => {
@@ -167,7 +169,7 @@ export default function SettingsPage() {
       <header className="mb-16 border-b border-black pb-4">
         <h1 className="text-4xl font-bold tracking-tight text-[#1A1A1A]">Control Room.</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Preferences & Connection Status.
+          Preferences & Gmail Connection.
         </p>
       </header>
 
@@ -227,99 +229,93 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Section 2: Forwarding Address */}
+        {/* Section 2: Gmail Connection */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-gray-100">
           <div className="md:col-span-4">
              <h3 className="font-bold text-lg text-black flex items-center gap-2">
                <Mail className="w-5 h-5 text-gray-400" />
-               Forwarding Address
+               Gmail Connection
              </h3>
-             <p className="text-sm text-gray-400 mt-1">Send newsletters here to import them.</p>
+             <p className="text-sm text-gray-400 mt-1">Sync newsletters from Gmail labels.</p>
           </div>
           <div className="md:col-span-8 bg-white border border-gray-200">
 
              <div className="p-6 space-y-6">
-               {forwardingAlias ? (
+               {gmailConnected ? (
                  <>
-                   {/* Address + copy */}
-                   <div className="space-y-2">
-                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Your Readflow Address</label>
-                     <div className="flex items-center gap-3">
-                       <code className="flex-1 bg-[#F5F5F0] px-4 py-3 text-sm font-mono text-[#1A1A1A] border border-gray-200">
-                         {forwardingAlias}@ingest.readflow.app
-                       </code>
-                       <button
-                         onClick={handleCopyAlias}
-                         className="p-3 border border-gray-200 hover:border-[#FF4E4E] hover:text-[#FF4E4E] transition-colors"
-                         title="Copy address"
-                       >
-                         {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
-                       </button>
+                   {/* Connected state */}
+                   <div className="flex items-center justify-between pb-4 border-b border-gray-100">
+                     <div className="flex items-center gap-2">
+                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                       <span className="text-sm font-bold text-gray-900">Gmail Connected</span>
                      </div>
+                     <button
+                       onClick={handleDisconnectGmail}
+                       className="text-xs text-gray-500 hover:text-[#FF4E4E] transition-colors"
+                     >
+                       Disconnect
+                     </button>
                    </div>
 
-                   {/* Setup links */}
+                   {/* Sync button */}
                    <div className="space-y-3">
-                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Set Up Forwarding</label>
+                     <button
+                       onClick={handleSyncNow}
+                       disabled={syncing}
+                       className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors disabled:opacity-50 w-full justify-center"
+                     >
+                       {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                       {syncing ? 'Syncing...' : 'Sync Now'}
+                     </button>
 
-                     <details className="group border border-gray-200">
-                       <summary className="flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium text-[#1A1A1A] hover:bg-gray-50">
-                         <span>Gmail</span>
-                         <ArrowRight className="w-4 h-4 text-gray-400 group-open:rotate-90 transition-transform" />
-                       </summary>
-                       <div className="px-4 pb-4 text-sm text-gray-600 space-y-2">
-                         <ol className="list-decimal list-inside space-y-1.5">
-                           <li>Open <a href="https://mail.google.com/mail/u/0/#settings/fwdandpop" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Forwarding Settings <ExternalLink className="w-3 h-3" /></a></li>
-                           <li>Click &quot;Add a forwarding address&quot;</li>
-                           <li>Paste: <code className="bg-gray-100 px-1 text-xs">{forwardingAlias}@ingest.readflow.app</code></li>
-                           <li>Enter the verification code Gmail sends (it will appear as an issue in The Rack)</li>
-                           <li>Go to <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Filters <ExternalLink className="w-3 h-3" /></a> and create a filter to forward newsletters</li>
-                         </ol>
-                       </div>
-                     </details>
-
-                     <details className="group border border-gray-200">
-                       <summary className="flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium text-[#1A1A1A] hover:bg-gray-50">
-                         <span>Outlook</span>
-                         <ArrowRight className="w-4 h-4 text-gray-400 group-open:rotate-90 transition-transform" />
-                       </summary>
-                       <div className="px-4 pb-4 text-sm text-gray-600 space-y-2">
-                         <ol className="list-decimal list-inside space-y-1.5">
-                           <li>Go to Settings &rarr; Mail &rarr; Rules</li>
-                           <li>Click &quot;Add new rule&quot;</li>
-                           <li>Condition: &quot;From&quot; contains your newsletter sender</li>
-                           <li>Action: &quot;Forward to&quot; &rarr; <code className="bg-gray-100 px-1 text-xs">{forwardingAlias}@ingest.readflow.app</code></li>
-                           <li>Save the rule</li>
-                         </ol>
-                       </div>
-                     </details>
+                     {lastSync && (
+                       <p className="text-xs text-gray-400 text-center">
+                         Last synced {formatDistanceToNow(lastSync, { addSuffix: true })}
+                       </p>
+                     )}
                    </div>
 
-                   {/* Test connection */}
-                   <div className="pt-2 border-t border-gray-100">
-                     {testSent ? (
-                       <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-4 py-3 border border-green-200">
-                         <Check className="w-4 h-4" />
-                         Test issue sent! Check The Rack to verify.
+                   {/* Setup instructions */}
+                   <div className="pt-4 border-t border-gray-100 space-y-3">
+                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Gmail Setup</label>
+
+                     <details className="group border border-gray-200">
+                       <summary className="flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium text-[#1A1A1A] hover:bg-gray-50">
+                         <span>How to sync newsletters</span>
+                         <ArrowRight className="w-4 h-4 text-gray-400 group-open:rotate-90 transition-transform" />
+                       </summary>
+                       <div className="px-4 pb-4 text-sm text-gray-600 space-y-2">
+                         <ol className="list-decimal list-inside space-y-1.5">
+                           <li>In Gmail, go to <a href="https://mail.google.com/mail/u/0/#settings/labels" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Settings → Labels <ExternalLink className="w-3 h-3" /></a></li>
+                           <li>Create a new label called &quot;Readflow&quot;</li>
+                           <li>Go to <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Settings → Filters <ExternalLink className="w-3 h-3" /></a></li>
+                           <li>Create a filter: &quot;From&quot; contains your newsletter sender (e.g., @substack.com)</li>
+                           <li>Action: Apply label &quot;Readflow&quot;</li>
+                           <li>Optionally check &quot;Also apply filter to matching emails&quot; for existing newsletters</li>
+                           <li>Click &quot;Sync Now&quot; above to import newsletters from the Readflow label</li>
+                         </ol>
                        </div>
-                     ) : (
-                       <button
-                         onClick={handleTestConnection}
-                         disabled={testSending}
-                         className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors disabled:opacity-50"
-                       >
-                         {testSending ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                         Test Connection
-                       </button>
-                     )}
+                     </details>
                    </div>
                  </>
                ) : (
-                 <div className="text-center py-6">
-                   <Shield className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                   <p className="text-sm text-gray-500">No forwarding address assigned yet.</p>
-                   <p className="text-xs text-gray-400 mt-1">This will be set up automatically.</p>
-                 </div>
+                 <>
+                   {/* Not connected state */}
+                   <div className="text-center py-6">
+                     <Mail className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                     <p className="text-sm font-bold text-gray-900 mb-1">Connect Gmail to sync newsletters</p>
+                     <p className="text-xs text-gray-500 mb-6">
+                       Read-only access. We only see emails you label &quot;Readflow&quot;.
+                     </p>
+                     <button
+                       onClick={handleConnectGmail}
+                       className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors mx-auto"
+                     >
+                       <Mail className="w-3 h-3" />
+                       Connect Gmail
+                     </button>
+                   </div>
+                 </>
                )}
              </div>
 
