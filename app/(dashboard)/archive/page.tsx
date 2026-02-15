@@ -1,67 +1,113 @@
-import Link from 'next/link';
-import { Search, Calendar, ArrowUpRight } from 'lucide-react';
+'use client';
 
-// Mocking some "Old" emails
-const ARCHIVED_EMAILS = [
-  { id: '201', sender: 'Dan Koe', subject: 'The Art of Focus', date: 'Jan 12', snippet: 'Why you cant concentrate on anything anymore.' },
-  { id: '202', sender: 'James Clear', subject: '3-2-1: On persistence', date: 'Jan 10', snippet: 'The difference between stubbornness and persistence.' },
-  { id: '203', sender: 'The Verge', subject: 'CES 2024 Recap', date: 'Jan 08', snippet: 'The weirdest gadgets we saw in Vegas.' },
-  { id: '204', sender: 'Benedict Evans', subject: 'Tech in 2024', date: 'Jan 01', snippet: 'Predictions for the year ahead.' },
-  { id: '205', sender: 'Huckberry', subject: 'Winter Sale', date: 'Dec 24', snippet: 'Up to 50% off flannel lined pants.' },
-];
+import { useEffect, useState } from 'react';
+import { createClient } from '@/utils/supabase/client';
+import Link from 'next/link';
+import { Search, ArrowUpRight, Layers } from 'lucide-react';
 
 export default function ArchivePage() {
+  const [issues, setIssues] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const supabase = createClient();
+
+  useEffect(() => {
+    fetchArchived();
+  }, []);
+
+  const fetchArchived = async () => {
+    const { data, error } = await supabase
+      .from('issues')
+      .select('*, senders!inner(name, status)')
+      .eq('status', 'archived')
+      .order('archived_at', { ascending: false });
+
+    if (error) {
+      console.error('Error fetching archived issues:', error);
+    }
+    if (data) setIssues(data);
+    setLoading(false);
+  };
+
+  const filtered = searchQuery.trim()
+    ? issues.filter(
+        (issue) =>
+          issue.subject?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          issue.snippet?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          issue.senders?.name?.toLowerCase().includes(searchQuery.toLowerCase())
+      )
+    : issues;
+
+  if (loading) return <div className="p-12 text-gray-400">Loading the vault...</div>;
+
   return (
     <div className="p-8 md:p-12 min-h-screen">
-      
+
       {/* Header */}
       <header className="mb-12 border-b border-black pb-4">
         <h1 className="text-4xl font-bold tracking-tight text-[#1A1A1A]">The Vault.</h1>
         <p className="text-sm text-gray-500 mt-1">
-          Everything you have read.
+          {issues.length} archived {issues.length === 1 ? 'issue' : 'issues'}.
         </p>
       </header>
 
-      {/* Search Bar (Visual only for now) */}
+      {/* Search Bar */}
       <div className="relative mb-12 max-w-lg">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-        <input 
-          type="text" 
-          placeholder="Search for topics, authors, or keywords..." 
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="Search for topics, authors, or keywords..."
           className="w-full pl-12 pr-4 py-4 bg-gray-50 border border-gray-200 focus:outline-none focus:border-black focus:ring-1 focus:ring-black transition-all text-sm font-medium"
         />
       </div>
 
       {/* The List */}
-      <div className="space-y-2">
-        {ARCHIVED_EMAILS.map((email) => (
-          <div key={email.id} className="group flex items-center justify-between p-4 bg-white border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer">
-             
-             <div className="flex-1 min-w-0 pr-8">
-               <div className="flex items-center gap-3 mb-1">
-                 <span className="font-bold text-sm text-gray-900">{email.sender}</span>
-                 <span className="text-xs text-gray-400">•</span>
-                 <span className="text-xs text-gray-500">{email.date}</span>
-               </div>
-               <h3 className="text-base font-medium text-black truncate group-hover:text-[#FF4E4E] transition-colors">{email.subject}</h3>
-               <p className="text-sm text-gray-400 truncate mt-0.5">{email.snippet}</p>
-             </div>
+      {filtered.length === 0 ? (
+        <div className="text-center py-20 bg-gray-50 rounded-lg border border-gray-100 border-dashed">
+          <Layers className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+          {searchQuery ? (
+            <>
+              <p className="text-gray-500 font-medium">No matches found.</p>
+              <p className="text-sm text-gray-400">Try a different search term.</p>
+            </>
+          ) : (
+            <>
+              <p className="text-gray-500 font-medium">The Vault is empty.</p>
+              <p className="text-sm text-gray-400">Archived issues will appear here.</p>
+            </>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {filtered.map((issue) => (
+            <Link key={issue.id} href={`/newsletters/${issue.id}`}>
+              <div className="group flex items-center justify-between p-4 bg-white border-b border-gray-100 hover:bg-gray-50 transition-colors cursor-pointer">
 
-             <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-               <ArrowUpRight className="w-4 h-4 text-gray-400" />
-             </div>
+                <div className="flex-1 min-w-0 pr-8">
+                  <div className="flex items-center gap-3 mb-1">
+                    <span className="font-bold text-sm text-gray-900">{issue.senders?.name || 'Unknown'}</span>
+                    <span className="text-xs text-gray-400">&middot;</span>
+                    <span className="text-xs text-gray-500">
+                      {issue.archived_at
+                        ? new Date(issue.archived_at).toLocaleDateString()
+                        : new Date(issue.received_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <h3 className="text-base font-medium text-black truncate group-hover:text-[#FF4E4E] transition-colors">{issue.subject}</h3>
+                  <p className="text-sm text-gray-400 truncate mt-0.5">{issue.snippet}</p>
+                </div>
 
-          </div>
-        ))}
-      </div>
+                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
+                  <ArrowUpRight className="w-4 h-4 text-gray-400" />
+                </div>
 
-      {/* Pagination / Load More */}
-      <div className="mt-12 text-center">
-        <button className="text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-black transition-colors">
-          Load older issues
-        </button>
-      </div>
-
+              </div>
+            </Link>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
