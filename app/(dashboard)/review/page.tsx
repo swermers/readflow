@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import { CheckCircle, XCircle, Shield, AlertCircle } from 'lucide-react';
-import { triggerToast } from '@/components/Toast'; // We'll use your toast system!
+import { triggerToast } from '@/components/Toast';
+import { refreshSidebar } from '@/components/Sidebar';
 
 export default function ReviewPage() {
   const [requests, setRequests] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
 
   // 1. Fetch only 'pending' senders
@@ -16,11 +18,15 @@ export default function ReviewPage() {
   }, []);
 
   const fetchRequests = async () => {
-    const { data } = await supabase
+    const { data, error: fetchError } = await supabase
       .from('senders')
-      .select('*, issues(snippet)') // Get the sender AND a snippet of their latest email
+      .select('*, issues(snippet)')
       .eq('status', 'pending');
-    
+
+    if (fetchError) {
+      console.error('Error fetching review queue:', fetchError);
+      setError('Failed to load the review queue.');
+    }
     if (data) setRequests(data);
     setLoading(false);
   };
@@ -38,17 +44,34 @@ export default function ReviewPage() {
 
     if (error) {
       console.error('Error updating status:', error);
-      // Ideally, revert the UI change here if it fails
+      triggerToast('Failed to update sender. Please try again.', 'error');
+      fetchRequests(); // Revert by re-fetching
     } else {
       triggerToast(decision === 'approved' ? `Added ${name} to Library` : `Blocked ${name}`);
-      
-      // Force a refresh of the Sidebar data (optional, but good for sync)
-      // For now, a simple page refresh or router.refresh() works, 
-      // but since Sidebar works on its own logic, it will update on next navigation.
+      refreshSidebar();
     }
   };
 
   if (loading) return <div className="p-12 text-gray-400">Loading protocol...</div>;
+
+  if (error) return (
+    <div className="max-w-4xl mx-auto p-6 md:p-12">
+      <header className="mb-12 border-b border-gray-100 pb-8">
+        <h1 className="text-3xl md:text-4xl font-bold tracking-tight mb-2">Gatekeeper.</h1>
+      </header>
+      <div className="text-center py-20 bg-red-50 rounded-lg border border-red-100">
+        <AlertCircle className="w-12 h-12 text-[#FF4E4E] mx-auto mb-4" />
+        <p className="text-gray-900 font-medium">Something went wrong.</p>
+        <p className="text-sm text-gray-500 mt-1">{error}</p>
+        <button
+          onClick={() => { setError(null); setLoading(true); fetchRequests(); }}
+          className="mt-6 px-6 py-2 bg-[#1A1A1A] text-white text-xs font-bold uppercase tracking-widest hover:bg-[#FF4E4E] transition-colors"
+        >
+          Try Again
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="max-w-4xl mx-auto p-6 md:p-12">

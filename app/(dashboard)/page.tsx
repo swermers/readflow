@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { ArrowUpRight, Clock } from 'lucide-react';
+import SetupGuide from '@/components/SetupGuide';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -9,10 +10,36 @@ export default async function Home() {
     .from('issues')
     .select('*, senders!inner(name, status)')
     .eq('senders.status', 'approved')
+    .eq('status', 'unread')
     .order('received_at', { ascending: false });
+
+  // Check if user has connected Gmail yet
+  const { data: { user } } = await supabase.auth.getUser();
+  let gmailConnected = false;
+
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('gmail_connected')
+      .eq('id', user.id)
+      .single();
+
+    gmailConnected = profile?.gmail_connected || false;
+  }
 
   if (error) {
     console.error('Supabase error:', error);
+    return (
+      <div className="p-6 md:p-12 min-h-screen">
+        <header className="mb-12">
+          <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
+        </header>
+        <div className="text-center py-20 bg-red-50 rounded-lg border border-red-100">
+          <p className="text-gray-900 font-medium">Something went wrong loading your newsletters.</p>
+          <p className="text-sm text-gray-500 mt-1">Please refresh the page to try again.</p>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -59,10 +86,14 @@ export default async function Home() {
         ))}
 
         {(!emails || emails.length === 0) && (
-          <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
-            <p className="mb-2 font-bold text-gray-900">All caught up.</p>
-            <p className="text-xs">Approved newsletters will appear here when they arrive.</p>
-          </div>
+          !gmailConnected ? (
+            <SetupGuide />
+          ) : (
+            <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
+              <p className="mb-2 font-bold text-gray-900">All caught up.</p>
+              <p className="text-xs">Gmail connected. Sync from Settings to import newsletters.</p>
+            </div>
+          )
         )}
       </div>
     </div>

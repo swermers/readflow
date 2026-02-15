@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import Link from 'next/link';
-import { Search, ArrowUpRight, Layers } from 'lucide-react';
+import { Search, ArrowUpRight, Layers, AlertCircle } from 'lucide-react';
 
 export default function ArchivePage() {
   const [issues, setIssues] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const supabase = createClient();
 
@@ -16,14 +17,15 @@ export default function ArchivePage() {
   }, []);
 
   const fetchArchived = async () => {
-    const { data, error } = await supabase
+    const { data, error: fetchError } = await supabase
       .from('issues')
       .select('*, senders!inner(name, status)')
       .eq('status', 'archived')
       .order('archived_at', { ascending: false });
 
-    if (error) {
-      console.error('Error fetching archived issues:', error);
+    if (fetchError) {
+      console.error('Error fetching archived issues:', fetchError);
+      setError('Failed to load archived issues.');
     }
     if (data) setIssues(data);
     setLoading(false);
@@ -39,6 +41,25 @@ export default function ArchivePage() {
     : issues;
 
   if (loading) return <div className="p-12 text-gray-400">Loading the vault...</div>;
+
+  if (error) return (
+    <div className="p-8 md:p-12 min-h-screen">
+      <header className="mb-12 border-b border-black pb-4">
+        <h1 className="text-4xl font-bold tracking-tight text-[#1A1A1A]">The Vault.</h1>
+      </header>
+      <div className="text-center py-20 bg-red-50 rounded-lg border border-red-100">
+        <AlertCircle className="w-12 h-12 text-[#FF4E4E] mx-auto mb-4" />
+        <p className="text-gray-900 font-medium">Something went wrong.</p>
+        <p className="text-sm text-gray-500 mt-1">{error}</p>
+        <button
+          onClick={() => { setError(null); setLoading(true); fetchArchived(); }}
+          className="mt-6 px-6 py-2 bg-[#1A1A1A] text-white text-xs font-bold uppercase tracking-widest hover:bg-[#FF4E4E] transition-colors"
+        >
+          Try Again
+        </button>
+      </div>
+    </div>
+  );
 
   return (
     <div className="p-8 md:p-12 min-h-screen">

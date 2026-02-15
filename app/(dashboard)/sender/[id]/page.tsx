@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { ArrowLeft, Clock, Globe, ArrowUpRight } from 'lucide-react';
 import { notFound } from 'next/navigation';
+import UnsubscribeButton from './UnsubscribeButton';
 
 export default async function SenderPage({ params }: { params: { id: string } }) {
   const supabase = await createClient();
@@ -55,9 +56,7 @@ export default async function SenderPage({ params }: { params: { id: string } })
           >
             <Globe className="w-4 h-4" /> Website
           </a>
-          <button className="px-4 py-2 border border-gray-200 hover:border-red-200 hover:text-red-600 rounded text-xs font-bold uppercase tracking-widest text-gray-400 transition-colors">
-            Unsubscribe
-          </button>
+          <UnsubscribeButton senderId={sender.id} senderName={sender.name} />
         </div>
       </header>
 
@@ -91,7 +90,7 @@ export default async function SenderPage({ params }: { params: { id: string } })
         
         {(!issues || issues.length === 0) && (
            <div className="col-span-full py-12 text-center text-gray-400">
-             <p className="text-sm">No issues archived from this sender yet.</p>
+             <p className="text-sm">No issues from this sender yet.</p>
            </div>
         )}
       </div>
