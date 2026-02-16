@@ -2,6 +2,8 @@ import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
 import { ArrowUpRight, Clock } from 'lucide-react';
 import SetupGuide from '@/components/SetupGuide';
+import SyncButton from '@/components/SyncButton';
+import AutoSync from '@/components/AutoSync';
 
 export default async function Home() {
   const supabase = await createClient();
@@ -16,15 +18,17 @@ export default async function Home() {
   // Check if user has connected Gmail yet
   const { data: { user } } = await supabase.auth.getUser();
   let gmailConnected = false;
+  let lastSyncAt: string | null = null;
 
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('gmail_connected')
+      .select('gmail_connected, gmail_last_sync_at')
       .eq('id', user.id)
       .single();
 
     gmailConnected = profile?.gmail_connected || false;
+    lastSyncAt = profile?.gmail_last_sync_at || null;
   }
 
   if (error) {
@@ -44,11 +48,17 @@ export default async function Home() {
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
+      {/* Auto-sync in background when Gmail is connected */}
+      {gmailConnected && <AutoSync lastSyncAt={lastSyncAt} />}
+
       <header className="mb-12 flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">The Rack.</h1>
           <p className="text-sm text-gray-500 mt-1">{emails?.length || 0} issues waiting for you.</p>
         </div>
+        {gmailConnected && (emails?.length ?? 0) > 0 && (
+          <SyncButton variant="compact" />
+        )}
       </header>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -87,11 +97,16 @@ export default async function Home() {
 
         {(!emails || emails.length === 0) && (
           !gmailConnected ? (
-            <SetupGuide />
+            <SetupGuide gmailConnected={gmailConnected} />
           ) : (
-            <div className="col-span-full py-12 text-center text-gray-400 border-2 border-dashed border-gray-100 rounded-lg">
+            <div className="col-span-full py-12 text-center border-2 border-dashed border-gray-100 rounded-lg">
               <p className="mb-2 font-bold text-gray-900">All caught up.</p>
-              <p className="text-xs">Gmail connected. Sync from Settings to import newsletters.</p>
+              <p className="text-xs text-gray-500 mb-6">
+                No unread newsletters. Sync to check for new ones.
+              </p>
+              <div className="flex justify-center">
+                <SyncButton />
+              </div>
             </div>
           )
         )}
