@@ -146,16 +146,15 @@ export default function LibraryPage() {
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
-          {filtered.map((sender, index) => (
+          {filtered.map((sender) => (
             <Link key={sender.id} href={`/sender/${sender.id}?view=library`} className="group">
               <article className="relative flex h-48 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-6 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
-                <div className="flex items-start justify-between gap-2">
-                  <span className="text-2xl font-black leading-none tracking-tight text-ink-faint/60">{String(index + 1).padStart(2, '0')}</span>
+                <div className="flex items-start justify-end gap-2">
                   <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">{sender.totalCount}</span>
                 </div>
 
                 <div>
-                  <h3 className="truncate text-base md:text-lg font-black text-ink transition-colors group-hover:text-accent">{sender.name}</h3>
+                  <h3 className="truncate text-lg md:text-xl font-black text-ink transition-colors group-hover:text-accent">{sender.name}</h3>
                   <p className="mt-1 truncate text-[10px] md:text-xs font-mono text-ink-faint">{sender.email}</p>
                 </div>
 
