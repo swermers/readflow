@@ -33,19 +33,29 @@ function SettingsContent() {
 
     setEmail(user.email || '');
 
-    // Try to load profile from profiles table
+    // Load base profile fields (always present)
     const { data: profile } = await supabase
       .from('profiles')
-      .select('*')
+      .select('id, first_name, last_name')
       .eq('id', user.id)
       .single();
 
     if (profile) {
       setFirstName(profile.first_name || user.user_metadata?.full_name?.split(' ')[0] || '');
       setLastName(profile.last_name || user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '');
-      setGmailConnected(profile.gmail_connected || false);
-      if (profile.gmail_last_sync_at) {
-        setLastSync(new Date(profile.gmail_last_sync_at));
+
+      // Gmail columns may not exist if migration 002 hasn't been run — query separately
+      const { data: gmailProfile } = await supabase
+        .from('profiles')
+        .select('gmail_connected, gmail_last_sync_at')
+        .eq('id', user.id)
+        .single();
+
+      if (gmailProfile) {
+        setGmailConnected(gmailProfile.gmail_connected || false);
+        if (gmailProfile.gmail_last_sync_at) {
+          setLastSync(new Date(gmailProfile.gmail_last_sync_at));
+        }
       }
     } else {
       const fullName = user.user_metadata?.full_name || '';
@@ -80,13 +90,14 @@ function SettingsContent() {
         break;
       case 'error': {
         const errorDetail = searchParams.get('gmail_error');
+        const isMigrationError = errorDetail?.includes('migration required') || errorDetail?.includes('schema cache');
         setGmailError(
           errorDetail
             ? `Gmail connection error: ${errorDetail}`
             : 'Gmail connection failed. The OAuth flow did not complete successfully. ' +
               'Please check your Google Cloud Console configuration.'
         );
-        triggerToast('Gmail connection failed');
+        triggerToast(isMigrationError ? 'Database migration required — see details below' : 'Gmail connection failed');
         break;
       }
     }
@@ -368,13 +379,22 @@ function SettingsContent() {
                                <summary className="cursor-pointer font-medium hover:text-red-800">
                                  How to fix this
                                </summary>
-                               <ol className="list-decimal list-inside mt-2 space-y-1 text-red-600">
-                                 <li>Go to <strong>Google Cloud Console</strong> &rarr; APIs &amp; Services &rarr; Library</li>
-                                 <li>Search for &quot;Gmail API&quot; and <strong>enable</strong> it</li>
-                                 <li>Go to OAuth consent screen &rarr; Edit &rarr; Add scopes</li>
-                                 <li>Use &quot;Manually add scopes&quot; and enter: <code className="bg-red-100 px-1">https://www.googleapis.com/auth/gmail.readonly</code></li>
-                                 <li>Save and try connecting again</li>
-                               </ol>
+                               {gmailError?.includes('migration required') || gmailError?.includes('schema cache') ? (
+                                 <ol className="list-decimal list-inside mt-2 space-y-1 text-red-600">
+                                   <li>Open your <strong>Supabase project dashboard</strong> &rarr; SQL Editor</li>
+                                   <li>Run the contents of <code className="bg-red-100 px-1">supabase/migrations/002_add_gmail_tokens.sql</code></li>
+                                   <li>This adds the required Gmail token columns to the profiles table</li>
+                                   <li>Come back here and click &quot;Connect Gmail&quot; again</li>
+                                 </ol>
+                               ) : (
+                                 <ol className="list-decimal list-inside mt-2 space-y-1 text-red-600">
+                                   <li>Go to <strong>Google Cloud Console</strong> &rarr; APIs &amp; Services &rarr; Library</li>
+                                   <li>Search for &quot;Gmail API&quot; and <strong>enable</strong> it</li>
+                                   <li>Go to OAuth consent screen &rarr; Edit &rarr; Add scopes</li>
+                                   <li>Use &quot;Manually add scopes&quot; and enter: <code className="bg-red-100 px-1">https://www.googleapis.com/auth/gmail.readonly</code></li>
+                                   <li>Save and try connecting again</li>
+                                 </ol>
+                               )}
                              </details>
                            </div>
                          </div>

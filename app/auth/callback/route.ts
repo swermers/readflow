@@ -57,10 +57,12 @@ export async function GET(request: Request) {
       console.log('[Auth Callback] provider_refresh_token present:', !!providerRefreshToken);
       console.log('[Auth Callback] isGmailConnect:', isGmailConnect);
 
-      // Check if user has a profile, create one if not
+      // Check if user has a profile, create one if not.
+      // Only select base columns here — gmail columns may not exist yet
+      // if the 002_add_gmail_tokens migration hasn't been applied.
       const { data: existing } = await supabase
         .from('profiles')
-        .select('id, gmail_connected, gmail_refresh_token')
+        .select('id')
         .eq('id', user.id)
         .single();
 
@@ -75,11 +77,36 @@ export async function GET(request: Request) {
         }
       }
 
+      // Try to read gmail state separately — this gracefully detects
+      // whether the gmail columns exist in the database.
+      let gmailColumnsExist = true;
+      let existingGmailState: { gmail_connected: boolean | null; gmail_refresh_token: string | null } | null = null;
+      {
+        const { data, error: gmailSelectErr } = await supabase
+          .from('profiles')
+          .select('gmail_connected, gmail_refresh_token')
+          .eq('id', user.id)
+          .single();
+        if (gmailSelectErr && gmailSelectErr.message?.includes('schema cache')) {
+          gmailColumnsExist = false;
+          console.error('[Auth Callback] Gmail columns not found in profiles table. Run migration 002_add_gmail_tokens.sql');
+        } else if (data) {
+          existingGmailState = data;
+        }
+      }
+
       // Save Gmail OAuth tokens if present (means user granted gmail.readonly scope)
       let gmailConnected = false;
       let tokenSaveError: string | null = null;
 
-      if (providerRefreshToken) {
+      if (!gmailColumnsExist) {
+        // The gmail columns haven't been added to the database yet
+        tokenSaveError =
+          'Database migration required: the gmail token columns do not exist in the profiles table. ' +
+          'Please run the SQL in supabase/migrations/002_add_gmail_tokens.sql against your Supabase project, ' +
+          'then try connecting Gmail again.';
+        console.error('[Auth Callback]', tokenSaveError);
+      } else if (providerRefreshToken) {
         const { error: updateErr } = await supabase
           .from('profiles')
           .update({
@@ -115,11 +142,11 @@ export async function GET(request: Request) {
         }
 
         // Check if user already had a refresh token stored (from a previous grant)
-        if (existing?.gmail_refresh_token) {
+        if (existingGmailState?.gmail_refresh_token) {
           gmailConnected = true;
         }
       } else {
-        // Neither token present — this is the sign-in loop cause
+        // Neither token present
         console.warn('[Auth Callback] No provider tokens received from OAuth session.');
         console.warn('[Auth Callback] This usually means:');
         console.warn('  1. Gmail API is not enabled in Google Cloud Console');
@@ -127,7 +154,7 @@ export async function GET(request: Request) {
         console.warn('  3. The Supabase Google provider is not configured to return provider tokens');
 
         // Check if the user previously connected (tokens already exist)
-        if (existing?.gmail_connected && existing?.gmail_refresh_token) {
+        if (existingGmailState?.gmail_connected && existingGmailState?.gmail_refresh_token) {
           gmailConnected = true;
         }
       }
