@@ -18,7 +18,7 @@ export default function IssueActions({ issueId, currentStatus, senderWebsite }: 
 
   const updateStatus = async (newStatus: 'read' | 'archived' | 'unread') => {
     setLoading(true);
-    
+
     try {
       const res = await fetch(`/api/issues/${issueId}`, {
         method: 'PATCH',
@@ -28,48 +28,47 @@ export default function IssueActions({ issueId, currentStatus, senderWebsite }: 
 
       if (res.ok) {
         setStatus(newStatus);
-        
+
         if (newStatus === 'archived') {
           triggerToast('Moved to Archive');
-          // Navigate back to the rack after a brief moment
           setTimeout(() => router.push('/'), 500);
         } else if (newStatus === 'unread') {
           triggerToast('Marked as unread');
         }
-        
+
         router.refresh();
       }
     } catch (err) {
       console.error('Failed to update status:', err);
     }
-    
+
     setLoading(false);
   };
 
   return (
-    <div className="mt-20 pt-10 border-t border-gray-100 flex justify-between items-center">
-      <div className="flex gap-3">
+    <div className="mt-16 pt-8 border-t border-line flex flex-wrap justify-between items-center gap-4">
+      <div className="flex gap-4">
         {status !== 'archived' ? (
-          <button 
+          <button
             onClick={() => updateStatus('archived')}
             disabled={loading}
-            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-black transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 text-label uppercase text-ink-faint hover:text-ink transition-colors disabled:opacity-50"
           >
             <Archive className="w-4 h-4" />
-            Archive Issue
+            Archive
           </button>
         ) : (
-          <span className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-green-600">
+          <span className="flex items-center gap-2 text-label uppercase text-green-600 dark:text-green-400">
             <Check className="w-4 h-4" />
             Archived
           </span>
         )}
 
         {status === 'read' && (
-          <button 
+          <button
             onClick={() => updateStatus('unread')}
             disabled={loading}
-            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-black transition-colors disabled:opacity-50"
+            className="flex items-center gap-2 text-label uppercase text-ink-faint hover:text-ink transition-colors disabled:opacity-50"
           >
             <BookOpen className="w-4 h-4" />
             Mark Unread
@@ -77,14 +76,16 @@ export default function IssueActions({ issueId, currentStatus, senderWebsite }: 
         )}
       </div>
 
-      <a 
-        href={senderWebsite || '#'} 
-        target="_blank" 
-        rel="noopener noreferrer"
-        className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-[#FF4E4E] transition-colors"
-      >
-        Visit Website <Globe className="w-4 h-4" />
-      </a>
+      {senderWebsite && (
+        <a
+          href={senderWebsite}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="flex items-center gap-2 text-label uppercase text-ink-faint hover:text-accent transition-colors"
+        >
+          Visit Website <Globe className="w-4 h-4" />
+        </a>
+      )}
     </div>
   );
 }

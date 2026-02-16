@@ -7,7 +7,6 @@ import UnsubscribeButton from './UnsubscribeButton';
 export default async function SenderPage({ params }: { params: { id: string } }) {
   const supabase = await createClient();
 
-  // 1. Fetch Sender Details
   const { data: sender } = await supabase
     .from('senders')
     .select('*')
@@ -16,7 +15,6 @@ export default async function SenderPage({ params }: { params: { id: string } })
 
   if (!sender) return notFound();
 
-  // 2. Fetch ALL issues from this sender
   const { data: issues } = await supabase
     .from('issues')
     .select('*')
@@ -25,73 +23,75 @@ export default async function SenderPage({ params }: { params: { id: string } })
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
-      
+
       {/* Navigation */}
       <div className="mb-8">
-        <Link href="/" className="inline-flex items-center text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-[#FF4E4E] transition-colors">
-          <ArrowLeft className="w-4 h-4 mr-2" />
+        <Link href="/" className="inline-flex items-center gap-2 text-label uppercase text-ink-faint hover:text-accent transition-colors">
+          <ArrowLeft className="w-4 h-4" />
           Back to Rack
         </Link>
       </div>
 
       {/* Header Profile */}
-      <header className="mb-12 border-b border-gray-100 pb-12">
+      <header className="mb-10 pb-10 border-b border-line">
         <div className="flex items-center gap-6 mb-6">
-          <div className="w-20 h-20 bg-[#F5F5F0] rounded-full flex items-center justify-center text-3xl font-bold text-gray-400">
+          <div className="w-16 h-16 bg-surface-overlay rounded-full flex items-center justify-center text-2xl font-bold text-ink-faint">
             {sender.name[0]}
           </div>
           <div>
-            <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-[#1A1A1A]">{sender.name}</h1>
-            <a href={`mailto:${sender.email}`} className="text-gray-400 text-sm hover:text-[#FF4E4E] transition-colors">
+            <h1 className="text-display-lg text-ink">{sender.name}</h1>
+            <a href={`mailto:${sender.email}`} className="text-ink-faint text-sm hover:text-accent transition-colors">
               {sender.email}
             </a>
           </div>
         </div>
 
-        <div className="flex gap-4">
-          <a 
-            href={sender.website_url || '#'} 
-            target="_blank" 
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gray-50 hover:bg-gray-100 rounded text-xs font-bold uppercase tracking-widest text-gray-600 transition-colors"
-          >
-            <Globe className="w-4 h-4" /> Website
-          </a>
+        <div className="flex gap-3">
+          {sender.website_url && (
+            <a
+              href={sender.website_url}
+              target="_blank"
+              className="inline-flex items-center gap-2 px-4 py-2 bg-surface-raised hover:bg-surface-overlay border border-line text-label uppercase text-ink-muted transition-colors"
+            >
+              <Globe className="w-4 h-4" /> Website
+            </a>
+          )}
           <UnsubscribeButton senderId={sender.id} senderName={sender.name} />
         </div>
       </header>
 
-      {/* List of Issues */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      {/* Issues Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
         {issues?.map((issue) => (
-          <div key={issue.id} className="group relative bg-white border border-gray-100 p-6 hover:border-[#FF4E4E] transition-colors h-64 flex flex-col justify-between shadow-sm hover:shadow-md">
-            
-            <span className="text-[10px] text-gray-400 flex items-center gap-1">
-              <Clock className="w-3 h-3" />
-              {new Date(issue.received_at).toLocaleDateString()}
-            </span>
+          <Link key={issue.id} href={`/newsletters/${issue.id}`} className="group">
+            <div className="bg-surface border border-line p-6 hover:border-accent transition-all duration-200 h-64 flex flex-col justify-between">
+              <span className="text-[10px] text-ink-faint flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {new Date(issue.received_at).toLocaleDateString()}
+              </span>
 
-            <div>
-              <h3 className="text-lg font-bold leading-tight text-gray-900 mb-2 group-hover:text-[#FF4E4E] transition-colors">
-                {issue.subject}
-              </h3>
-              <p className="text-sm text-gray-500 line-clamp-3 leading-relaxed">
-                {issue.snippet}
-              </p>
+              <div>
+                <h3 className="text-lg font-bold leading-tight text-ink mb-2 group-hover:text-accent transition-colors">
+                  {issue.subject}
+                </h3>
+                <p className="text-sm text-ink-muted line-clamp-3 leading-relaxed">
+                  {issue.snippet}
+                </p>
+              </div>
+
+              <div className="pt-4 border-t border-line flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="flex items-center gap-1 text-label uppercase text-accent">
+                  Read <ArrowUpRight className="w-3 h-3" />
+                </span>
+              </div>
             </div>
-
-            <div className="pt-4 border-t border-gray-50 flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-              <Link href={`/newsletters/${issue.id}`} className="flex items-center gap-1 text-xs font-bold uppercase tracking-widest text-[#FF4E4E]">
-                Read <ArrowUpRight className="w-3 h-3" />
-              </Link>
-            </div>
-
-          </div>
+          </Link>
         ))}
-        
+
         {(!issues || issues.length === 0) && (
-           <div className="col-span-full py-12 text-center text-gray-400">
-             <p className="text-sm">No issues from this sender yet.</p>
-           </div>
+          <div className="col-span-full py-12 text-center text-ink-faint">
+            <p className="text-sm">No issues from this sender yet.</p>
+          </div>
         )}
       </div>
     </div>

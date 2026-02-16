@@ -22,15 +22,12 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    // Always use the current origin so PKCE cookies and callback run on the same domain.
     const redirectUrl = `${window.location.origin}/auth/callback`;
 
     const { error: authError } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
-        // flowType: 'pkce' is the default in @supabase/ssr, 
-        // but explicitly defining it can help in some versions
         queryParams: {
           prompt: 'select_account',
         },
@@ -45,14 +42,16 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-white p-6">
+    <div className="min-h-screen flex items-center justify-center bg-surface p-6">
       <div className="w-full max-w-sm text-center">
-        <div className="inline-block h-1 w-8 bg-[#FF4E4E] mb-8"></div>
-        <h1 className="text-2xl font-bold tracking-tight text-[#1A1A1A] mb-2">Readflow.</h1>
-        <p className="text-gray-500 mb-8 text-sm">Your personal newsletter sanctuary.</p>
+        {/* Swiss Red accent bar */}
+        <div className="inline-block h-1 w-10 bg-accent mb-8" />
+
+        <h1 className="text-2xl font-bold tracking-tight text-ink mb-2">Readflow.</h1>
+        <p className="text-ink-muted mb-10 text-sm">Your personal newsletter sanctuary.</p>
 
         {error && (
-          <div className="mb-4 p-3 text-xs text-red-500 bg-red-50 border border-red-100 rounded">
+          <div className="mb-4 p-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
             {error}
           </div>
         )}
@@ -60,23 +59,23 @@ export default function LoginPage() {
         <button
           onClick={handleGoogleLogin}
           disabled={loading}
-          className="w-full bg-white border border-gray-300 text-[#1A1A1A] font-medium text-sm p-3 rounded flex items-center justify-center gap-3 hover:bg-gray-50 transition-colors mb-6"
+          className="w-full bg-surface border border-line text-ink font-medium text-sm p-3.5 flex items-center justify-center gap-3 hover:border-line-strong transition-colors mb-8"
         >
           {loading ? 'Connecting...' : 'Continue with Google'}
         </button>
 
-        <div className="relative mb-6">
+        <div className="relative mb-8">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-200"></div>
+            <div className="w-full border-t border-line" />
           </div>
-          <div className="relative flex justify-center text-xs">
-            <span className="bg-white px-2 text-gray-500 uppercase tracking-wider">Or with email</span>
+          <div className="relative flex justify-center text-[10px]">
+            <span className="bg-surface px-3 text-ink-faint uppercase tracking-widest font-bold">Or with email</span>
           </div>
         </div>
 
-         <div className="text-xs text-gray-400">
-            Magic links are temporarily disabled while we upgrade.
-         </div>
+        <div className="text-xs text-ink-faint">
+          Magic links are temporarily disabled while we upgrade.
+        </div>
       </div>
     </div>
   );

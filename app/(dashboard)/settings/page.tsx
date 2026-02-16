@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, ExternalLink, ArrowRight, RefreshCw, AlertTriangle } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, ExternalLink, ArrowRight, RefreshCw, AlertTriangle, Settings } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -44,7 +44,7 @@ function SettingsContent() {
       setFirstName(profile.first_name || user.user_metadata?.full_name?.split(' ')[0] || '');
       setLastName(profile.last_name || user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '');
 
-      // Gmail columns may not exist if migration 002 hasn't been run — query separately
+      // Gmail columns may not exist if migration 002 hasn't been run
       const { data: gmailProfile } = await supabase
         .from('profiles')
         .select('gmail_connected, gmail_last_sync_at')
@@ -70,7 +70,6 @@ function SettingsContent() {
     const gmailResult = searchParams.get('gmail');
     if (!gmailResult) return;
 
-    // Clean the URL to prevent re-showing on refresh
     const url = new URL(window.location.href);
     url.searchParams.delete('gmail');
     url.searchParams.delete('gmail_error');
@@ -82,11 +81,11 @@ function SettingsContent() {
         break;
       case 'no_tokens':
         setGmailError(
-          'Gmail connection failed \u2014 no access tokens were received. ' +
+          'Gmail connection failed — no access tokens were received. ' +
           'This usually means the Gmail API is not enabled in your Google Cloud Console, ' +
           'or the gmail.readonly scope is not configured on the OAuth consent screen.'
         );
-        triggerToast('Gmail connection failed \u2014 see details below');
+        triggerToast('Gmail connection failed — see details below');
         break;
       case 'error': {
         const errorDetail = searchParams.get('gmail_error');
@@ -105,21 +104,12 @@ function SettingsContent() {
 
   const handleSaveProfile = async () => {
     setSaving(true);
-
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setSaving(false);
-      return;
-    }
+    if (!user) { setSaving(false); return; }
 
     const { error } = await supabase
       .from('profiles')
-      .upsert({
-        id: user.id,
-        email: user.email,
-        first_name: firstName,
-        last_name: lastName,
-      });
+      .upsert({ id: user.id, email: user.email, first_name: firstName, last_name: lastName });
 
     if (error) {
       console.error('Error saving profile:', error);
@@ -127,7 +117,6 @@ function SettingsContent() {
     } else {
       triggerToast('Profile saved');
     }
-
     setSaving(false);
   };
 
@@ -154,17 +143,12 @@ function SettingsContent() {
       setGmailError(`Failed to start Gmail connection: ${error.message}`);
       triggerToast('Failed to start Gmail connection');
     }
-    // If no error, the browser will redirect to Google — connecting state stays
   };
 
   const handleSyncNow = async () => {
     setSyncing(true);
-
     try {
-      const res = await fetch('/api/sync-gmail', {
-        method: 'POST',
-      });
-
+      const res = await fetch('/api/sync-gmail', { method: 'POST' });
       const data = await res.json();
 
       if (!res.ok) {
@@ -181,14 +165,11 @@ function SettingsContent() {
       console.error('Sync error:', err);
       triggerToast('Sync failed');
     }
-
     setSyncing(false);
   };
 
   const handleDisconnectGmail = async () => {
-    if (!confirm('Disconnect Gmail? You will need to reconnect to sync newsletters.')) {
-      return;
-    }
+    if (!confirm('Disconnect Gmail? You will need to reconnect to sync newsletters.')) return;
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -208,16 +189,14 @@ function SettingsContent() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!confirm('Are you sure? This will sign you out and your data may be deleted. This action cannot be undone.')) {
-      return;
-    }
+    if (!confirm('Are you sure? This will sign you out and your data may be deleted. This action cannot be undone.')) return;
     await supabase.auth.signOut();
     router.push('/login');
   };
 
   if (loading) {
     return (
-      <div className="p-12 text-gray-400 flex items-center gap-2">
+      <div className="p-12 text-ink-muted flex items-center gap-2">
         <Loader2 className="w-4 h-4 animate-spin" /> Loading settings...
       </div>
     );
@@ -227,218 +206,207 @@ function SettingsContent() {
     <div className="p-8 md:p-12 min-h-screen max-w-4xl">
 
       {/* Header */}
-      <header className="mb-16 border-b border-black pb-4">
-        <h1 className="text-4xl font-bold tracking-tight text-[#1A1A1A]">Control Room.</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Preferences & Gmail Connection.
-        </p>
+      <header className="mb-10">
+        <h1 className="text-display-lg text-ink">Control Room.</h1>
+        <p className="text-sm text-ink-muted mt-1">Preferences &amp; Gmail Connection.</p>
       </header>
 
-      <div className="space-y-12">
+      <div className="h-px bg-line-strong mb-12" />
 
-        {/* Section 1: Profile */}
+      <div className="space-y-16">
+
+        {/* ─── Profile Section ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8">
           <div className="md:col-span-4">
-             <h3 className="font-bold text-lg text-black flex items-center gap-2">
-               <User className="w-5 h-5 text-gray-400" />
-               Profile
-             </h3>
-             <p className="text-sm text-gray-400 mt-1">How you appear in the app.</p>
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <User className="w-5 h-5 text-ink-faint" />
+              Profile
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">How you appear in the app.</p>
           </div>
-          <div className="md:col-span-8 space-y-6 bg-white p-6 border border-gray-200">
+          <div className="md:col-span-8 space-y-6 bg-surface-raised p-6 border border-line">
+            <div className="grid grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-label uppercase text-ink-faint">First Name</label>
+                <input
+                  type="text"
+                  value={firstName}
+                  onChange={(e) => setFirstName(e.target.value)}
+                  className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-label uppercase text-ink-faint">Last Name</label>
+                <input
+                  type="text"
+                  value={lastName}
+                  onChange={(e) => setLastName(e.target.value)}
+                  className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+            </div>
 
-             <div className="grid grid-cols-2 gap-6">
-               <div className="space-y-2">
-                 <label className="text-xs font-bold uppercase tracking-widest text-gray-500">First Name</label>
-                 <input
-                   type="text"
-                   value={firstName}
-                   onChange={(e) => setFirstName(e.target.value)}
-                   className="w-full border-b border-gray-300 py-2 text-black focus:outline-none focus:border-[#FF4E4E] transition-colors"
-                 />
-               </div>
-               <div className="space-y-2">
-                 <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Last Name</label>
-                 <input
-                   type="text"
-                   value={lastName}
-                   onChange={(e) => setLastName(e.target.value)}
-                   className="w-full border-b border-gray-300 py-2 text-black focus:outline-none focus:border-[#FF4E4E] transition-colors"
-                 />
-               </div>
-             </div>
+            <div className="space-y-2">
+              <label className="text-label uppercase text-ink-faint">Email Address</label>
+              <input
+                type="email"
+                value={email}
+                disabled
+                className="w-full border-b border-line py-2 text-ink-faint bg-transparent cursor-not-allowed"
+              />
+            </div>
 
-             <div className="space-y-2">
-                 <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Email Address</label>
-                 <input
-                   type="email"
-                   value={email}
-                   disabled
-                   className="w-full border-b border-gray-200 py-2 text-gray-400 bg-gray-50 cursor-not-allowed"
-                 />
-             </div>
-
-             <button
-               onClick={handleSaveProfile}
-               disabled={saving}
-               className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors disabled:opacity-50"
-             >
-               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-               Save Changes
-             </button>
-
+            <button
+              onClick={handleSaveProfile}
+              disabled={saving}
+              className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              Save Changes
+            </button>
           </div>
         </section>
 
-        {/* Section 2: Gmail Connection */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-gray-100">
+        {/* ─── Gmail Sync Manager ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
           <div className="md:col-span-4">
-             <h3 className="font-bold text-lg text-black flex items-center gap-2">
-               <Mail className="w-5 h-5 text-gray-400" />
-               Gmail Connection
-             </h3>
-             <p className="text-sm text-gray-400 mt-1">Sync newsletters from Gmail labels.</p>
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <Mail className="w-5 h-5 text-ink-faint" />
+              Sync Manager
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">Connect and sync Gmail labels.</p>
           </div>
-          <div className="md:col-span-8 bg-white border border-gray-200">
+          <div className="md:col-span-8 bg-surface-raised border border-line">
+            <div className="p-6 space-y-6">
+              {gmailConnected ? (
+                <>
+                  {/* Connected state */}
+                  <div className="flex items-center justify-between pb-4 border-b border-line">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full" />
+                      <span className="text-sm font-bold text-ink">Gmail Connected</span>
+                    </div>
+                    <button
+                      onClick={handleDisconnectGmail}
+                      className="text-xs text-ink-faint hover:text-accent transition-colors"
+                    >
+                      Disconnect
+                    </button>
+                  </div>
 
-             <div className="p-6 space-y-6">
-               {gmailConnected ? (
-                 <>
-                   {/* Connected state */}
-                   <div className="flex items-center justify-between pb-4 border-b border-gray-100">
-                     <div className="flex items-center gap-2">
-                       <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                       <span className="text-sm font-bold text-gray-900">Gmail Connected</span>
-                     </div>
-                     <button
-                       onClick={handleDisconnectGmail}
-                       className="text-xs text-gray-500 hover:text-[#FF4E4E] transition-colors"
-                     >
-                       Disconnect
-                     </button>
-                   </div>
+                  {/* Sync button */}
+                  <div className="space-y-3">
+                    <button
+                      onClick={handleSyncNow}
+                      disabled={syncing}
+                      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50 w-full justify-center"
+                    >
+                      {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                      {syncing ? 'Syncing...' : 'Sync Now'}
+                    </button>
 
-                   {/* Sync button */}
-                   <div className="space-y-3">
-                     <button
-                       onClick={handleSyncNow}
-                       disabled={syncing}
-                       className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors disabled:opacity-50 w-full justify-center"
-                     >
-                       {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                       {syncing ? 'Syncing...' : 'Sync Now'}
-                     </button>
+                    {lastSync && (
+                      <p className="text-xs text-ink-faint text-center">
+                        Last synced {formatDistanceToNow(lastSync, { addSuffix: true })}
+                      </p>
+                    )}
+                  </div>
 
-                     {lastSync && (
-                       <p className="text-xs text-gray-400 text-center">
-                         Last synced {formatDistanceToNow(lastSync, { addSuffix: true })}
-                       </p>
-                     )}
-                   </div>
+                  {/* Setup instructions */}
+                  <div className="pt-4 border-t border-line space-y-3">
+                    <label className="text-label uppercase text-ink-faint">Gmail Setup</label>
+                    <details className="group border border-line">
+                      <summary className="flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium text-ink hover:bg-surface-overlay">
+                        <span>How to sync newsletters</span>
+                        <ArrowRight className="w-4 h-4 text-ink-faint group-open:rotate-90 transition-transform" />
+                      </summary>
+                      <div className="px-4 pb-4 text-sm text-ink-muted space-y-2">
+                        <ol className="list-decimal list-inside space-y-1.5">
+                          <li>In Gmail, go to <a href="https://mail.google.com/mail/u/0/#settings/labels" target="_blank" rel="noopener noreferrer" className="text-accent underline inline-flex items-center gap-0.5">Settings &rarr; Labels <ExternalLink className="w-3 h-3" /></a></li>
+                          <li>Create a new label called &quot;Readflow&quot;</li>
+                          <li>Go to <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noopener noreferrer" className="text-accent underline inline-flex items-center gap-0.5">Settings &rarr; Filters <ExternalLink className="w-3 h-3" /></a></li>
+                          <li>Create a filter: &quot;From&quot; contains your newsletter sender</li>
+                          <li>Action: Apply label &quot;Readflow&quot;</li>
+                          <li>Click &quot;Sync Now&quot; above to import</li>
+                        </ol>
+                      </div>
+                    </details>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Not connected state */}
+                  <div className="text-center py-8">
+                    <Mail className="w-10 h-10 text-ink-faint mx-auto mb-4" />
+                    <p className="text-sm font-bold text-ink mb-1">Connect Gmail to sync newsletters</p>
+                    <p className="text-xs text-ink-faint mb-6">
+                      Read-only access. We only see emails you label &quot;Readflow&quot;.
+                    </p>
 
-                   {/* Setup instructions */}
-                   <div className="pt-4 border-t border-gray-100 space-y-3">
-                     <label className="text-xs font-bold uppercase tracking-widest text-gray-500">Gmail Setup</label>
+                    {gmailError && (
+                      <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-left">
+                        <div className="flex items-start gap-2">
+                          <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                          <div className="space-y-2">
+                            <p className="text-sm text-red-700 dark:text-red-400">{gmailError}</p>
+                            <details className="text-xs text-red-600 dark:text-red-400">
+                              <summary className="cursor-pointer font-medium hover:text-red-800 dark:hover:text-red-300">
+                                How to fix this
+                              </summary>
+                              {gmailError?.includes('migration required') || gmailError?.includes('schema cache') ? (
+                                <ol className="list-decimal list-inside mt-2 space-y-1">
+                                  <li>Open your <strong>Supabase project dashboard</strong> &rarr; SQL Editor</li>
+                                  <li>Run the contents of <code className="bg-red-100 dark:bg-red-900/40 px-1">supabase/migrations/002_add_gmail_tokens.sql</code></li>
+                                  <li>This adds the required Gmail token columns to the profiles table</li>
+                                  <li>Come back here and click &quot;Connect Gmail&quot; again</li>
+                                </ol>
+                              ) : (
+                                <ol className="list-decimal list-inside mt-2 space-y-1">
+                                  <li>Go to <strong>Google Cloud Console</strong> &rarr; APIs &amp; Services &rarr; Library</li>
+                                  <li>Search for &quot;Gmail API&quot; and <strong>enable</strong> it</li>
+                                  <li>Go to OAuth consent screen &rarr; Edit &rarr; Add scopes</li>
+                                  <li>Use &quot;Manually add scopes&quot; and enter: <code className="bg-red-100 dark:bg-red-900/40 px-1">https://www.googleapis.com/auth/gmail.readonly</code></li>
+                                  <li>Save and try connecting again</li>
+                                </ol>
+                              )}
+                            </details>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
-                     <details className="group border border-gray-200">
-                       <summary className="flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium text-[#1A1A1A] hover:bg-gray-50">
-                         <span>How to sync newsletters</span>
-                         <ArrowRight className="w-4 h-4 text-gray-400 group-open:rotate-90 transition-transform" />
-                       </summary>
-                       <div className="px-4 pb-4 text-sm text-gray-600 space-y-2">
-                         <ol className="list-decimal list-inside space-y-1.5">
-                           <li>In Gmail, go to <a href="https://mail.google.com/mail/u/0/#settings/labels" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Settings &rarr; Labels <ExternalLink className="w-3 h-3" /></a></li>
-                           <li>Create a new label called &quot;Readflow&quot;</li>
-                           <li>Go to <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Settings &rarr; Filters <ExternalLink className="w-3 h-3" /></a></li>
-                           <li>Create a filter: &quot;From&quot; contains your newsletter sender (e.g., @substack.com)</li>
-                           <li>Action: Apply label &quot;Readflow&quot;</li>
-                           <li>Optionally check &quot;Also apply filter to matching emails&quot; for existing newsletters</li>
-                           <li>Click &quot;Sync Now&quot; above to import newsletters from the Readflow label</li>
-                         </ol>
-                       </div>
-                     </details>
-                   </div>
-                 </>
-               ) : (
-                 <>
-                   {/* Not connected state */}
-                   <div className="text-center py-6">
-                     <Mail className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                     <p className="text-sm font-bold text-gray-900 mb-1">Connect Gmail to sync newsletters</p>
-                     <p className="text-xs text-gray-500 mb-6">
-                       Read-only access. We only see emails you label &quot;Readflow&quot;.
-                     </p>
-
-                     {gmailError && (
-                       <div className="mb-6 p-4 bg-red-50 border border-red-200 text-left">
-                         <div className="flex items-start gap-2">
-                           <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                           <div className="space-y-2">
-                             <p className="text-sm text-red-700">{gmailError}</p>
-                             <details className="text-xs text-red-600">
-                               <summary className="cursor-pointer font-medium hover:text-red-800">
-                                 How to fix this
-                               </summary>
-                               {gmailError?.includes('migration required') || gmailError?.includes('schema cache') ? (
-                                 <ol className="list-decimal list-inside mt-2 space-y-1 text-red-600">
-                                   <li>Open your <strong>Supabase project dashboard</strong> &rarr; SQL Editor</li>
-                                   <li>Run the contents of <code className="bg-red-100 px-1">supabase/migrations/002_add_gmail_tokens.sql</code></li>
-                                   <li>This adds the required Gmail token columns to the profiles table</li>
-                                   <li>Come back here and click &quot;Connect Gmail&quot; again</li>
-                                 </ol>
-                               ) : (
-                                 <ol className="list-decimal list-inside mt-2 space-y-1 text-red-600">
-                                   <li>Go to <strong>Google Cloud Console</strong> &rarr; APIs &amp; Services &rarr; Library</li>
-                                   <li>Search for &quot;Gmail API&quot; and <strong>enable</strong> it</li>
-                                   <li>Go to OAuth consent screen &rarr; Edit &rarr; Add scopes</li>
-                                   <li>Use &quot;Manually add scopes&quot; and enter: <code className="bg-red-100 px-1">https://www.googleapis.com/auth/gmail.readonly</code></li>
-                                   <li>Save and try connecting again</li>
-                                 </ol>
-                               )}
-                             </details>
-                           </div>
-                         </div>
-                       </div>
-                     )}
-
-                     <button
-                       onClick={handleConnectGmail}
-                       disabled={connecting}
-                       className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors mx-auto disabled:opacity-50"
-                     >
-                       {connecting ? (
-                         <Loader2 className="w-3 h-3 animate-spin" />
-                       ) : (
-                         <Mail className="w-3 h-3" />
-                       )}
-                       {connecting ? 'Connecting...' : 'Connect Gmail'}
-                     </button>
-                   </div>
-                 </>
-               )}
-             </div>
-
+                    <button
+                      onClick={handleConnectGmail}
+                      disabled={connecting}
+                      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors mx-auto disabled:opacity-50"
+                    >
+                      {connecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                      {connecting ? 'Connecting...' : 'Connect Gmail'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </section>
 
-        {/* Section 3: Danger Zone */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-gray-100">
+        {/* ─── Danger Zone ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
           <div className="md:col-span-4">
-             <h3 className="font-bold text-lg text-[#FF4E4E] flex items-center gap-2">
-               <LogOut className="w-5 h-5" />
-               Danger Zone
-             </h3>
+            <h3 className="font-bold text-lg text-accent flex items-center gap-2">
+              <LogOut className="w-5 h-5" />
+              Danger Zone
+            </h3>
           </div>
           <div className="md:col-span-8">
-             <button
-               onClick={handleDeleteAccount}
-               className="px-6 py-3 border border-red-200 bg-red-50 text-[#FF4E4E] text-xs font-bold uppercase tracking-widest hover:bg-[#FF4E4E] hover:text-white transition-colors"
-             >
-               Disconnect & Delete Data
-             </button>
+            <button
+              onClick={handleDeleteAccount}
+              className="px-6 py-3 border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-accent text-label uppercase hover:bg-accent hover:text-white transition-colors"
+            >
+              Disconnect &amp; Delete Data
+            </button>
           </div>
         </section>
-
       </div>
     </div>
   );
@@ -447,7 +415,7 @@ function SettingsContent() {
 export default function SettingsPage() {
   return (
     <Suspense fallback={
-      <div className="p-12 text-gray-400 flex items-center gap-2">
+      <div className="p-12 text-ink-muted flex items-center gap-2">
         <Loader2 className="w-4 h-4 animate-spin" /> Loading settings...
       </div>
     }>

@@ -35,7 +35,7 @@ export default function UnsubscribeButton({ senderId, senderName }: { senderId: 
     <button
       onClick={handleUnsubscribe}
       disabled={loading}
-      className="px-4 py-2 border border-gray-200 hover:border-red-200 hover:text-red-600 rounded text-xs font-bold uppercase tracking-widest text-gray-400 transition-colors disabled:opacity-50"
+      className="px-4 py-2 border border-line hover:border-red-200 dark:hover:border-red-800 hover:text-accent text-label uppercase text-ink-faint transition-colors disabled:opacity-50"
     >
       {loading ? 'Blocking...' : 'Unsubscribe'}
     </button>
