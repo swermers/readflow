@@ -78,7 +78,7 @@ export default function ArchivePage() {
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search archive..."
-          className="w-full pl-12 pr-4 py-3.5 bg-surface-raised border border-line focus:outline-none focus:border-line-strong transition-all text-sm text-ink placeholder:text-ink-faint"
+          className="w-full rounded-xl border border-line bg-surface-raised py-3.5 pl-12 pr-4 text-sm text-ink placeholder:text-ink-faint transition-all focus:border-line-strong focus:outline-none"
         />
       </div>
 
@@ -89,12 +89,15 @@ export default function ArchivePage() {
           <p className="text-sm text-ink-faint">Archived articles appear here.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
           {filtered.map((issue) => (
             <Link key={issue.id} href={`/newsletters/${issue.id}`} className="group">
-              <article className="h-52 md:h-56 border border-line bg-surface p-4 md:p-5 flex flex-col justify-between hover:border-accent transition-all duration-200">
+              <article className="relative flex h-52 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
                 <div>
-                  <p className="text-[10px] uppercase text-accent truncate">{issue.senders?.name || 'Unknown'}</p>
+                  <div className="flex items-start justify-between gap-2">
+                  <p className="truncate text-[10px] uppercase tracking-[0.08em] text-accent">{issue.senders?.name || 'Unknown'}</p>
+                  <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">ARCH</span>
+                </div>
                   <h3 className="mt-2 text-sm md:text-base font-semibold leading-tight text-ink line-clamp-3 group-hover:text-accent transition-colors">
                     {issue.subject}
                   </h3>

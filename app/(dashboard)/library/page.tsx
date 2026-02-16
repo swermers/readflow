@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { ArrowUpRight, BookMarked, Search, AlertCircle, Mail } from 'lucide-react';
+import { ArrowUpRight, BookMarked, Search, AlertCircle } from 'lucide-react';
 
 type SenderCard = {
   id: string;
@@ -100,12 +100,12 @@ export default function LibraryPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen p-8 md:p-12">
-        <header className="mb-10">
+      <div className="min-h-screen p-6 md:p-12">
+        <header className="mb-8">
           <h1 className="text-display-lg text-ink">Library.</h1>
         </header>
-        <div className="mb-10 h-px bg-line-strong" />
-        <div className="border border-line bg-surface-raised py-20 text-center">
+        <div className="mb-8 h-px bg-line-strong" />
+        <div className="rounded-2xl border border-line bg-surface-raised py-20 text-center">
           <AlertCircle className="mx-auto mb-4 h-10 w-10 text-accent" />
           <p className="font-medium text-ink">Something went wrong.</p>
           <p className="mt-1 text-sm text-ink-muted">{error}</p>
@@ -115,51 +115,54 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="min-h-screen p-8 md:p-12">
-      <header className="mb-10">
-        <h1 className="text-display-lg text-ink">Library.</h1>
-        <p className="mt-1 text-sm text-ink-muted">
-          {senders.length} {senders.length === 1 ? 'newsletter' : 'newsletters'} with articles.
-        </p>
+    <div className="min-h-screen p-6 md:p-12">
+      <header className="mb-8 flex items-end justify-between gap-4">
+        <div>
+          <h1 className="text-display-lg text-ink">Library.</h1>
+          <p className="mt-1 text-sm text-ink-muted">
+            {senders.length} {senders.length === 1 ? 'newsletter' : 'newsletters'} with articles.
+          </p>
+        </div>
       </header>
 
       <div className="mb-8 h-px bg-line-strong" />
 
-      <div className="relative mb-10 max-w-lg">
+      <div className="relative mb-8 max-w-lg">
         <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-faint" />
         <input
           type="text"
           value={searchQuery}
           onChange={(event) => setSearchQuery(event.target.value)}
           placeholder="Search newsletters in library..."
-          className="w-full border border-line bg-surface-raised py-3.5 pl-12 pr-4 text-sm text-ink placeholder:text-ink-faint focus:border-line-strong focus:outline-none"
+          className="w-full rounded-xl border border-line bg-surface-raised py-3.5 pl-12 pr-4 text-sm text-ink placeholder:text-ink-faint focus:border-line-strong focus:outline-none"
         />
       </div>
 
       {filtered.length === 0 ? (
-        <div className="border border-dashed border-line bg-surface-raised py-20 text-center">
+        <div className="rounded-2xl border border-dashed border-line bg-surface-raised py-20 text-center">
           <BookMarked className="mx-auto mb-4 h-10 w-10 text-ink-faint" />
           <p className="font-medium text-ink-muted">No newsletters found.</p>
           <p className="text-sm text-ink-faint">Sync your inbox to populate the library.</p>
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
-          {filtered.map((sender) => (
+          {filtered.map((sender, index) => (
             <Link key={sender.id} href={`/sender/${sender.id}?view=library`} className="group">
-              <article className="flex h-48 md:h-56 flex-col justify-between border border-line bg-surface p-4 md:p-6 transition-all duration-200 hover:border-accent">
-                <div>
-                  <div className="mb-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-surface-overlay text-ink-faint">
-                    <Mail className="h-4 w-4" />
-                  </div>
-                  <h3 className="truncate text-lg font-bold text-ink transition-colors group-hover:text-accent">{sender.name}</h3>
-                  <p className="mt-1 truncate text-[11px] md:text-xs font-mono text-ink-faint">{sender.email}</p>
+              <article className="relative flex h-48 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-6 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
+                <div className="flex items-start justify-between gap-2">
+                  <span className="text-2xl font-black leading-none tracking-tight text-ink-faint/60">{String(index + 1).padStart(2, '0')}</span>
+                  <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">{sender.totalCount}</span>
                 </div>
 
-                <div className="space-y-1.5 border-t border-line pt-3 text-[11px] md:text-xs text-ink-muted">
-                  <p>{sender.totalCount} total article{sender.totalCount === 1 ? '' : 's'}</p>
+                <div>
+                  <h3 className="truncate text-base md:text-lg font-black text-ink transition-colors group-hover:text-accent">{sender.name}</h3>
+                  <p className="mt-1 truncate text-[10px] md:text-xs font-mono text-ink-faint">{sender.email}</p>
+                </div>
+
+                <div className="space-y-1 border-t border-line pt-3 text-[10px] md:text-xs text-ink-muted">
                   <p>{sender.savedCount} saved</p>
-                  <p>{sender.latestDate ? `Latest: ${new Date(sender.latestDate).toLocaleDateString()}` : 'No dates yet'}</p>
-                  <span className="inline-flex items-center gap-1 uppercase text-accent">
+                  <p>{sender.latestDate ? `Latest ${new Date(sender.latestDate).toLocaleDateString()}` : 'No dates yet'}</p>
+                  <span className="inline-flex items-center gap-1 uppercase tracking-[0.08em] text-accent">
                     Open <ArrowUpRight className="h-3 w-3" />
                   </span>
                 </div>

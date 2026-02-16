@@ -169,6 +169,30 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
       .forEach((highlight) => applyHighlightToDom(highlight.id, highlight.highlighted_text));
   }, [highlights]);
 
+
+  useEffect(() => {
+    let frame: number | null = null;
+
+    const handleSelectionChange = () => {
+      if (frame) cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
+        const selection = window.getSelection();
+        const hasText = !!selection && selection.toString().replace(/\s+/g, ' ').trim().length > 0;
+
+        if (hasText) {
+          captureSelection();
+        }
+      });
+    };
+
+    document.addEventListener('selectionchange', handleSelectionChange);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, []);
+
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
