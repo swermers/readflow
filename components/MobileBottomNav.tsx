@@ -7,7 +7,7 @@ import { Archive, Newspaper, Rss, StickyNote } from 'lucide-react';
 const navItems = [
   { href: '/', label: 'Rack', icon: Newspaper },
   { href: '/notes', label: 'Notes', icon: StickyNote },
-  { href: '/archive', label: 'Vault', icon: Archive },
+  { href: '/archive', label: 'Library', icon: Archive },
   { href: '/subscriptions', label: 'Sources', icon: Rss },
 ];
 
