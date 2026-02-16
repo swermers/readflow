@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft, Clock } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import IssueActions from './IssueActions';
+import HighlightableContent from '@/components/HighlightableContent';
 
 export default async function NewsletterPage({ params }: { params: { id: string } }) {
   const supabase = await createClient();
@@ -70,8 +71,8 @@ export default async function NewsletterPage({ params }: { params: { id: string 
         {/* Divider */}
         <div className="w-16 h-px bg-accent mb-10" />
 
-        {/* Newsletter Content */}
-        <div className="reading-content newsletter-body" dangerouslySetInnerHTML={{ __html: email.body_html }} />
+        {/* Newsletter Content — with highlight + notes support */}
+        <HighlightableContent issueId={email.id} bodyHtml={email.body_html} />
 
         {/* Footer Actions */}
         <IssueActions

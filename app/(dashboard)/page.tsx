@@ -82,34 +82,40 @@ export default async function Home() {
       <div className="h-px bg-line-strong mb-10" />
 
       {/* Newsletter Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 stagger-children">
         {emails?.map((email: any) => (
           <Link key={email.id} href={`/newsletters/${email.id}`} className="group">
-            <div className="relative bg-surface border border-line p-6 hover:border-accent transition-all duration-200 h-64 flex flex-col justify-between">
-              {/* Unread dot */}
-              <div className="absolute top-4 right-4">
-                <div className="unread-dot" />
+            <div className="bg-surface-raised border border-line p-5 hover:border-line-strong transition-all duration-200 flex flex-col gap-3">
+              {/* Sender + Date row */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-7 h-7 rounded-md bg-surface-overlay flex items-center justify-center text-[11px] font-bold text-ink-faint flex-shrink-0">
+                    {email.senders?.name?.[0] || 'N'}
+                  </div>
+                  <span className="font-bold text-sm text-ink">
+                    {email.senders?.name || 'Unknown'}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] text-ink-faint flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {new Date(email.received_at).toLocaleDateString()}
+                  </span>
+                  <div className="unread-dot" />
+                </div>
               </div>
 
-              <div className="flex justify-between items-start pr-6">
-                <span className="text-label uppercase text-accent">
-                  {email.senders?.name || 'Unknown'}
-                </span>
-                <span className="text-[10px] text-ink-faint flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {new Date(email.received_at).toLocaleDateString()}
-                </span>
-              </div>
-
+              {/* Subject + Snippet */}
               <div>
-                <h3 className="text-lg font-bold leading-tight text-ink mb-2 group-hover:text-accent transition-colors">
+                <h3 className="text-base font-medium leading-snug text-ink mb-1 group-hover:text-accent transition-colors line-clamp-2">
                   {email.subject}
                 </h3>
-                <p className="text-sm text-ink-muted line-clamp-3 leading-relaxed">{email.snippet}</p>
+                <p className="text-sm text-ink-faint line-clamp-2 leading-relaxed">{email.snippet}</p>
               </div>
 
-              <div className="pt-4 border-t border-line flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="flex items-center gap-1 text-label uppercase text-accent">
+              {/* Read action */}
+              <div className="pt-2 border-t border-line flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="flex items-center gap-1 text-label uppercase text-accent text-[10px]">
                   Read <ArrowUpRight className="w-3 h-3" />
                 </span>
               </div>

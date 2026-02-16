@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Newspaper, Shield, Archive, Rss, Settings, LogOut, Sun, Moon,
+  Newspaper, StickyNote, Archive, Rss, Settings, LogOut, Sun, Moon,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useEffect, useState } from 'react';
@@ -26,15 +26,14 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
   const supabase = createClient();
   const { theme, toggleTheme } = useTheme();
 
-  const [pendingCount, setPendingCount] = useState(0);
   const [senders, setSenders] = useState<any[]>([]);
 
   const loadData = async () => {
-    const [{ count }, { data }] = await Promise.all([
-      supabase.from('senders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('senders').select('id, name').eq('status', 'approved').order('name'),
-    ]);
-    setPendingCount(count || 0);
+    const { data } = await supabase
+      .from('senders')
+      .select('id, name')
+      .eq('status', 'approved')
+      .order('name');
     if (data) setSenders(data);
   };
 
@@ -56,7 +55,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
 
   const navItems: NavItem[] = [
     { href: '/', label: 'The Rack', icon: <Newspaper className="w-[18px] h-[18px]" /> },
-    { href: '/review', label: 'Gatekeeper', icon: <Shield className="w-[18px] h-[18px]" />, badge: pendingCount },
+    { href: '/notes', label: 'Notes', icon: <StickyNote className="w-[18px] h-[18px]" /> },
     { href: '/archive', label: 'The Vault', icon: <Archive className="w-[18px] h-[18px]" /> },
     { href: '/subscriptions', label: 'Sources', icon: <Rss className="w-[18px] h-[18px]" /> },
   ];
