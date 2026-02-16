@@ -23,6 +23,8 @@ function clampX(centerX: number, width: number) {
 
 export default function HighlightableContent({ issueId, bodyHtml }: { issueId: string; bodyHtml: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const selectedRangeRef = useRef<Range | null>(null);
+
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selectedText, setSelectedText] = useState('');
   const [toolbarPosition, setToolbarPosition] = useState<{ top: number; left: number } | null>(null);
@@ -34,15 +36,14 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   const [editMode, setEditMode] = useState(false);
   const [draftNote, setDraftNote] = useState('');
 
-  const highlightedById = useMemo(() => {
-    return new Map(highlights.map((h) => [h.id, h]));
-  }, [highlights]);
+  const highlightedById = useMemo(() => new Map(highlights.map((h) => [h.id, h])), [highlights]);
 
   const closeToolbar = () => {
     setToolbarPosition(null);
     setSelectedText('');
     setNoteMode(false);
     setNoteText('');
+    selectedRangeRef.current = null;
     window.getSelection()?.removeAllRanges();
   };
 
@@ -61,6 +62,21 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     setHighlights(data || []);
   };
 
+  const clearExistingMarks = () => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const marks = Array.from(container.querySelectorAll('mark[data-highlight-id]'));
+    marks.forEach((mark) => {
+      const parent = mark.parentNode;
+      if (!parent) return;
+      while (mark.firstChild) {
+        parent.insertBefore(mark.firstChild, mark);
+      }
+      parent.removeChild(mark);
+    });
+  };
+
   const applyHighlightToDom = (id: string, highlightedText: string) => {
     const container = containerRef.current;
     if (!container || !highlightedText.trim()) return;
@@ -74,7 +90,6 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
       const textContent = textNode.textContent || '';
       const start = textContent.indexOf(highlightedText);
-
       if (start === -1) continue;
 
       const range = document.createRange();
@@ -94,6 +109,48 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     }
   };
 
+  const tryApplyCurrentRangeHighlight = (highlightId: string) => {
+    const range = selectedRangeRef.current;
+    if (!range) return;
+    const container = containerRef.current;
+    if (!container || !container.contains(range.commonAncestorContainer)) return;
+
+    try {
+      const mark = document.createElement('mark');
+      mark.className = 'readflow-highlight';
+      mark.dataset.highlightId = highlightId;
+      const fragment = range.extractContents();
+      mark.appendChild(fragment);
+      range.insertNode(mark);
+    } catch {
+      // fall back to text-based application in highlights effect
+    }
+  };
+
+  const captureSelection = () => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) return;
+
+    const text = selection.toString().replace(/\s+/g, ' ').trim();
+    if (!text) return;
+
+    const range = selection.getRangeAt(0);
+    const container = containerRef.current;
+    if (!container || !container.contains(range.commonAncestorContainer)) return;
+
+    selectedRangeRef.current = range.cloneRange();
+
+    const rect = range.getBoundingClientRect();
+    const top = Math.max(8, rect.top + window.scrollY - 64);
+    const left = clampX(rect.left + rect.width / 2, TOOLBAR_WIDTH);
+
+    setSelectedText(text);
+    setToolbarPosition({ top, left });
+    setNoteMode(false);
+    setNoteText('');
+    closePopover();
+  };
+
   useEffect(() => {
     fetchHighlights();
   }, [issueId]);
@@ -101,19 +158,26 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-
     container.innerHTML = bodyHtml || '';
+  }, [bodyHtml]);
+
+  useEffect(() => {
+    clearExistingMarks();
     highlights
       .slice()
       .reverse()
       .forEach((highlight) => applyHighlightToDom(highlight.id, highlight.highlighted_text));
-  }, [bodyHtml, highlights]);
+  }, [highlights]);
 
   useEffect(() => {
     const handleDocumentClick = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       if (target.closest('.readflow-highlight')) return;
       if (target.closest('[data-highlight-ui="true"]')) return;
+
+      const selection = window.getSelection();
+      if (selection && selection.toString().trim()) return;
+
       closeToolbar();
       closePopover();
     };
@@ -134,32 +198,10 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     };
   }, []);
 
-  const handleSelection = () => {
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0) return;
-
-    const text = selection.toString().trim();
-    if (!text) {
-      closeToolbar();
-      return;
-    }
-
-    const range = selection.getRangeAt(0);
-    const container = containerRef.current;
-    if (!container || !container.contains(range.commonAncestorContainer)) {
-      closeToolbar();
-      return;
-    }
-
-    const rect = range.getBoundingClientRect();
-    const top = Math.max(8, rect.top + window.scrollY - 64);
-    const left = clampX(rect.left + rect.width / 2, TOOLBAR_WIDTH);
-
-    setSelectedText(text);
-    setToolbarPosition({ top, left });
-    setNoteMode(false);
-    setNoteText('');
-    closePopover();
+  const onSelectionEvent = () => {
+    window.setTimeout(() => {
+      captureSelection();
+    }, 0);
   };
 
   const createHighlight = async (note?: string) => {
@@ -178,6 +220,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     if (!res.ok) return;
 
     const created = await res.json();
+    tryApplyCurrentRangeHighlight(created.id);
     setHighlights((prev) => [created, ...prev]);
     closeToolbar();
   };
@@ -239,8 +282,10 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
       <div
         ref={containerRef}
         className="reading-content newsletter-body"
-        onMouseUp={handleSelection}
-        onTouchEnd={handleSelection}
+        onMouseUp={onSelectionEvent}
+        onTouchEnd={onSelectionEvent}
+        onPointerUp={onSelectionEvent}
+        onKeyUp={onSelectionEvent}
         onClick={handleMarkClick}
       />
 
