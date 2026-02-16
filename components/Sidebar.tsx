@@ -52,9 +52,8 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
 
       <div
         className={`
-          fixed left-0 top-0 z-40 flex h-screen w-[260px] flex-col border-r
-          transition-transform duration-300 ease-in-out
-          ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
+          fixed right-0 top-0 z-40 flex h-screen w-[260px] flex-col border-l transition-transform duration-300 ease-in-out md:left-0 md:right-auto md:border-l-0 md:border-r
+          ${isOpen ? 'translate-x-0' : 'translate-x-full'} md:translate-x-0
         `}
         style={{
           background: 'var(--sidebar-bg)',
@@ -78,6 +77,14 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
             title={theme === 'light' ? 'Dark mode' : 'Light mode'}
           >
             {theme === 'light' ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+          </button>
+          <button
+            onClick={handleSignOut}
+            className="inline-flex h-10 w-10 items-center justify-center rounded-xl border border-line text-ink-muted transition-colors hover:border-accent hover:text-accent"
+            aria-label="Sign out"
+            title="Sign out"
+          >
+            <LogOut className="h-5 w-5" />
           </button>
           <button
             onClick={onClose}
@@ -147,7 +154,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
 
           <button
             onClick={handleSignOut}
-            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-[var(--sidebar-active-bg)] hover:text-accent"
+            className="hidden w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-[var(--sidebar-active-bg)] hover:text-accent md:flex"
           >
             <LogOut className="h-[18px] w-[18px]" />
             Sign Out

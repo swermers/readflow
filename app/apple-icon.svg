@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="Readflow apple icon">
+  <rect width="180" height="180" rx="40" fill="#090d14"/>
+  <rect x="36" y="28" width="108" height="124" rx="20" fill="#121825" stroke="#263248" stroke-width="5"/>
+  <circle cx="58" cy="52" r="5" fill="#ff4d42"/>
+  <rect x="68" y="47" width="62" height="10" rx="5" fill="#d9dee7"/>
+  <rect x="52" y="74" width="76" height="8" rx="4" fill="#6f7d95"/>
+  <rect x="52" y="92" width="66" height="8" rx="4" fill="#6f7d95"/>
+  <rect x="52" y="110" width="76" height="8" rx="4" fill="#6f7d95"/>
+  <rect x="52" y="128" width="50" height="8" rx="4" fill="#6f7d95"/>
+</svg>
