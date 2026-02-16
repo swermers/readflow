@@ -52,26 +52,35 @@ export async function GET(request: Request) {
       const providerToken = data.session.provider_token;
       const providerRefreshToken = data.session.provider_refresh_token;
 
+      console.log('[Auth Callback] Session established for user:', user.id);
+      console.log('[Auth Callback] provider_token present:', !!providerToken);
+      console.log('[Auth Callback] provider_refresh_token present:', !!providerRefreshToken);
+      console.log('[Auth Callback] isGmailConnect:', isGmailConnect);
+
       // Check if user has a profile, create one if not
       const { data: existing } = await supabase
         .from('profiles')
-        .select('id')
+        .select('id, gmail_connected, gmail_refresh_token')
         .eq('id', user.id)
         .single();
 
       if (!existing) {
-        await supabase.from('profiles').insert({
+        const { error: insertErr } = await supabase.from('profiles').insert({
           id: user.id,
           email: user.email,
           forwarding_alias: generateAlias(),
         });
+        if (insertErr) {
+          console.error('[Auth Callback] Profile insert failed:', insertErr);
+        }
       }
 
       // Save Gmail OAuth tokens if present (means user granted gmail.readonly scope)
       let gmailConnected = false;
+      let tokenSaveError: string | null = null;
 
       if (providerRefreshToken) {
-        await supabase
+        const { error: updateErr } = await supabase
           .from('profiles')
           .update({
             gmail_access_token: providerToken || null,
@@ -80,11 +89,17 @@ export async function GET(request: Request) {
             gmail_connected: true,
           })
           .eq('id', user.id);
-        gmailConnected = true;
+
+        if (updateErr) {
+          console.error('[Auth Callback] Token save failed:', updateErr);
+          tokenSaveError = updateErr.message;
+        } else {
+          console.log('[Auth Callback] Gmail tokens saved successfully (with refresh token)');
+          gmailConnected = true;
+        }
       } else if (providerToken) {
         // Got an access token but no refresh token — update what we can
-        // This happens on subsequent logins when the refresh token was already granted
-        await supabase
+        const { error: updateErr } = await supabase
           .from('profiles')
           .update({
             gmail_access_token: providerToken,
@@ -92,31 +107,54 @@ export async function GET(request: Request) {
           })
           .eq('id', user.id);
 
+        if (updateErr) {
+          console.error('[Auth Callback] Access token save failed:', updateErr);
+          tokenSaveError = updateErr.message;
+        } else {
+          console.log('[Auth Callback] Access token saved (no refresh token this time)');
+        }
+
         // Check if user already had a refresh token stored (from a previous grant)
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('gmail_refresh_token')
-          .eq('id', user.id)
-          .single();
-        gmailConnected = !!profile?.gmail_refresh_token;
+        if (existing?.gmail_refresh_token) {
+          gmailConnected = true;
+        }
+      } else {
+        // Neither token present — this is the sign-in loop cause
+        console.warn('[Auth Callback] No provider tokens received from OAuth session.');
+        console.warn('[Auth Callback] This usually means:');
+        console.warn('  1. Gmail API is not enabled in Google Cloud Console');
+        console.warn('  2. gmail.readonly scope is not on the OAuth consent screen');
+        console.warn('  3. The Supabase Google provider is not configured to return provider tokens');
+
+        // Check if the user previously connected (tokens already exist)
+        if (existing?.gmail_connected && existing?.gmail_refresh_token) {
+          gmailConnected = true;
+        }
       }
 
       // When redirecting back to /settings, include Gmail connection result
       if (isGmailConnect) {
-        const separator = next.includes('?') ? '&' : '?';
+        if (tokenSaveError) {
+          return NextResponse.redirect(
+            `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent('Token save failed: ' + tokenSaveError)}`
+          );
+        }
         const status = gmailConnected ? 'connected' : 'no_tokens';
-        return NextResponse.redirect(`${siteUrl}${next}${separator}gmail=${status}`);
+        return NextResponse.redirect(`${siteUrl}/settings?gmail=${status}`);
       }
 
       return NextResponse.redirect(`${siteUrl}${next}`);
     }
 
-    console.error('Exchange Error:', error);
+    console.error('[Auth Callback] Exchange error:', error);
 
     // If the exchange failed during a Gmail connection attempt, redirect back
     // to settings with an error instead of showing the generic error page
     if (isGmailConnect) {
-      return NextResponse.redirect(`${siteUrl}/settings?gmail=error`);
+      const msg = error?.message || 'Code exchange failed';
+      return NextResponse.redirect(
+        `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent(msg)}`
+      );
     }
   }
 
