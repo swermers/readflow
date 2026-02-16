@@ -139,7 +139,7 @@ export default function SetupGuide({ gmailConnected = false }: SetupGuideProps) 
         {/* Footer */}
         <div className="mt-10 pt-8 border-t border-line text-center">
           <p className="text-xs text-ink-faint">
-            New senders will appear in the <strong>Gatekeeper</strong> for your approval.
+            New senders are auto-added to <strong>Sources</strong>, where you can pause or block anytime.
           </p>
         </div>
       </div>

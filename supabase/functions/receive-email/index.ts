@@ -79,14 +79,14 @@ Deno.serve(async (req) => {
       .single();
 
     if (!sender) {
-      // New sender! Create them as "pending" (triggers Gatekeeper review)
+      // New sender! Create them as "approved" (auto-approved sender)
       const { data: newSender, error: senderError } = await supabase
         .from('senders')
         .insert({
           user_id: userId,
           email: fromEmail,
           name: fromName || fromEmail.split('@')[0],
-          status: 'pending',
+          status: 'approved',
         })
         .select()
         .single();

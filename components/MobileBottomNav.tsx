@@ -2,11 +2,11 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Archive, Newspaper, Rss, Shield } from 'lucide-react';
+import { Archive, Newspaper, Rss, StickyNote } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: 'Rack', icon: Newspaper },
-  { href: '/review', label: 'Gate', icon: Shield },
+  { href: '/notes', label: 'Notes', icon: StickyNote },
   { href: '/archive', label: 'Vault', icon: Archive },
   { href: '/subscriptions', label: 'Sources', icon: Rss },
 ];

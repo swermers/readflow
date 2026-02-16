@@ -163,6 +163,16 @@ body {
    ANIMATIONS
    ═══════════════════════════════════════════════════════ */
 
+@keyframes planMinimize {
+  from { opacity: 0; transform: scale(1.01) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes planRestore {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
@@ -201,4 +211,26 @@ body {
   border-radius: 50%;
   background: var(--color-accent);
   flex-shrink: 0;
+}
+
+
+.readflow-highlight {
+  background: color-mix(in srgb, var(--color-accent) 24%, #ffe082);
+  border-radius: 0.25rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.readflow-highlight:hover {
+  background: color-mix(in srgb, var(--color-accent) 34%, #ffe082);
+}
+
+.dark .readflow-highlight {
+  background: color-mix(in srgb, var(--color-accent) 36%, #f6c453);
+}
+
+.dark .readflow-highlight:hover {
+  background: color-mix(in srgb, var(--color-accent) 46%, #f6c453);
 }

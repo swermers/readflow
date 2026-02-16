@@ -129,7 +129,7 @@ export async function POST() {
               user_id: user.id,
               email: parsed.from_email,
               name: parsed.from_name,
-              status: 'pending',
+              status: 'approved',
             })
             .select('id, status')
             .single();
