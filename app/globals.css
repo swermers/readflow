@@ -8,41 +8,41 @@
    ═══════════════════════════════════════════════════════ */
 
 :root {
-  /* Light Mode — Stark White + Deep Charcoal */
+  /* Light Mode — Swiss white + precision charcoal */
   --color-surface: #FFFFFF;
-  --color-surface-raised: #FAFAF8;
-  --color-surface-overlay: #F5F5F0;
-  --color-ink: #1A1A1A;
-  --color-ink-muted: #6B6B6B;
-  --color-ink-faint: #A3A3A3;
-  --color-accent: #FF4E4E;
-  --color-accent-hover: #E63E3E;
-  --color-border: #E8E8E4;
-  --color-border-strong: #1A1A1A;
+  --color-surface-raised: #FCFCFC;
+  --color-surface-overlay: #F4F4F4;
+  --color-ink: #101114;
+  --color-ink-muted: #4D525A;
+  --color-ink-faint: #8C919A;
+  --color-accent: #E6392D;
+  --color-accent-hover: #CD2C20;
+  --color-border: #E5E7EB;
+  --color-border-strong: #101114;
 
   /* Sidebar */
-  --sidebar-bg: #FAFAF8;
-  --sidebar-border: #E8E8E4;
-  --sidebar-active-bg: #F0EFEB;
+  --sidebar-bg: #FAFAFA;
+  --sidebar-border: #E5E7EB;
+  --sidebar-active-bg: #F1F3F5;
 }
 
 .dark {
-  /* Dark Sepia — Warm, low-strain reading */
-  --color-surface: #171412;
-  --color-surface-raised: #221E1A;
-  --color-surface-overlay: #2C2722;
-  --color-ink: #E8DCC8;
-  --color-ink-muted: #A69882;
-  --color-ink-faint: #6B6054;
-  --color-accent: #FF6B5A;
-  --color-accent-hover: #FF8577;
-  --color-border: #332E28;
-  --color-border-strong: #E8DCC8;
+  /* Dark Mode — Pure black with soft charcoal layers */
+  --color-surface: #0A0B0D;
+  --color-surface-raised: #121419;
+  --color-surface-overlay: #171A20;
+  --color-ink: #F3F4F6;
+  --color-ink-muted: #B7BDC8;
+  --color-ink-faint: #7B8392;
+  --color-accent: #FF4D40;
+  --color-accent-hover: #FF675B;
+  --color-border: #22262E;
+  --color-border-strong: #F3F4F6;
 
   /* Sidebar */
-  --sidebar-bg: #1C1814;
-  --sidebar-border: #332E28;
-  --sidebar-active-bg: #2C2722;
+  --sidebar-bg: #101216;
+  --sidebar-border: #22262E;
+  --sidebar-active-bg: #1A1E25;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -61,13 +61,13 @@ body {
 
 /* Swiss Red text selection */
 ::selection {
-  background-color: #FF4E4E;
+  background-color: #E6392D;
   color: white;
 }
 
 .dark ::selection {
-  background-color: #FF6B5A;
-  color: #171412;
+  background-color: #FF4D40;
+  color: #0A0B0D;
 }
 
 /* ═══════════════════════════════════════════════════════
@@ -159,9 +159,35 @@ body {
   border-collapse: collapse;
 }
 
+
+.newsletter-body,
+.newsletter-body :where(div, section, article, main, p, span, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th) {
+  background-color: var(--color-surface) !important;
+  color: var(--color-ink) !important;
+}
+
+.newsletter-body :where(a) {
+  color: var(--color-accent) !important;
+}
+
+.newsletter-body :where(code, pre) {
+  background-color: var(--color-surface-overlay) !important;
+  color: var(--color-ink) !important;
+}
+
 /* ═══════════════════════════════════════════════════════
    ANIMATIONS
    ═══════════════════════════════════════════════════════ */
+
+@keyframes planMinimize {
+  from { opacity: 0; transform: scale(1.01) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes planRestore {
+  from { opacity: 0; transform: scale(0.97) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
 
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(8px); }
@@ -201,4 +227,26 @@ body {
   border-radius: 50%;
   background: var(--color-accent);
   flex-shrink: 0;
+}
+
+
+.readflow-highlight {
+  background: color-mix(in srgb, var(--color-accent) 24%, #ffe082);
+  border-radius: 0.25rem;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.readflow-highlight:hover {
+  background: color-mix(in srgb, var(--color-accent) 34%, #ffe082);
+}
+
+.dark .readflow-highlight {
+  background: color-mix(in srgb, var(--color-accent) 36%, #f6c453);
+}
+
+.dark .readflow-highlight:hover {
+  background: color-mix(in srgb, var(--color-accent) 46%, #f6c453);
 }

@@ -3,10 +3,8 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Newspaper, Shield, Archive, Rss, Settings, LogOut, Sun, Moon,
+  Newspaper, Archive, Rss, Settings, LogOut, Sun, Moon, StickyNote, BookMarked,
 } from 'lucide-react';
-import { createClient } from '@/utils/supabase/client';
-import { useEffect, useState } from 'react';
 import { useTheme } from './ThemeProvider';
 
 export const refreshSidebar = () => {
@@ -17,64 +15,45 @@ interface NavItem {
   href: string;
   label: string;
   icon: React.ReactNode;
-  badge?: number;
 }
 
 export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
-  const supabase = createClient();
   const { theme, toggleTheme } = useTheme();
 
-  const [pendingCount, setPendingCount] = useState(0);
-  const [senders, setSenders] = useState<any[]>([]);
-
-  const loadData = async () => {
-    const [{ count }, { data }] = await Promise.all([
-      supabase.from('senders').select('*', { count: 'exact', head: true }).eq('status', 'pending'),
-      supabase.from('senders').select('id, name').eq('status', 'approved').order('name'),
-    ]);
-    setPendingCount(count || 0);
-    if (data) setSenders(data);
-  };
-
-  useEffect(() => { loadData(); }, []);
-  useEffect(() => {
-    const handleRefresh = () => loadData();
-    window.addEventListener('sidebar-refresh', handleRefresh);
-    return () => window.removeEventListener('sidebar-refresh', handleRefresh);
-  }, []);
-
   const handleSignOut = async () => {
+    // lazy import to keep this component light
+    const { createClient } = await import('@/utils/supabase/client');
+    const supabase = createClient();
     await supabase.auth.signOut();
     router.push('/login');
     router.refresh();
   };
 
   const isActive = (path: string) => pathname === path;
-  const isActiveSender = (id: string) => pathname === `/sender/${id}`;
 
   const navItems: NavItem[] = [
     { href: '/', label: 'The Rack', icon: <Newspaper className="w-[18px] h-[18px]" /> },
-    { href: '/review', label: 'Gatekeeper', icon: <Shield className="w-[18px] h-[18px]" />, badge: pendingCount },
-    { href: '/archive', label: 'The Vault', icon: <Archive className="w-[18px] h-[18px]" /> },
+    { href: '/library', label: 'Library', icon: <BookMarked className="w-[18px] h-[18px]" /> },
+    { href: '/archive', label: 'Archive', icon: <Archive className="w-[18px] h-[18px]" /> },
+    { href: '/notes', label: 'Notes', icon: <StickyNote className="w-[18px] h-[18px]" /> },
     { href: '/subscriptions', label: 'Sources', icon: <Rss className="w-[18px] h-[18px]" /> },
   ];
 
   return (
     <>
-      {/* Mobile backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-30 md:hidden"
+          className="fixed inset-0 z-30 bg-black/30 backdrop-blur-sm md:hidden"
           onClick={onClose}
         />
       )}
 
       <div
         className={`
-          w-[260px] h-screen flex flex-col fixed left-0 top-0 z-40
-          border-r transition-transform duration-300 ease-in-out
+          fixed left-0 top-0 z-40 flex h-screen w-[260px] flex-col border-r
+          transition-transform duration-300 ease-in-out
           ${isOpen ? 'translate-x-0' : '-translate-x-full'} md:translate-x-0
         `}
         style={{
@@ -82,110 +61,67 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           borderColor: 'var(--sidebar-border)',
         }}
       >
-
-        {/* ─── Logo ─── */}
-        <div className="px-6 pt-7 pb-6">
-          <Link href="/" className="flex items-center gap-2.5 group" onClick={onClose}>
-            <div className="w-2 h-2 rounded-full bg-accent" />
-            <span className="text-lg font-bold tracking-tight text-ink">
-              Readflow.
-            </span>
+        <div className="hidden px-6 pb-6 pt-7 md:block">
+          <Link href="/" className="group flex items-center gap-2.5" onClick={onClose}>
+            <div className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(230,57,45,0.12)]" />
+            <span className="text-lg font-black uppercase tracking-[0.06em] text-ink">Readflow</span>
           </Link>
         </div>
 
-        {/* ─── Primary Navigation ─── */}
-        <nav className="px-3 space-y-0.5">
-          <div className="px-3 mb-3">
-            <span className="text-label uppercase text-ink-faint">Navigate</span>
-          </div>
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              onClick={onClose}
-              className={`
-                flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-150
-                ${isActive(item.href)
-                  ? 'bg-[var(--sidebar-active-bg)] text-ink'
-                  : 'text-ink-muted hover:text-ink hover:bg-[var(--sidebar-active-bg)]'
-                }
-              `}
-            >
-              <span className={isActive(item.href) ? 'text-accent' : ''}>{item.icon}</span>
-              {item.label}
-              {item.badge ? (
-                <span className="ml-auto text-[10px] font-bold bg-accent text-white w-5 h-5 flex items-center justify-center rounded-full">
-                  {item.badge}
-                </span>
-              ) : null}
-            </Link>
-          ))}
-        </nav>
-
-        {/* ─── Library: Approved Senders ─── */}
-        <div className="flex-1 overflow-y-auto thin-scrollbar mt-8 px-3">
-          <div className="px-3 mb-3">
-            <span className="text-label uppercase text-ink-faint">Library</span>
+        <nav className="hidden px-3 md:block">
+          <div className="mb-3 px-3">
+            <span className="text-label uppercase tracking-[0.16em] text-ink-faint">Navigate</span>
           </div>
           <div className="space-y-0.5">
-            {senders.map((sender) => (
+            {navItems.map((item) => (
               <Link
-                key={sender.id}
-                href={`/sender/${sender.id}`}
+                key={item.href}
+                href={item.href}
                 onClick={onClose}
                 className={`
-                  flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-all duration-150
-                  ${isActiveSender(sender.id)
+                  flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150
+                  ${isActive(item.href)
                     ? 'bg-[var(--sidebar-active-bg)] text-ink'
-                    : 'text-ink-muted hover:text-ink hover:bg-[var(--sidebar-active-bg)]'
+                    : 'text-ink-muted hover:bg-[var(--sidebar-active-bg)] hover:text-ink'
                   }
                 `}
               >
-                <div className="w-6 h-6 rounded-md bg-surface-overlay flex items-center justify-center text-[10px] font-bold text-ink-faint flex-shrink-0">
-                  {sender.name[0]}
-                </div>
-                <span className="truncate">{sender.name}</span>
+                <span className={isActive(item.href) ? 'text-accent' : ''}>{item.icon}</span>
+                {item.label}
               </Link>
             ))}
-            {senders.length === 0 && (
-              <p className="px-3 py-4 text-xs text-ink-faint text-center">
-                No sources yet. Sync Gmail to get started.
-              </p>
-            )}
           </div>
-        </div>
+        </nav>
 
-        {/* ─── Footer ─── */}
-        <div className="p-3 space-y-0.5" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
-          {/* Theme Toggle */}
+        <div className="mt-auto space-y-0.5 p-3" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
           <button
             onClick={toggleTheme}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-ink rounded-lg hover:bg-[var(--sidebar-active-bg)] transition-all duration-150 w-full"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-[var(--sidebar-active-bg)] hover:text-ink"
           >
-            {theme === 'light' ? <Moon className="w-[18px] h-[18px]" /> : <Sun className="w-[18px] h-[18px]" />}
-            {theme === 'light' ? 'Dark Sepia' : 'Light Mode'}
+            {theme === 'light' ? <Moon className="h-[18px] w-[18px]" /> : <Sun className="h-[18px] w-[18px]" />}
+            {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
           </button>
 
           <Link
             href="/settings"
             onClick={onClose}
             className={`
-              flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-150
+              flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-150
               ${isActive('/settings')
                 ? 'bg-[var(--sidebar-active-bg)] text-ink'
-                : 'text-ink-muted hover:text-ink hover:bg-[var(--sidebar-active-bg)]'
+                : 'text-ink-muted hover:bg-[var(--sidebar-active-bg)] hover:text-ink'
               }
             `}
           >
-            <Settings className="w-[18px] h-[18px]" />
+            <Settings className="h-[18px] w-[18px]" />
             Settings
           </Link>
 
           <button
             onClick={handleSignOut}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-accent rounded-lg hover:bg-[var(--sidebar-active-bg)] transition-all duration-150 w-full"
+            className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-ink-muted transition-all duration-150 hover:bg-[var(--sidebar-active-bg)] hover:text-accent"
           >
-            <LogOut className="w-[18px] h-[18px]" />
+            <LogOut className="h-[18px] w-[18px]" />
             Sign Out
           </button>
         </div>
