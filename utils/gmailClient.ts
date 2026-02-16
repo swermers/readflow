@@ -94,6 +94,60 @@ export async function listMessageIds(
 }
 
 /**
+ * List Gmail message IDs by label ID.
+ * Uses the labelIds parameter instead of query for reliable filtering.
+ */
+export async function listMessageIdsByLabel(
+  accessToken: string,
+  labelId: string,
+  maxResults = 50
+): Promise<string[]> {
+  const params = new URLSearchParams({
+    labelIds: labelId,
+    maxResults: String(maxResults),
+  });
+
+  const res = await fetch(`${GMAIL_API_BASE}/messages?${params}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gmail list by label failed (${res.status}): ${body}`);
+  }
+
+  const data = await res.json();
+  return (data.messages || []).map((m: { id: string }) => m.id);
+}
+
+export interface GmailLabel {
+  id: string;
+  name: string;
+  type: 'system' | 'user';
+}
+
+/**
+ * List all Gmail labels for the authenticated user.
+ */
+export async function listLabels(accessToken: string): Promise<GmailLabel[]> {
+  const res = await fetch(`${GMAIL_API_BASE}/labels`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Gmail labels failed (${res.status}): ${body}`);
+  }
+
+  const data = await res.json();
+  return (data.labels || []).map((l: any) => ({
+    id: l.id,
+    name: l.name,
+    type: l.type?.toLowerCase() === 'user' ? 'user' : 'system',
+  }));
+}
+
+/**
  * Fetch a single Gmail message by ID with full content.
  */
 export async function getMessage(

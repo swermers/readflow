@@ -22,10 +22,6 @@ export async function GET(request: Request) {
   const originFromRequest = requestUrl.origin;
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? originFromRequest;
 
-  // Detect whether this callback originated from a Gmail connection attempt
-  // (i.e. user clicked "Connect Gmail" on /settings which redirects with next=/settings)
-  const isGmailConnect = next.startsWith('/settings');
-
   if (code) {
     const cookieStore = cookies();
     const supabase = createServerClient(
@@ -55,11 +51,8 @@ export async function GET(request: Request) {
       console.log('[Auth Callback] Session established for user:', user.id);
       console.log('[Auth Callback] provider_token present:', !!providerToken);
       console.log('[Auth Callback] provider_refresh_token present:', !!providerRefreshToken);
-      console.log('[Auth Callback] isGmailConnect:', isGmailConnect);
 
-      // Check if user has a profile, create one if not.
-      // Only select base columns here — gmail columns may not exist yet
-      // if the 002_add_gmail_tokens migration hasn't been applied.
+      // Ensure profile exists
       const { data: existing } = await supabase
         .from('profiles')
         .select('id')
@@ -77,97 +70,79 @@ export async function GET(request: Request) {
         }
       }
 
-      // Try to read gmail state separately — this gracefully detects
-      // whether the gmail columns exist in the database.
+      // Always try to save Gmail tokens when present (login or re-auth)
+      let gmailConnected = false;
+      let tokenSaveError: string | null = null;
+
+      // Check if gmail columns exist
       let gmailColumnsExist = true;
-      let existingGmailState: { gmail_connected: boolean | null; gmail_refresh_token: string | null } | null = null;
       {
-        const { data, error: gmailSelectErr } = await supabase
+        const { error: gmailSelectErr } = await supabase
           .from('profiles')
-          .select('gmail_connected, gmail_refresh_token')
+          .select('gmail_connected')
           .eq('id', user.id)
           .single();
         if (gmailSelectErr && gmailSelectErr.message?.includes('schema cache')) {
           gmailColumnsExist = false;
-          console.error('[Auth Callback] Gmail columns not found in profiles table. Run migration 002_add_gmail_tokens.sql');
-        } else if (data) {
-          existingGmailState = data;
+          console.error('[Auth Callback] Gmail columns not found — run migration 002');
         }
       }
 
-      // Save Gmail OAuth tokens if present (means user granted gmail.readonly scope)
-      let gmailConnected = false;
-      let tokenSaveError: string | null = null;
+      if (gmailColumnsExist && (providerToken || providerRefreshToken)) {
+        const updates: Record<string, any> = {
+          gmail_connected: true,
+        };
 
-      if (!gmailColumnsExist) {
-        // The gmail columns haven't been added to the database yet
-        tokenSaveError =
-          'Database migration required: the gmail token columns do not exist in the profiles table. ' +
-          'Please run the SQL in supabase/migrations/002_add_gmail_tokens.sql against your Supabase project, ' +
-          'then try connecting Gmail again.';
-        console.error('[Auth Callback]', tokenSaveError);
-      } else if (providerRefreshToken) {
+        if (providerToken) {
+          updates.gmail_access_token = providerToken;
+          updates.gmail_token_expires_at = new Date(Date.now() + 3600 * 1000).toISOString();
+        }
+        if (providerRefreshToken) {
+          updates.gmail_refresh_token = providerRefreshToken;
+        }
+
         const { error: updateErr } = await supabase
           .from('profiles')
-          .update({
-            gmail_access_token: providerToken || null,
-            gmail_refresh_token: providerRefreshToken,
-            gmail_token_expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
-            gmail_connected: true,
-          })
+          .update(updates)
           .eq('id', user.id);
 
         if (updateErr) {
           console.error('[Auth Callback] Token save failed:', updateErr);
           tokenSaveError = updateErr.message;
         } else {
-          console.log('[Auth Callback] Gmail tokens saved successfully (with refresh token)');
+          console.log('[Auth Callback] Gmail tokens saved successfully');
           gmailConnected = true;
         }
-      } else if (providerToken) {
-        // Got an access token but no refresh token — update what we can
-        const { error: updateErr } = await supabase
-          .from('profiles')
-          .update({
-            gmail_access_token: providerToken,
-            gmail_token_expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
-          })
-          .eq('id', user.id);
-
-        if (updateErr) {
-          console.error('[Auth Callback] Access token save failed:', updateErr);
-          tokenSaveError = updateErr.message;
-        } else {
-          console.log('[Auth Callback] Access token saved (no refresh token this time)');
-        }
-
-        // Check if user already had a refresh token stored (from a previous grant)
-        if (existingGmailState?.gmail_refresh_token) {
-          gmailConnected = true;
-        }
-      } else {
-        // Neither token present
+      } else if (gmailColumnsExist && !providerToken && !providerRefreshToken) {
         console.warn('[Auth Callback] No provider tokens received from OAuth session.');
-        console.warn('[Auth Callback] This usually means:');
-        console.warn('  1. Gmail API is not enabled in Google Cloud Console');
-        console.warn('  2. gmail.readonly scope is not on the OAuth consent screen');
-        console.warn('  3. The Supabase Google provider is not configured to return provider tokens');
-
-        // Check if the user previously connected (tokens already exist)
-        if (existingGmailState?.gmail_connected && existingGmailState?.gmail_refresh_token) {
-          gmailConnected = true;
-        }
+        console.warn('[Auth Callback] Check: Supabase Google provider has Client ID AND Client Secret');
       }
 
-      // When redirecting back to /settings, include Gmail connection result
-      if (isGmailConnect) {
+      // If redirecting to /settings, include result info
+      if (next.startsWith('/settings')) {
         if (tokenSaveError) {
           return NextResponse.redirect(
-            `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent('Token save failed: ' + tokenSaveError)}`
+            `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent(tokenSaveError)}`
           );
         }
-        const status = gmailConnected ? 'connected' : 'no_tokens';
-        return NextResponse.redirect(`${siteUrl}/settings?gmail=${status}`);
+        if (gmailConnected) {
+          return NextResponse.redirect(`${siteUrl}/settings?gmail=connected`);
+        }
+        if (!gmailColumnsExist) {
+          return NextResponse.redirect(
+            `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent(
+              'Database migration required: run supabase/migrations/002_add_gmail_tokens.sql'
+            )}`
+          );
+        }
+        if (!providerToken && !providerRefreshToken) {
+          return NextResponse.redirect(
+            `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent(
+              'No provider tokens received. Check that your Supabase Google provider has both Client ID AND Client Secret configured.'
+            )}`
+          );
+        }
+        return NextResponse.redirect(`${siteUrl}/settings`);
       }
 
       return NextResponse.redirect(`${siteUrl}${next}`);
@@ -175,9 +150,7 @@ export async function GET(request: Request) {
 
     console.error('[Auth Callback] Exchange error:', error);
 
-    // If the exchange failed during a Gmail connection attempt, redirect back
-    // to settings with an error instead of showing the generic error page
-    if (isGmailConnect) {
+    if (next.startsWith('/settings')) {
       const msg = error?.message || 'Code exchange failed';
       return NextResponse.redirect(
         `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent(msg)}`
@@ -185,9 +158,9 @@ export async function GET(request: Request) {
     }
   }
 
-  // Check for OAuth errors in query params (e.g. Google denied the scope)
+  // Check for OAuth errors in query params
   const oauthError = searchParams.get('error');
-  if (isGmailConnect && oauthError) {
+  if (oauthError && next.startsWith('/settings')) {
     const errorDesc = searchParams.get('error_description') || oauthError;
     return NextResponse.redirect(
       `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent(errorDesc)}`

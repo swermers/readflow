@@ -1,11 +1,17 @@
 'use client';
 
-import { useEffect, useState, Suspense } from 'react';
+import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, ExternalLink, ArrowRight, RefreshCw, AlertTriangle, Settings } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
+
+interface GmailLabel {
+  id: string;
+  name: string;
+  type: 'system' | 'user';
+}
 
 function SettingsContent() {
   const [email, setEmail] = useState('');
@@ -15,25 +21,24 @@ function SettingsContent() {
   const [saving, setSaving] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [connecting, setConnecting] = useState(false);
   const [gmailError, setGmailError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
+  // Labels
+  const [labels, setLabels] = useState<GmailLabel[]>([]);
+  const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
+  const [labelsLoading, setLabelsLoading] = useState(false);
+  const [labelsSaving, setLabelsSaving] = useState(false);
+
   const supabase = createClient();
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  useEffect(() => {
-    loadProfile();
-    handleGmailCallbackResult();
-  }, []);
-
-  const loadProfile = async () => {
+  const loadProfile = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
 
     setEmail(user.email || '');
 
-    // Load base profile fields (always present)
     const { data: profile } = await supabase
       .from('profiles')
       .select('id, first_name, last_name')
@@ -47,12 +52,13 @@ function SettingsContent() {
       // Gmail columns may not exist if migration 002 hasn't been run
       const { data: gmailProfile } = await supabase
         .from('profiles')
-        .select('gmail_connected, gmail_last_sync_at')
+        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels')
         .eq('id', user.id)
         .single();
 
       if (gmailProfile) {
         setGmailConnected(gmailProfile.gmail_connected || false);
+        setSelectedLabels(gmailProfile.gmail_sync_labels || []);
         if (gmailProfile.gmail_last_sync_at) {
           setLastSync(new Date(gmailProfile.gmail_last_sync_at));
         }
@@ -64,11 +70,25 @@ function SettingsContent() {
     }
 
     setLoading(false);
-  };
+  }, [supabase]);
+
+  useEffect(() => {
+    loadProfile();
+    handleGmailCallbackResult();
+  }, []);
+
+  // Fetch labels when gmail becomes connected
+  useEffect(() => {
+    if (gmailConnected) {
+      fetchLabels();
+    }
+  }, [gmailConnected]);
 
   const handleGmailCallbackResult = () => {
     const gmailResult = searchParams.get('gmail');
     if (!gmailResult) return;
+
+    const errorDetail = searchParams.get('gmail_error');
 
     const url = new URL(window.location.href);
     url.searchParams.delete('gmail');
@@ -77,29 +97,62 @@ function SettingsContent() {
 
     switch (gmailResult) {
       case 'connected':
-        triggerToast('Gmail connected successfully! Click "Sync Now" to import newsletters.');
-        break;
-      case 'no_tokens':
-        setGmailError(
-          'Gmail connection failed — no access tokens were received. ' +
-          'This usually means the Gmail API is not enabled in your Google Cloud Console, ' +
-          'or the gmail.readonly scope is not configured on the OAuth consent screen.'
-        );
-        triggerToast('Gmail connection failed — see details below');
+        setGmailConnected(true);
+        triggerToast('Gmail connected successfully!');
+        loadProfile();
         break;
       case 'error': {
-        const errorDetail = searchParams.get('gmail_error');
-        const isMigrationError = errorDetail?.includes('migration required') || errorDetail?.includes('schema cache');
         setGmailError(
-          errorDetail
-            ? `Gmail connection error: ${errorDetail}`
-            : 'Gmail connection failed. The OAuth flow did not complete successfully. ' +
-              'Please check your Google Cloud Console configuration.'
+          errorDetail || 'Gmail connection failed. The OAuth flow did not complete successfully.'
         );
-        triggerToast(isMigrationError ? 'Database migration required — see details below' : 'Gmail connection failed');
+        triggerToast('Gmail connection issue — see details below');
         break;
       }
     }
+  };
+
+  const fetchLabels = async () => {
+    setLabelsLoading(true);
+    try {
+      const res = await fetch('/api/gmail-labels');
+      const data = await res.json();
+      if (res.ok && data.labels) {
+        setLabels(data.labels);
+      } else if (res.status === 401) {
+        setGmailConnected(false);
+        setGmailError('Gmail session expired. Please sign out and sign back in.');
+      }
+    } catch {
+      console.error('Failed to fetch labels');
+    }
+    setLabelsLoading(false);
+  };
+
+  const toggleLabel = (labelId: string) => {
+    setSelectedLabels(prev =>
+      prev.includes(labelId)
+        ? prev.filter(id => id !== labelId)
+        : [...prev, labelId]
+    );
+  };
+
+  const handleSaveLabels = async () => {
+    setLabelsSaving(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setLabelsSaving(false); return; }
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ gmail_sync_labels: selectedLabels })
+      .eq('id', user.id);
+
+    if (error) {
+      console.error('Error saving labels:', error);
+      triggerToast('Error saving label preferences');
+    } else {
+      triggerToast('Label preferences saved');
+    }
+    setLabelsSaving(false);
   };
 
   const handleSaveProfile = async () => {
@@ -120,16 +173,14 @@ function SettingsContent() {
     setSaving(false);
   };
 
-  const handleConnectGmail = async () => {
-    setConnecting(true);
+  const handleReconnectGmail = async () => {
     setGmailError(null);
-
-    const redirectUrl = `${window.location.origin}/auth/callback?next=/settings`;
-
+    // Sign out + re-auth to get fresh provider tokens
+    await supabase.auth.signOut();
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: redirectUrl,
+        redirectTo: `${window.location.origin}/auth/callback?next=/settings`,
         scopes: 'https://www.googleapis.com/auth/gmail.readonly',
         queryParams: {
           access_type: 'offline',
@@ -137,11 +188,8 @@ function SettingsContent() {
         },
       },
     });
-
     if (error) {
-      setConnecting(false);
-      setGmailError(`Failed to start Gmail connection: ${error.message}`);
-      triggerToast('Failed to start Gmail connection');
+      setGmailError(`Failed to start reconnection: ${error.message}`);
     }
   };
 
@@ -169,7 +217,7 @@ function SettingsContent() {
   };
 
   const handleDisconnectGmail = async () => {
-    if (!confirm('Disconnect Gmail? You will need to reconnect to sync newsletters.')) return;
+    if (!confirm('Disconnect Gmail? You will need to sign out and back in to reconnect.')) return;
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -181,10 +229,13 @@ function SettingsContent() {
         gmail_access_token: null,
         gmail_refresh_token: null,
         gmail_token_expires_at: null,
+        gmail_sync_labels: [],
       })
       .eq('id', user.id);
 
     setGmailConnected(false);
+    setLabels([]);
+    setSelectedLabels([]);
     triggerToast('Gmail disconnected');
   };
 
@@ -208,7 +259,7 @@ function SettingsContent() {
       {/* Header */}
       <header className="mb-10">
         <h1 className="text-display-lg text-ink">Control Room.</h1>
-        <p className="text-sm text-ink-muted mt-1">Preferences &amp; Gmail Connection.</p>
+        <p className="text-sm text-ink-muted mt-1">Preferences &amp; Gmail sync.</p>
       </header>
 
       <div className="h-px bg-line-strong mb-12" />
@@ -274,13 +325,17 @@ function SettingsContent() {
               <Mail className="w-5 h-5 text-ink-faint" />
               Sync Manager
             </h3>
-            <p className="text-sm text-ink-faint mt-1">Connect and sync Gmail labels.</p>
+            <p className="text-sm text-ink-faint mt-1">
+              {gmailConnected
+                ? 'Choose which labels to sync and import newsletters.'
+                : 'Gmail access is needed to sync newsletters.'}
+            </p>
           </div>
           <div className="md:col-span-8 bg-surface-raised border border-line">
             <div className="p-6 space-y-6">
               {gmailConnected ? (
                 <>
-                  {/* Connected state */}
+                  {/* Connected header */}
                   <div className="flex items-center justify-between pb-4 border-b border-line">
                     <div className="flex items-center gap-2">
                       <div className="w-2 h-2 bg-green-500 rounded-full" />
@@ -294,16 +349,80 @@ function SettingsContent() {
                     </button>
                   </div>
 
-                  {/* Sync button */}
+                  {/* Label selection */}
                   <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-label uppercase text-ink-faint flex items-center gap-1.5">
+                        <Tag className="w-3 h-3" />
+                        Labels to Sync
+                      </label>
+                      {labels.length > 0 && (
+                        <button
+                          onClick={fetchLabels}
+                          disabled={labelsLoading}
+                          className="text-xs text-ink-faint hover:text-ink transition-colors flex items-center gap-1"
+                        >
+                          <RefreshCw className={`w-3 h-3 ${labelsLoading ? 'animate-spin' : ''}`} />
+                          Refresh
+                        </button>
+                      )}
+                    </div>
+
+                    {labelsLoading && labels.length === 0 ? (
+                      <div className="flex items-center gap-2 text-sm text-ink-muted py-4">
+                        <Loader2 className="w-4 h-4 animate-spin" /> Loading labels from Gmail...
+                      </div>
+                    ) : labels.length > 0 ? (
+                      <div className="space-y-1">
+                        {labels.map(label => (
+                          <label
+                            key={label.id}
+                            className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-overlay cursor-pointer transition-colors border border-transparent hover:border-line"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedLabels.includes(label.id)}
+                              onChange={() => toggleLabel(label.id)}
+                              className="w-4 h-4 accent-accent"
+                            />
+                            <span className="text-sm text-ink flex-1">{label.name}</span>
+                            {label.type === 'system' && (
+                              <span className="text-[10px] text-ink-faint uppercase tracking-wider">System</span>
+                            )}
+                          </label>
+                        ))}
+                        <button
+                          onClick={handleSaveLabels}
+                          disabled={labelsSaving}
+                          className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-5 py-2.5 hover:bg-accent transition-colors disabled:opacity-50 mt-3"
+                        >
+                          {labelsSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                          Save Labels
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-ink-faint py-2">
+                        No labels found. Create labels in Gmail to organize your newsletters.
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Sync button */}
+                  <div className="space-y-3 pt-4 border-t border-line">
                     <button
                       onClick={handleSyncNow}
-                      disabled={syncing}
+                      disabled={syncing || selectedLabels.length === 0}
                       className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50 w-full justify-center"
                     >
                       {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                       {syncing ? 'Syncing...' : 'Sync Now'}
                     </button>
+
+                    {selectedLabels.length === 0 && (
+                      <p className="text-xs text-ink-faint text-center">
+                        Select at least one label above to enable syncing.
+                      </p>
+                    )}
 
                     {lastSync && (
                       <p className="text-xs text-ink-faint text-center">
@@ -311,77 +430,32 @@ function SettingsContent() {
                       </p>
                     )}
                   </div>
-
-                  {/* Setup instructions */}
-                  <div className="pt-4 border-t border-line space-y-3">
-                    <label className="text-label uppercase text-ink-faint">Gmail Setup</label>
-                    <details className="group border border-line">
-                      <summary className="flex items-center justify-between px-4 py-3 cursor-pointer text-sm font-medium text-ink hover:bg-surface-overlay">
-                        <span>How to sync newsletters</span>
-                        <ArrowRight className="w-4 h-4 text-ink-faint group-open:rotate-90 transition-transform" />
-                      </summary>
-                      <div className="px-4 pb-4 text-sm text-ink-muted space-y-2">
-                        <ol className="list-decimal list-inside space-y-1.5">
-                          <li>In Gmail, go to <a href="https://mail.google.com/mail/u/0/#settings/labels" target="_blank" rel="noopener noreferrer" className="text-accent underline inline-flex items-center gap-0.5">Settings &rarr; Labels <ExternalLink className="w-3 h-3" /></a></li>
-                          <li>Create a new label called &quot;Readflow&quot;</li>
-                          <li>Go to <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noopener noreferrer" className="text-accent underline inline-flex items-center gap-0.5">Settings &rarr; Filters <ExternalLink className="w-3 h-3" /></a></li>
-                          <li>Create a filter: &quot;From&quot; contains your newsletter sender</li>
-                          <li>Action: Apply label &quot;Readflow&quot;</li>
-                          <li>Click &quot;Sync Now&quot; above to import</li>
-                        </ol>
-                      </div>
-                    </details>
-                  </div>
                 </>
               ) : (
                 <>
                   {/* Not connected state */}
                   <div className="text-center py-8">
                     <Mail className="w-10 h-10 text-ink-faint mx-auto mb-4" />
-                    <p className="text-sm font-bold text-ink mb-1">Connect Gmail to sync newsletters</p>
+                    <p className="text-sm font-bold text-ink mb-1">Gmail access required</p>
                     <p className="text-xs text-ink-faint mb-6">
-                      Read-only access. We only see emails you label &quot;Readflow&quot;.
+                      Sign out and sign back in to grant Gmail read-only access, or click below.
                     </p>
 
                     {gmailError && (
                       <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-left">
                         <div className="flex items-start gap-2">
                           <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                          <div className="space-y-2">
-                            <p className="text-sm text-red-700 dark:text-red-400">{gmailError}</p>
-                            <details className="text-xs text-red-600 dark:text-red-400">
-                              <summary className="cursor-pointer font-medium hover:text-red-800 dark:hover:text-red-300">
-                                How to fix this
-                              </summary>
-                              {gmailError?.includes('migration required') || gmailError?.includes('schema cache') ? (
-                                <ol className="list-decimal list-inside mt-2 space-y-1">
-                                  <li>Open your <strong>Supabase project dashboard</strong> &rarr; SQL Editor</li>
-                                  <li>Run the contents of <code className="bg-red-100 dark:bg-red-900/40 px-1">supabase/migrations/002_add_gmail_tokens.sql</code></li>
-                                  <li>This adds the required Gmail token columns to the profiles table</li>
-                                  <li>Come back here and click &quot;Connect Gmail&quot; again</li>
-                                </ol>
-                              ) : (
-                                <ol className="list-decimal list-inside mt-2 space-y-1">
-                                  <li>Go to <strong>Google Cloud Console</strong> &rarr; APIs &amp; Services &rarr; Library</li>
-                                  <li>Search for &quot;Gmail API&quot; and <strong>enable</strong> it</li>
-                                  <li>Go to OAuth consent screen &rarr; Edit &rarr; Add scopes</li>
-                                  <li>Use &quot;Manually add scopes&quot; and enter: <code className="bg-red-100 dark:bg-red-900/40 px-1">https://www.googleapis.com/auth/gmail.readonly</code></li>
-                                  <li>Save and try connecting again</li>
-                                </ol>
-                              )}
-                            </details>
-                          </div>
+                          <p className="text-sm text-red-700 dark:text-red-400">{gmailError}</p>
                         </div>
                       </div>
                     )}
 
                     <button
-                      onClick={handleConnectGmail}
-                      disabled={connecting}
-                      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors mx-auto disabled:opacity-50"
+                      onClick={handleReconnectGmail}
+                      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors mx-auto"
                     >
-                      {connecting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
-                      {connecting ? 'Connecting...' : 'Connect Gmail'}
+                      <Mail className="w-3 h-3" />
+                      Grant Gmail Access
                     </button>
                   </div>
                 </>
