@@ -1,17 +1,33 @@
-import type { Metadata } from "next";
-import { Inter } from "next/font/google";
-import "./globals.css";
-import ThemeProvider from "@/components/ThemeProvider";
-import Toast from "@/components/Toast";
+import type { Metadata, Viewport } from 'next';
+import { Inter } from 'next/font/google';
+import './globals.css';
+import ThemeProvider from '@/components/ThemeProvider';
+import Toast from '@/components/Toast';
 
 const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
+  subsets: ['latin'],
+  variable: '--font-inter',
 });
 
 export const metadata: Metadata = {
-  title: "Readflow",
-  description: "Your personal newsletter sanctuary",
+  title: 'Readflow',
+  description: 'Your personal newsletter sanctuary',
+  applicationName: 'Readflow',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Readflow',
+  },
+  icons: {
+    icon: '/icon.svg',
+    apple: '/apple-icon.svg',
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#090d14',
+  viewportFit: 'cover',
 };
 
 export default function RootLayout({
@@ -29,7 +45,7 @@ export default function RootLayout({
               document.documentElement.classList.add('dark');
             }
           } catch (e) {}
-        `}} />
+        ` }} />
       </head>
       <body className={`${inter.variable} font-sans antialiased`}>
         <ThemeProvider>

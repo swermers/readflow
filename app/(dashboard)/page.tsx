@@ -82,33 +82,32 @@ export default async function Home() {
 
       <div className="h-px bg-line-strong mb-10" />
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-5 lg:grid-cols-3 stagger-children">
         {emails?.map((email: any) => (
-          <article key={email.id} className="relative bg-surface border border-line p-6 hover:border-accent transition-all duration-200 h-64 flex flex-col justify-between">
-            <div className="absolute top-4 right-4">
-              <div className="unread-dot" />
-            </div>
-
-            <Link href={`/newsletters/${email.id}`} className="group block pr-6">
-              <div className="flex justify-between items-start">
-                <span className="text-label uppercase text-accent">{email.senders?.name || 'Unknown'}</span>
-                <span className="text-[10px] text-ink-faint flex items-center gap-1">
-                  <Clock className="w-3 h-3" />
-                  {new Date(email.received_at).toLocaleDateString()}
-                </span>
+          <article key={email.id} className="relative flex min-h-56 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
+            <div>
+              <div className="flex items-start justify-between gap-2">
+                <p className="truncate text-[10px] uppercase tracking-[0.08em] text-accent">{email.senders?.name || 'Unknown'}</p>
+                <div className="flex items-center gap-2">
+                  <div className="unread-dot" />
+                  <span className="text-[10px] text-ink-faint flex items-center gap-1">
+                    <Clock className="w-3 h-3" />
+                    {new Date(email.received_at).toLocaleDateString()}
+                  </span>
+                </div>
               </div>
 
-              <div className="mt-6">
-                <h3 className="text-lg font-bold leading-tight text-ink mb-2 group-hover:text-accent transition-colors">
+              <Link href={`/newsletters/${email.id}`} className="group mt-2 block">
+                <h3 className="text-sm md:text-base font-semibold leading-tight text-ink line-clamp-3 group-hover:text-accent transition-colors">
                   {email.subject}
                 </h3>
-                <p className="text-sm text-ink-muted line-clamp-3 leading-relaxed">{email.snippet}</p>
-              </div>
-            </Link>
+                <p className="mt-2 text-[11px] text-ink-faint line-clamp-2">{email.snippet}</p>
+              </Link>
+            </div>
 
-            <div className="pt-4 border-t border-line flex items-center justify-between gap-3">
-              <Link href={`/newsletters/${email.id}`} className="flex items-center gap-1 text-label uppercase text-accent hover:opacity-80">
-                Read <ArrowUpRight className="w-3 h-3" />
+            <div className="pt-3 border-t border-line flex flex-wrap items-center justify-between gap-2">
+              <Link href={`/newsletters/${email.id}`} className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.08em] text-accent hover:opacity-80">
+                Open <ArrowUpRight className="w-3 h-3" />
               </Link>
               <RackIssueActions issueId={email.id} />
             </div>

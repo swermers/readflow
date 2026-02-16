@@ -15,11 +15,18 @@ type Highlight = {
 const TOOLBAR_WIDTH = 280;
 const POPOVER_WIDTH = 320;
 
+type TextNodeEntry = {
+  node: Text;
+  start: number;
+  end: number;
+};
+
 function clampX(centerX: number, width: number) {
   const min = 8;
   const max = window.innerWidth - width - 8;
   return Math.max(min, Math.min(centerX - width / 2, max));
 }
+
 
 export default function HighlightableContent({ issueId, bodyHtml }: { issueId: string; bodyHtml: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -77,35 +84,69 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     });
   };
 
-  const applyHighlightToDom = (id: string, highlightedText: string) => {
+  const getTextNodeEntries = () => {
+    const container = containerRef.current;
+    if (!container) return { fullText: '', entries: [] as TextNodeEntry[] };
+
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const entries: TextNodeEntry[] = [];
+    let fullText = '';
+
+    while (walker.nextNode()) {
+      const node = walker.currentNode as Text;
+      if (!node.textContent) continue;
+      const start = fullText.length;
+      fullText += node.textContent;
+      entries.push({ node, start, end: fullText.length });
+    }
+
+    return { fullText, entries };
+  };
+
+  const createRangeFromGlobalOffsets = (entries: TextNodeEntry[], start: number, end: number) => {
+    const startEntry = entries.find((entry) => start >= entry.start && start <= entry.end);
+    const endEntry = entries.find((entry) => end >= entry.start && end <= entry.end);
+    if (!startEntry || !endEntry) return null;
+
+    const range = document.createRange();
+    range.setStart(startEntry.node, Math.max(0, start - startEntry.start));
+    range.setEnd(endEntry.node, Math.max(0, end - endEntry.start));
+    return range;
+  };
+
+  const applyHighlightToDom = (id: string, highlightedText: string, usedRanges: Array<{ start: number; end: number }>) => {
     const container = containerRef.current;
     if (!container || !highlightedText.trim()) return;
 
-    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    const { fullText, entries } = getTextNodeEntries();
+    if (!fullText || entries.length === 0) return;
 
-    while (walker.nextNode()) {
-      const textNode = walker.currentNode as Text;
-      const parentElement = textNode.parentElement;
-      if (!parentElement || parentElement.closest('mark[data-highlight-id]')) continue;
+    const targetText = highlightedText.trim();
+    if (!targetText) return;
 
-      const textContent = textNode.textContent || '';
-      const start = textContent.indexOf(highlightedText);
-      if (start === -1) continue;
+    let matchIndex = fullText.indexOf(targetText);
+    while (matchIndex !== -1) {
+      const start = matchIndex;
+      const end = matchIndex + targetText.length;
+      const overlapsExisting = usedRanges.some((range) => start < range.end && end > range.start);
+      if (!overlapsExisting) {
+        const range = createRangeFromGlobalOffsets(entries, start, end);
+        if (!range) return;
 
-      const range = document.createRange();
-      range.setStart(textNode, start);
-      range.setEnd(textNode, start + highlightedText.length);
+        const mark = document.createElement('mark');
+        mark.className = 'readflow-highlight';
+        mark.dataset.highlightId = id;
 
-      const mark = document.createElement('mark');
-      mark.className = 'readflow-highlight';
-      mark.dataset.highlightId = id;
-
-      try {
-        range.surroundContents(mark);
-      } catch {
-        range.detach?.();
+        try {
+          range.surroundContents(mark);
+          usedRanges.push({ start, end });
+          return;
+        } catch {
+          return;
+        }
       }
-      break;
+
+      matchIndex = fullText.indexOf(targetText, matchIndex + targetText.length);
     }
   };
 
@@ -131,8 +172,8 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const selection = window.getSelection();
     if (!selection || selection.rangeCount === 0) return;
 
-    const text = selection.toString().replace(/\s+/g, ' ').trim();
-    if (!text) return;
+    const rawText = selection.toString();
+    if (!rawText.trim()) return;
 
     const range = selection.getRangeAt(0);
     const container = containerRef.current;
@@ -148,7 +189,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const top = Math.max(8, (baseRect?.top || 16) + window.scrollY - 64);
     const left = clampX((baseRect?.left || 40) + ((baseRect?.width || 40) / 2), TOOLBAR_WIDTH);
 
-    setSelectedText(text);
+    setSelectedText(rawText.trim());
     setToolbarPosition({ top, left });
     setNoteMode(false);
     setNoteText('');
@@ -167,10 +208,11 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
   useEffect(() => {
     clearExistingMarks();
+    const usedRanges: Array<{ start: number; end: number }> = [];
     highlights
       .slice()
       .reverse()
-      .forEach((highlight) => applyHighlightToDom(highlight.id, highlight.highlighted_text));
+      .forEach((highlight) => applyHighlightToDom(highlight.id, highlight.highlighted_text, usedRanges));
   }, [highlights]);
 
 

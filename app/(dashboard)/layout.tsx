@@ -17,7 +17,7 @@ export default function DashboardLayout({
       {/* Mobile hamburger */}
       <button
         onClick={() => setSidebarOpen(true)}
-        className="fixed left-4 top-4 z-50 rounded-xl border border-line bg-surface p-2.5 shadow-sm md:hidden"
+        className="fixed right-4 top-4 z-50 rounded-xl border border-line bg-surface p-2.5 shadow-sm md:hidden"
       >
         <Menu className="w-5 h-5 text-ink" />
       </button>
