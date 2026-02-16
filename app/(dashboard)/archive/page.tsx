@@ -46,11 +46,11 @@ export default function ArchivePage() {
 
   if (error) {
     return (
-      <div className="p-8 md:p-12 min-h-screen">
-        <header className="mb-10">
+      <div className="p-6 md:p-12 min-h-screen">
+        <header className="mb-8">
           <h1 className="text-display-lg text-ink">Archive.</h1>
         </header>
-        <div className="h-px bg-line-strong mb-10" />
+        <div className="h-px bg-line-strong mb-8" />
         <div className="text-center py-20 bg-surface-raised border border-line">
           <AlertCircle className="w-10 h-10 text-accent mx-auto mb-4" />
           <p className="text-ink font-medium">Something went wrong.</p>
@@ -61,17 +61,17 @@ export default function ArchivePage() {
   }
 
   return (
-    <div className="p-8 md:p-12 min-h-screen">
-      <header className="mb-10">
+    <div className="p-6 md:p-12 min-h-screen">
+      <header className="mb-8">
         <h1 className="text-display-lg text-ink">Archive.</h1>
         <p className="text-sm text-ink-muted mt-1">
-          {issues.length} archived {issues.length === 1 ? 'issue' : 'issues'}.
+          {issues.length} archived {issues.length === 1 ? 'article' : 'articles'}.
         </p>
       </header>
 
       <div className="h-px bg-line-strong mb-8" />
 
-      <div className="relative mb-10 max-w-lg">
+      <div className="relative mb-8 max-w-lg">
         <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-faint" />
         <input
           type="text"
@@ -89,29 +89,29 @@ export default function ArchivePage() {
           <p className="text-sm text-ink-faint">Archived articles appear here.</p>
         </div>
       ) : (
-        <div className="divide-y divide-line">
+        <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 md:gap-5">
           {filtered.map((issue) => (
-            <Link key={issue.id} href={`/newsletters/${issue.id}`}>
-              <div className="group flex items-center justify-between py-5 px-2 hover:bg-surface-raised transition-colors cursor-pointer">
-                <div className="flex-1 min-w-0 pr-8">
-                  <div className="flex items-center gap-3 mb-1">
-                    <span className="font-bold text-sm text-ink">{issue.senders?.name || 'Unknown'}</span>
-                    <span className="text-ink-faint">&middot;</span>
-                    <span className="text-xs text-ink-faint">
-                      {issue.archived_at
-                        ? new Date(issue.archived_at).toLocaleDateString()
-                        : new Date(issue.received_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                  <h3 className="text-base font-medium text-ink truncate group-hover:text-accent transition-colors">
+            <Link key={issue.id} href={`/newsletters/${issue.id}`} className="group">
+              <article className="h-52 md:h-56 border border-line bg-surface p-4 md:p-5 flex flex-col justify-between hover:border-accent transition-all duration-200">
+                <div>
+                  <p className="text-[10px] uppercase text-accent truncate">{issue.senders?.name || 'Unknown'}</p>
+                  <h3 className="mt-2 text-sm md:text-base font-semibold leading-tight text-ink line-clamp-3 group-hover:text-accent transition-colors">
                     {issue.subject}
                   </h3>
-                  <p className="text-sm text-ink-faint truncate mt-0.5">{issue.snippet}</p>
                 </div>
-                <div className="opacity-0 group-hover:opacity-100 transition-opacity">
-                  <ArrowUpRight className="w-4 h-4 text-ink-faint" />
+
+                <div className="pt-3 border-t border-line">
+                  <p className="text-[11px] text-ink-faint line-clamp-2">{issue.snippet}</p>
+                  <p className="mt-2 text-[10px] text-ink-faint">
+                    {issue.archived_at
+                      ? new Date(issue.archived_at).toLocaleDateString()
+                      : new Date(issue.received_at).toLocaleDateString()}
+                  </p>
+                  <span className="mt-1 inline-flex items-center gap-1 text-[10px] uppercase text-accent">
+                    Open <ArrowUpRight className="w-3 h-3" />
+                  </span>
                 </div>
-              </div>
+              </article>
             </Link>
           ))}
         </div>

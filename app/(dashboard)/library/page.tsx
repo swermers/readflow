@@ -143,19 +143,19 @@ export default function LibraryPage() {
           <p className="text-sm text-ink-faint">Sync your inbox to populate the library.</p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-5 lg:grid-cols-3">
           {filtered.map((sender) => (
             <Link key={sender.id} href={`/sender/${sender.id}?view=library`} className="group">
-              <article className="flex h-56 flex-col justify-between border border-line bg-surface p-6 transition-all duration-200 hover:border-accent">
+              <article className="flex h-48 md:h-56 flex-col justify-between border border-line bg-surface p-4 md:p-6 transition-all duration-200 hover:border-accent">
                 <div>
                   <div className="mb-4 inline-flex h-9 w-9 items-center justify-center rounded-full bg-surface-overlay text-ink-faint">
                     <Mail className="h-4 w-4" />
                   </div>
                   <h3 className="truncate text-lg font-bold text-ink transition-colors group-hover:text-accent">{sender.name}</h3>
-                  <p className="mt-1 truncate text-xs font-mono text-ink-faint">{sender.email}</p>
+                  <p className="mt-1 truncate text-[11px] md:text-xs font-mono text-ink-faint">{sender.email}</p>
                 </div>
 
-                <div className="space-y-2 border-t border-line pt-4 text-xs text-ink-muted">
+                <div className="space-y-1.5 border-t border-line pt-3 text-[11px] md:text-xs text-ink-muted">
                   <p>{sender.totalCount} total article{sender.totalCount === 1 ? '' : 's'}</p>
                   <p>{sender.savedCount} saved</p>
                   <p>{sender.latestDate ? `Latest: ${new Date(sender.latestDate).toLocaleDateString()}` : 'No dates yet'}</p>

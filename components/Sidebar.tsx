@@ -82,7 +82,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
         }}
       >
 
-        <div className="px-6 pt-7 pb-6">
+        <div className="hidden px-6 pb-6 pt-7 md:block">
           <Link href="/" className="flex items-center gap-2.5 group" onClick={onClose}>
             <div className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(230,57,45,0.12)]" />
             <span className="text-lg font-black uppercase tracking-[0.06em] text-ink">
@@ -91,7 +91,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           </Link>
         </div>
 
-        <nav className="px-3 space-y-0.5">
+        <nav className="hidden px-3 space-y-0.5 md:block">
           <div className="px-3 mb-3">
             <span className="text-label uppercase tracking-[0.16em] text-ink-faint">Navigate</span>
           </div>
@@ -114,7 +114,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           ))}
         </nav>
 
-        <div className="flex-1 overflow-y-auto thin-scrollbar mt-8 px-3">
+        <div className="mt-8 hidden flex-1 overflow-y-auto thin-scrollbar px-3 md:block">
           <div className="px-3 mb-3">
             <span className="text-label uppercase tracking-[0.16em] text-ink-faint">Newsletters</span>
           </div>
@@ -146,7 +146,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           </div>
         </div>
 
-        <div className="p-3 space-y-0.5" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
+        <div className="mt-auto p-3 space-y-0.5" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
           <button
             onClick={toggleTheme}
             className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-ink rounded-xl hover:bg-[var(--sidebar-active-bg)] transition-all duration-150 w-full"
