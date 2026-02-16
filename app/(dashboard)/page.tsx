@@ -85,6 +85,9 @@ export default async function Home() {
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-5 lg:grid-cols-3 stagger-children">
         {emails?.map((email: any) => (
           <article key={email.id} className="relative flex min-h-56 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-5 lg:grid-cols-3 stagger-children">
+        {emails?.map((email: any) => (
+          <article key={email.id} className="relative flex h-52 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
             <div>
               <div className="flex items-start justify-between gap-2">
                 <p className="truncate text-[10px] uppercase tracking-[0.08em] text-accent">{email.senders?.name || 'Unknown'}</p>
@@ -106,6 +109,7 @@ export default async function Home() {
             </div>
 
             <div className="pt-3 border-t border-line flex flex-wrap items-center justify-between gap-2">
+            <div className="pt-3 border-t border-line flex items-center justify-between gap-3">
               <Link href={`/newsletters/${email.id}`} className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.08em] text-accent hover:opacity-80">
                 Open <ArrowUpRight className="w-3 h-3" />
               </Link>
