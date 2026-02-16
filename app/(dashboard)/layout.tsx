@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Menu } from 'lucide-react';
 import Sidebar from "@/components/Sidebar";
+import MobileBottomNav from '@/components/MobileBottomNav';
 
 export default function DashboardLayout({
   children,
@@ -16,15 +17,16 @@ export default function DashboardLayout({
       {/* Mobile hamburger */}
       <button
         onClick={() => setSidebarOpen(true)}
-        className="fixed top-4 left-4 z-50 p-2 bg-surface-raised border border-line rounded-lg shadow-sm md:hidden"
+        className="fixed left-4 top-4 z-50 rounded-xl border border-line bg-surface p-2.5 shadow-sm md:hidden"
       >
         <Menu className="w-5 h-5 text-ink" />
       </button>
 
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <main className="flex-1 ml-0 md:ml-[260px] pt-14 md:pt-0 min-h-screen">
+      <main className="min-h-screen flex-1 pb-24 pt-14 md:ml-[260px] md:pb-0 md:pt-0">
         {children}
       </main>
+      <MobileBottomNav />
     </div>
   );
 }

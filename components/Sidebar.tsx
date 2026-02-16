@@ -86,9 +86,9 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
         {/* ─── Logo ─── */}
         <div className="px-6 pt-7 pb-6">
           <Link href="/" className="flex items-center gap-2.5 group" onClick={onClose}>
-            <div className="w-2 h-2 rounded-full bg-accent" />
-            <span className="text-lg font-bold tracking-tight text-ink">
-              Readflow.
+            <div className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(230,57,45,0.12)]" />
+            <span className="text-lg font-black uppercase tracking-[0.06em] text-ink">
+              Readflow
             </span>
           </Link>
         </div>
@@ -96,7 +96,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
         {/* ─── Primary Navigation ─── */}
         <nav className="px-3 space-y-0.5">
           <div className="px-3 mb-3">
-            <span className="text-label uppercase text-ink-faint">Navigate</span>
+            <span className="text-label uppercase tracking-[0.16em] text-ink-faint">Navigate</span>
           </div>
           {navItems.map((item) => (
             <Link
@@ -104,7 +104,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
               href={item.href}
               onClick={onClose}
               className={`
-                flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-150
+                flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all duration-150
                 ${isActive(item.href)
                   ? 'bg-[var(--sidebar-active-bg)] text-ink'
                   : 'text-ink-muted hover:text-ink hover:bg-[var(--sidebar-active-bg)]'
@@ -125,7 +125,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
         {/* ─── Library: Approved Senders ─── */}
         <div className="flex-1 overflow-y-auto thin-scrollbar mt-8 px-3">
           <div className="px-3 mb-3">
-            <span className="text-label uppercase text-ink-faint">Library</span>
+            <span className="text-label uppercase tracking-[0.16em] text-ink-faint">Library</span>
           </div>
           <div className="space-y-0.5">
             {senders.map((sender) => (
@@ -134,7 +134,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
                 href={`/sender/${sender.id}`}
                 onClick={onClose}
                 className={`
-                  flex items-center gap-3 px-3 py-2 text-sm rounded-lg transition-all duration-150
+                  flex items-center gap-3 px-3 py-2 text-sm rounded-xl transition-all duration-150
                   ${isActiveSender(sender.id)
                     ? 'bg-[var(--sidebar-active-bg)] text-ink'
                     : 'text-ink-muted hover:text-ink hover:bg-[var(--sidebar-active-bg)]'
@@ -160,7 +160,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-ink rounded-lg hover:bg-[var(--sidebar-active-bg)] transition-all duration-150 w-full"
+            className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-ink rounded-xl hover:bg-[var(--sidebar-active-bg)] transition-all duration-150 w-full"
           >
             {theme === 'light' ? <Moon className="w-[18px] h-[18px]" /> : <Sun className="w-[18px] h-[18px]" />}
             {theme === 'light' ? 'Dark Sepia' : 'Light Mode'}
@@ -170,7 +170,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
             href="/settings"
             onClick={onClose}
             className={`
-              flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-lg transition-all duration-150
+              flex items-center gap-3 px-3 py-2.5 text-sm font-medium rounded-xl transition-all duration-150
               ${isActive('/settings')
                 ? 'bg-[var(--sidebar-active-bg)] text-ink'
                 : 'text-ink-muted hover:text-ink hover:bg-[var(--sidebar-active-bg)]'
@@ -183,7 +183,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
 
           <button
             onClick={handleSignOut}
-            className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-accent rounded-lg hover:bg-[var(--sidebar-active-bg)] transition-all duration-150 w-full"
+            className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-accent rounded-xl hover:bg-[var(--sidebar-active-bg)] transition-all duration-150 w-full"
           >
             <LogOut className="w-[18px] h-[18px]" />
             Sign Out
