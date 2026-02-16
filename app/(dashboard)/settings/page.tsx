@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, ExternalLink, ArrowRight, RefreshCw } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, ExternalLink, ArrowRight, RefreshCw, AlertTriangle } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 
-export default function SettingsPage() {
+function SettingsContent() {
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -15,12 +15,16 @@ export default function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [gmailConnected, setGmailConnected] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [connecting, setConnecting] = useState(false);
+  const [gmailError, setGmailError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<Date | null>(null);
   const supabase = createClient();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     loadProfile();
+    handleGmailCallbackResult();
   }, []);
 
   const loadProfile = async () => {
@@ -52,6 +56,42 @@ export default function SettingsPage() {
     setLoading(false);
   };
 
+  const handleGmailCallbackResult = () => {
+    const gmailResult = searchParams.get('gmail');
+    if (!gmailResult) return;
+
+    // Clean the URL to prevent re-showing on refresh
+    const url = new URL(window.location.href);
+    url.searchParams.delete('gmail');
+    url.searchParams.delete('gmail_error');
+    window.history.replaceState({}, '', url.pathname);
+
+    switch (gmailResult) {
+      case 'connected':
+        triggerToast('Gmail connected successfully! Click "Sync Now" to import newsletters.');
+        break;
+      case 'no_tokens':
+        setGmailError(
+          'Gmail connection failed \u2014 no access tokens were received. ' +
+          'This usually means the Gmail API is not enabled in your Google Cloud Console, ' +
+          'or the gmail.readonly scope is not configured on the OAuth consent screen.'
+        );
+        triggerToast('Gmail connection failed \u2014 see details below');
+        break;
+      case 'error': {
+        const errorDetail = searchParams.get('gmail_error');
+        setGmailError(
+          errorDetail
+            ? `Gmail connection error: ${errorDetail}`
+            : 'Gmail connection failed. The OAuth flow did not complete successfully. ' +
+              'Please check your Google Cloud Console configuration.'
+        );
+        triggerToast('Gmail connection failed');
+        break;
+      }
+    }
+  };
+
   const handleSaveProfile = async () => {
     setSaving(true);
 
@@ -81,9 +121,12 @@ export default function SettingsPage() {
   };
 
   const handleConnectGmail = async () => {
+    setConnecting(true);
+    setGmailError(null);
+
     const redirectUrl = `${window.location.origin}/auth/callback?next=/settings`;
 
-    await supabase.auth.signInWithOAuth({
+    const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
@@ -94,6 +137,13 @@ export default function SettingsPage() {
         },
       },
     });
+
+    if (error) {
+      setConnecting(false);
+      setGmailError(`Failed to start Gmail connection: ${error.message}`);
+      triggerToast('Failed to start Gmail connection');
+    }
+    // If no error, the browser will redirect to Google — connecting state stays
   };
 
   const handleSyncNow = async () => {
@@ -286,9 +336,9 @@ export default function SettingsPage() {
                        </summary>
                        <div className="px-4 pb-4 text-sm text-gray-600 space-y-2">
                          <ol className="list-decimal list-inside space-y-1.5">
-                           <li>In Gmail, go to <a href="https://mail.google.com/mail/u/0/#settings/labels" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Settings → Labels <ExternalLink className="w-3 h-3" /></a></li>
+                           <li>In Gmail, go to <a href="https://mail.google.com/mail/u/0/#settings/labels" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Settings &rarr; Labels <ExternalLink className="w-3 h-3" /></a></li>
                            <li>Create a new label called &quot;Readflow&quot;</li>
-                           <li>Go to <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Settings → Filters <ExternalLink className="w-3 h-3" /></a></li>
+                           <li>Go to <a href="https://mail.google.com/mail/u/0/#settings/filters" target="_blank" rel="noopener noreferrer" className="text-[#FF4E4E] underline inline-flex items-center gap-0.5">Settings &rarr; Filters <ExternalLink className="w-3 h-3" /></a></li>
                            <li>Create a filter: &quot;From&quot; contains your newsletter sender (e.g., @substack.com)</li>
                            <li>Action: Apply label &quot;Readflow&quot;</li>
                            <li>Optionally check &quot;Also apply filter to matching emails&quot; for existing newsletters</li>
@@ -307,12 +357,41 @@ export default function SettingsPage() {
                      <p className="text-xs text-gray-500 mb-6">
                        Read-only access. We only see emails you label &quot;Readflow&quot;.
                      </p>
+
+                     {gmailError && (
+                       <div className="mb-6 p-4 bg-red-50 border border-red-200 text-left">
+                         <div className="flex items-start gap-2">
+                           <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                           <div className="space-y-2">
+                             <p className="text-sm text-red-700">{gmailError}</p>
+                             <details className="text-xs text-red-600">
+                               <summary className="cursor-pointer font-medium hover:text-red-800">
+                                 How to fix this
+                               </summary>
+                               <ol className="list-decimal list-inside mt-2 space-y-1 text-red-600">
+                                 <li>Go to <strong>Google Cloud Console</strong> &rarr; APIs &amp; Services &rarr; Library</li>
+                                 <li>Search for &quot;Gmail API&quot; and <strong>enable</strong> it</li>
+                                 <li>Go to OAuth consent screen &rarr; Edit &rarr; Add scopes</li>
+                                 <li>Use &quot;Manually add scopes&quot; and enter: <code className="bg-red-100 px-1">https://www.googleapis.com/auth/gmail.readonly</code></li>
+                                 <li>Save and try connecting again</li>
+                               </ol>
+                             </details>
+                           </div>
+                         </div>
+                       </div>
+                     )}
+
                      <button
                        onClick={handleConnectGmail}
-                       className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors mx-auto"
+                       disabled={connecting}
+                       className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors mx-auto disabled:opacity-50"
                      >
-                       <Mail className="w-3 h-3" />
-                       Connect Gmail
+                       {connecting ? (
+                         <Loader2 className="w-3 h-3 animate-spin" />
+                       ) : (
+                         <Mail className="w-3 h-3" />
+                       )}
+                       {connecting ? 'Connecting...' : 'Connect Gmail'}
                      </button>
                    </div>
                  </>
@@ -342,5 +421,17 @@ export default function SettingsPage() {
 
       </div>
     </div>
+  );
+}
+
+export default function SettingsPage() {
+  return (
+    <Suspense fallback={
+      <div className="p-12 text-gray-400 flex items-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin" /> Loading settings...
+      </div>
+    }>
+      <SettingsContent />
+    </Suspense>
   );
 }
