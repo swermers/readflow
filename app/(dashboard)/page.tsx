@@ -4,6 +4,7 @@ import { ArrowUpRight, Clock } from 'lucide-react';
 import SetupGuide from '@/components/SetupGuide';
 import SyncButton from '@/components/SyncButton';
 import AutoSync from '@/components/AutoSync';
+import RackIssueActions from '@/components/RackIssueActions';
 
 const ZEN_QUOTES = [
   { text: 'The mind is everything. What you think you become.', author: 'Buddha' },
@@ -21,15 +22,19 @@ function getQuoteOfDay() {
 
 export default async function Home() {
   const supabase = await createClient();
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
   const { data: emails, error } = await supabase
     .from('issues')
     .select('*, senders!inner(name, status)')
     .eq('senders.status', 'approved')
     .eq('status', 'unread')
+    .gte('received_at', sevenDaysAgo)
     .order('received_at', { ascending: false });
 
-  const { data: { user } } = await supabase.auth.getUser();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   let gmailConnected = false;
   let lastSyncAt: string | null = null;
 
@@ -65,63 +70,55 @@ export default async function Home() {
     <div className="p-6 md:p-12 min-h-screen">
       {gmailConnected && <AutoSync lastSyncAt={lastSyncAt} />}
 
-      {/* Header */}
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div>
           <h1 className="text-display-lg text-ink">The Rack.</h1>
           <p className="text-sm text-ink-muted mt-1">
-            {emails?.length || 0} {(emails?.length || 0) === 1 ? 'issue' : 'issues'} waiting.
+            {(emails?.length || 0)} {(emails?.length || 0) === 1 ? 'issue' : 'issues'} from the last 7 days.
           </p>
         </div>
-        {gmailConnected && (emails?.length ?? 0) > 0 && (
-          <SyncButton variant="compact" />
-        )}
+        {gmailConnected && (emails?.length ?? 0) > 0 && <SyncButton variant="compact" />}
       </header>
 
-      {/* Divider */}
       <div className="h-px bg-line-strong mb-10" />
 
-      {/* Newsletter Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
         {emails?.map((email: any) => (
-          <Link key={email.id} href={`/newsletters/${email.id}`} className="group">
-            <div className="relative bg-surface border border-line p-6 hover:border-accent transition-all duration-200 h-64 flex flex-col justify-between">
-              {/* Unread dot */}
-              <div className="absolute top-4 right-4">
-                <div className="unread-dot" />
-              </div>
+          <article key={email.id} className="relative bg-surface border border-line p-6 hover:border-accent transition-all duration-200 h-64 flex flex-col justify-between">
+            <div className="absolute top-4 right-4">
+              <div className="unread-dot" />
+            </div>
 
-              <div className="flex justify-between items-start pr-6">
-                <span className="text-label uppercase text-accent">
-                  {email.senders?.name || 'Unknown'}
-                </span>
+            <Link href={`/newsletters/${email.id}`} className="group block pr-6">
+              <div className="flex justify-between items-start">
+                <span className="text-label uppercase text-accent">{email.senders?.name || 'Unknown'}</span>
                 <span className="text-[10px] text-ink-faint flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   {new Date(email.received_at).toLocaleDateString()}
                 </span>
               </div>
 
-              <div>
+              <div className="mt-6">
                 <h3 className="text-lg font-bold leading-tight text-ink mb-2 group-hover:text-accent transition-colors">
                   {email.subject}
                 </h3>
                 <p className="text-sm text-ink-muted line-clamp-3 leading-relaxed">{email.snippet}</p>
               </div>
+            </Link>
 
-              <div className="pt-4 border-t border-line flex justify-end opacity-0 group-hover:opacity-100 transition-opacity">
-                <span className="flex items-center gap-1 text-label uppercase text-accent">
-                  Read <ArrowUpRight className="w-3 h-3" />
-                </span>
-              </div>
+            <div className="pt-4 border-t border-line flex items-center justify-between gap-3">
+              <Link href={`/newsletters/${email.id}`} className="flex items-center gap-1 text-label uppercase text-accent hover:opacity-80">
+                Read <ArrowUpRight className="w-3 h-3" />
+              </Link>
+              <RackIssueActions issueId={email.id} />
             </div>
-          </Link>
+          </article>
         ))}
 
         {(!emails || emails.length === 0) && (
           !gmailConnected ? (
             <SetupGuide gmailConnected={gmailConnected} />
           ) : (
-            /* ─── Zen Empty State ─── */
             <div className="col-span-full flex items-center justify-center py-20">
               <div className="max-w-md text-center space-y-6">
                 <div className="w-12 h-px bg-accent mx-auto" />
@@ -131,7 +128,7 @@ export default async function Home() {
                 <p className="text-sm text-ink-faint">&mdash; {quote.author}</p>
                 <div className="w-12 h-px bg-line mx-auto" />
                 <p className="text-sm text-ink-muted">
-                  All caught up. Your rack is clear.
+                  No unread issues from the last 7 days.
                 </p>
                 <div className="flex justify-center pt-2">
                   <SyncButton variant="compact" />

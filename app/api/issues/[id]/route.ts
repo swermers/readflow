@@ -10,7 +10,6 @@ export async function PATCH(
   const body = await request.json();
   const { status } = body;
 
-  // Validate status
   const validStatuses = ['unread', 'read', 'archived'];
   if (!status || !validStatuses.includes(status)) {
     return NextResponse.json(
@@ -19,17 +18,17 @@ export async function PATCH(
     );
   }
 
-  // Build the update object
   const updateData: any = { status };
-  
+
   if (status === 'read') {
     updateData.read_at = new Date().toISOString();
+    updateData.archived_at = null;
   } else if (status === 'archived') {
     updateData.archived_at = new Date().toISOString();
-    // Also mark as read if archiving
-    if (!updateData.read_at) {
-      updateData.read_at = new Date().toISOString();
-    }
+    updateData.read_at = new Date().toISOString();
+  } else if (status === 'unread') {
+    updateData.read_at = null;
+    updateData.archived_at = null;
   }
 
   const { data, error } = await supabase
@@ -44,4 +43,23 @@ export async function PATCH(
   }
 
   return NextResponse.json(data);
+}
+
+// DELETE /api/issues/[id] — Permanently delete one issue
+export async function DELETE(
+  _request: NextRequest,
+  { params }: { params: { id: string } }
+) {
+  const supabase = await createClient();
+
+  const { error } = await supabase
+    .from('issues')
+    .delete()
+    .eq('id', params.id);
+
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ success: true });
 }
