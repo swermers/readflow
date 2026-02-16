@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { refreshAccessToken, listMessageIds, getMessage } from '@/utils/gmailClient';
+import { refreshAccessToken, listMessageIdsByLabel, getMessage } from '@/utils/gmailClient';
 import { parseGmailMessage } from '@/utils/emailParser';
 
 export async function POST() {
@@ -33,16 +33,24 @@ export async function POST() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  // Get the user's Gmail tokens
+  // Get the user's Gmail tokens and label preferences
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('gmail_access_token, gmail_refresh_token, gmail_token_expires_at, gmail_connected')
+    .select('gmail_access_token, gmail_refresh_token, gmail_token_expires_at, gmail_connected, gmail_sync_labels')
     .eq('id', user.id)
     .single();
 
   if (profileError || !profile?.gmail_refresh_token) {
     return NextResponse.json(
       { error: 'Gmail not connected. Please connect your Gmail account in Settings.' },
+      { status: 400 }
+    );
+  }
+
+  const syncLabels: string[] = profile.gmail_sync_labels || [];
+  if (syncLabels.length === 0) {
+    return NextResponse.json(
+      { error: 'No labels selected. Go to Settings and choose which Gmail labels to sync.' },
       { status: 400 }
     );
   }
@@ -60,8 +68,14 @@ export async function POST() {
       })
       .eq('id', user.id);
 
-    // List messages with the "Readflow" label (up to 50 at a time)
-    const messageIds = await listMessageIds(accessToken, 'label:Readflow', 50);
+    // List messages from all selected labels (up to 50 per label)
+    const allMessageIds: string[] = [];
+    for (const labelId of syncLabels) {
+      const ids = await listMessageIdsByLabel(accessToken, labelId, 50);
+      allMessageIds.push(...ids);
+    }
+    // Deduplicate (a message can have multiple labels)
+    const messageIds = Array.from(new Set(allMessageIds));
 
     if (messageIds.length === 0) {
       // Update last sync time even if nothing found
