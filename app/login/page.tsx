@@ -28,8 +28,10 @@ export default function LoginPage() {
       provider: 'google',
       options: {
         redirectTo: redirectUrl,
+        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
         queryParams: {
-          prompt: 'select_account',
+          access_type: 'offline',
+          prompt: 'consent select_account',
         },
       },
     });
