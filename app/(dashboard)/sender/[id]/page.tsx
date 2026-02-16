@@ -4,8 +4,15 @@ import { ArrowLeft, Clock, Globe, ArrowUpRight } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import UnsubscribeButton from './UnsubscribeButton';
 
-export default async function SenderPage({ params }: { params: { id: string } }) {
+export default async function SenderPage({
+  params,
+  searchParams,
+}: {
+  params: { id: string };
+  searchParams?: { view?: string };
+}) {
   const supabase = await createClient();
+  const libraryView = searchParams?.view === 'library';
 
   const { data: sender } = await supabase
     .from('senders')
@@ -15,24 +22,32 @@ export default async function SenderPage({ params }: { params: { id: string } })
 
   if (!sender) return notFound();
 
-  const { data: issues } = await supabase
+  let issuesQuery = supabase
     .from('issues')
     .select('*')
     .eq('sender_id', params.id)
-    .order('received_at', { ascending: false });
+    .order(libraryView ? 'read_at' : 'received_at', { ascending: false });
+
+  if (libraryView) {
+    issuesQuery = issuesQuery.eq('status', 'read');
+  } else {
+    issuesQuery = issuesQuery.neq('status', 'archived');
+  }
+
+  const { data: issues } = await issuesQuery;
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
-
-      {/* Navigation */}
       <div className="mb-8">
-        <Link href="/" className="inline-flex items-center gap-2 text-label uppercase text-ink-faint hover:text-accent transition-colors">
+        <Link
+          href={libraryView ? '/library' : '/'}
+          className="inline-flex items-center gap-2 text-label uppercase text-ink-faint hover:text-accent transition-colors"
+        >
           <ArrowLeft className="w-4 h-4" />
-          Back to Rack
+          {libraryView ? 'Back to Library' : 'Back to Rack'}
         </Link>
       </div>
 
-      {/* Header Profile */}
       <header className="mb-10 pb-10 border-b border-line">
         <div className="flex items-center gap-6 mb-6">
           <div className="w-16 h-16 bg-surface-overlay rounded-full flex items-center justify-center text-2xl font-bold text-ink-faint">
@@ -60,14 +75,23 @@ export default async function SenderPage({ params }: { params: { id: string } })
         </div>
       </header>
 
-      {/* Issues Grid */}
+      <div className="mb-6">
+        <p className="text-sm text-ink-muted">
+          {libraryView
+            ? `${issues?.length || 0} saved ${issues?.length === 1 ? 'article' : 'articles'} in your library.`
+            : `${issues?.length || 0} available ${issues?.length === 1 ? 'article' : 'articles'}.`}
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
         {issues?.map((issue) => (
           <Link key={issue.id} href={`/newsletters/${issue.id}`} className="group">
             <div className="bg-surface border border-line p-6 hover:border-accent transition-all duration-200 h-64 flex flex-col justify-between">
               <span className="text-[10px] text-ink-faint flex items-center gap-1">
                 <Clock className="w-3 h-3" />
-                {new Date(issue.received_at).toLocaleDateString()}
+                {libraryView && issue.read_at
+                  ? `Saved ${new Date(issue.read_at).toLocaleDateString()}`
+                  : new Date(issue.received_at).toLocaleDateString()}
               </span>
 
               <div>
@@ -90,7 +114,9 @@ export default async function SenderPage({ params }: { params: { id: string } })
 
         {(!issues || issues.length === 0) && (
           <div className="col-span-full py-12 text-center text-ink-faint">
-            <p className="text-sm">No issues from this sender yet.</p>
+            <p className="text-sm">
+              {libraryView ? 'No saved articles from this newsletter yet.' : 'No issues from this sender yet.'}
+            </p>
           </div>
         )}
       </div>

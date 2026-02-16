@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Newspaper, Archive, Rss, Settings, LogOut, Sun, Moon, StickyNote,
+  Newspaper, Archive, Rss, Settings, LogOut, Sun, Moon, StickyNote, BookMarked,
 } from 'lucide-react';
 import { createClient } from '@/utils/supabase/client';
 import { useEffect, useState } from 'react';
@@ -55,14 +55,14 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
 
   const navItems: NavItem[] = [
     { href: '/', label: 'The Rack', icon: <Newspaper className="w-[18px] h-[18px]" /> },
+    { href: '/library', label: 'Library', icon: <BookMarked className="w-[18px] h-[18px]" /> },
+    { href: '/archive', label: 'Archive', icon: <Archive className="w-[18px] h-[18px]" /> },
     { href: '/notes', label: 'Notes', icon: <StickyNote className="w-[18px] h-[18px]" /> },
-    { href: '/archive', label: 'Library', icon: <Archive className="w-[18px] h-[18px]" /> },
     { href: '/subscriptions', label: 'Sources', icon: <Rss className="w-[18px] h-[18px]" /> },
   ];
 
   return (
     <>
-      {/* Mobile backdrop */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/30 backdrop-blur-sm z-30 md:hidden"
@@ -82,7 +82,6 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
         }}
       >
 
-        {/* ─── Logo ─── */}
         <div className="px-6 pt-7 pb-6">
           <Link href="/" className="flex items-center gap-2.5 group" onClick={onClose}>
             <div className="h-2 w-2 rounded-full bg-accent shadow-[0_0_0_4px_rgba(230,57,45,0.12)]" />
@@ -92,7 +91,6 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           </Link>
         </div>
 
-        {/* ─── Primary Navigation ─── */}
         <nav className="px-3 space-y-0.5">
           <div className="px-3 mb-3">
             <span className="text-label uppercase tracking-[0.16em] text-ink-faint">Navigate</span>
@@ -116,16 +114,15 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           ))}
         </nav>
 
-        {/* ─── Library: Approved Senders ─── */}
         <div className="flex-1 overflow-y-auto thin-scrollbar mt-8 px-3">
           <div className="px-3 mb-3">
-            <span className="text-label uppercase tracking-[0.16em] text-ink-faint">Library</span>
+            <span className="text-label uppercase tracking-[0.16em] text-ink-faint">Newsletters</span>
           </div>
           <div className="space-y-0.5">
             {senders.map((sender) => (
               <Link
                 key={sender.id}
-                href={`/sender/${sender.id}`}
+                href={`/sender/${sender.id}?view=library`}
                 onClick={onClose}
                 className={`
                   flex items-center gap-3 px-3 py-2 text-sm rounded-xl transition-all duration-150
@@ -149,15 +146,13 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
           </div>
         </div>
 
-        {/* ─── Footer ─── */}
         <div className="p-3 space-y-0.5" style={{ borderTop: '1px solid var(--sidebar-border)' }}>
-          {/* Theme Toggle */}
           <button
             onClick={toggleTheme}
             className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium text-ink-muted hover:text-ink rounded-xl hover:bg-[var(--sidebar-active-bg)] transition-all duration-150 w-full"
           >
             {theme === 'light' ? <Moon className="w-[18px] h-[18px]" /> : <Sun className="w-[18px] h-[18px]" />}
-            {theme === 'light' ? 'Dark Sepia' : 'Light Mode'}
+            {theme === 'light' ? 'Dark Mode' : 'Light Mode'}
           </button>
 
           <Link

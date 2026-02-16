@@ -23,7 +23,7 @@ export default function DashboardLayout({
       </button>
 
       <Sidebar isOpen={sidebarOpen} onClose={() => setSidebarOpen(false)} />
-      <main className="min-h-screen flex-1 pb-24 pt-14 md:ml-[260px] md:pb-0 md:pt-0">
+      <main className="min-h-screen flex-1 pb-28 pt-14 md:ml-[260px] md:pb-0 md:pt-0">
         {children}
       </main>
       <MobileBottomNav />

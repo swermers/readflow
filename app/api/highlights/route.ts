@@ -15,12 +15,13 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const issueId = searchParams.get('issue_id');
   const search = searchParams.get('search')?.trim();
+  const sort = searchParams.get('sort') === 'oldest' ? 'oldest' : 'newest';
 
   let query = supabase
     .from('highlights')
     .select('id, issue_id, highlighted_text, note, created_at, issues(subject, sender_id, senders(name, email))')
     .eq('user_id', user.id)
-    .order('created_at', { ascending: false });
+    .order('created_at', { ascending: sort === 'oldest' });
 
   if (issueId) {
     query = query.eq('issue_id', issueId);

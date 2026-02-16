@@ -24,9 +24,11 @@ export default function NotesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
 
   const fetchHighlights = async (query = '') => {
-    const url = query.trim() ? `/api/highlights?search=${encodeURIComponent(query.trim())}` : '/api/highlights';
+    const base = query.trim() ? `/api/highlights?search=${encodeURIComponent(query.trim())}` : '/api/highlights';
+    const url = `${base}${base.includes('?') ? '&' : '?'}sort=${sortOrder}`;
     const res = await fetch(url);
 
     if (!res.ok) {
@@ -50,7 +52,7 @@ export default function NotesPage() {
     }, 200);
 
     return () => clearTimeout(timeout);
-  }, [search]);
+  }, [search, sortOrder]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Highlight[]>();
@@ -114,6 +116,18 @@ export default function NotesPage() {
           placeholder="Search highlights and notes..."
           className="w-full border border-line bg-surface-raised py-3.5 pl-12 pr-4 text-sm text-ink placeholder:text-ink-faint focus:border-line-strong focus:outline-none"
         />
+      </div>
+
+      <div className="mb-8">
+        <label className="mr-3 text-xs uppercase tracking-[0.1em] text-ink-faint">Sort</label>
+        <select
+          value={sortOrder}
+          onChange={(e) => setSortOrder(e.target.value as 'newest' | 'oldest')}
+          className="border border-line bg-surface-raised px-3 py-2 text-sm text-ink focus:border-line-strong focus:outline-none"
+        >
+          <option value="newest">Newest first</option>
+          <option value="oldest">Oldest first</option>
+        </select>
       </div>
 
       {grouped.length === 0 ? (

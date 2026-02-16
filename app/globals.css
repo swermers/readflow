@@ -159,6 +159,22 @@ body {
   border-collapse: collapse;
 }
 
+
+.newsletter-body,
+.newsletter-body :where(div, section, article, main, p, span, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th) {
+  color: var(--color-ink) !important;
+}
+
+.dark .newsletter-body,
+.dark .newsletter-body :where(div, section, article, main, p, span, li, ul, ol, blockquote, h1, h2, h3, h4, h5, h6, td, th) {
+  background-color: transparent !important;
+  color: var(--color-ink) !important;
+}
+
+.dark .newsletter-body :where(a) {
+  color: var(--color-accent) !important;
+}
+
 /* ═══════════════════════════════════════════════════════
    ANIMATIONS
    ═══════════════════════════════════════════════════════ */
