@@ -70,6 +70,10 @@ function SettingsContent() {
     const gmailResult = searchParams.get('gmail');
     if (!gmailResult) return;
 
+    // Read error detail BEFORE cleaning the URL
+    const errorDetail = searchParams.get('gmail_error');
+
+    // Clean the URL to prevent re-showing on refresh
     const url = new URL(window.location.href);
     url.searchParams.delete('gmail');
     url.searchParams.delete('gmail_error');
@@ -77,7 +81,10 @@ function SettingsContent() {
 
     switch (gmailResult) {
       case 'connected':
+        setGmailConnected(true);
         triggerToast('Gmail connected successfully! Click "Sync Now" to import newsletters.');
+        // Reload profile to get the latest gmail state
+        loadProfile();
         break;
       case 'no_tokens':
         setGmailError(
@@ -85,18 +92,19 @@ function SettingsContent() {
           'This usually means the Gmail API is not enabled in your Google Cloud Console, ' +
           'or the gmail.readonly scope is not configured on the OAuth consent screen.'
         );
-        triggerToast('Gmail connection failed — see details below');
+        triggerToast('Gmail connection failed — see error details below');
         break;
       case 'error': {
-        const errorDetail = searchParams.get('gmail_error');
         const isMigrationError = errorDetail?.includes('migration required') || errorDetail?.includes('schema cache');
+        const isTokenError = errorDetail?.includes('No provider tokens');
         setGmailError(
-          errorDetail
-            ? `Gmail connection error: ${errorDetail}`
-            : 'Gmail connection failed. The OAuth flow did not complete successfully. ' +
-              'Please check your Google Cloud Console configuration.'
+          errorDetail || 'Gmail connection failed. The OAuth flow did not complete successfully.'
         );
-        triggerToast(isMigrationError ? 'Database migration required — see details below' : 'Gmail connection failed');
+        triggerToast(
+          isMigrationError ? 'Database migration required — see details below' :
+          isTokenError ? 'Supabase config issue — see details below' :
+          'Gmail connection failed — see details below'
+        );
         break;
       }
     }
@@ -349,7 +357,7 @@ function SettingsContent() {
                           <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
                           <div className="space-y-2">
                             <p className="text-sm text-red-700 dark:text-red-400">{gmailError}</p>
-                            <details className="text-xs text-red-600 dark:text-red-400">
+                            <details open className="text-xs text-red-600 dark:text-red-400">
                               <summary className="cursor-pointer font-medium hover:text-red-800 dark:hover:text-red-300">
                                 How to fix this
                               </summary>
@@ -360,6 +368,22 @@ function SettingsContent() {
                                   <li>This adds the required Gmail token columns to the profiles table</li>
                                   <li>Come back here and click &quot;Connect Gmail&quot; again</li>
                                 </ol>
+                              ) : gmailError?.includes('provider tokens') || gmailError?.includes('no access tokens') ? (
+                                <div className="mt-2 space-y-3">
+                                  <p className="font-medium">Supabase is not returning Google OAuth tokens. Fix this in your Supabase Dashboard:</p>
+                                  <ol className="list-decimal list-inside space-y-1.5">
+                                    <li>Go to <strong>Supabase Dashboard</strong> &rarr; Authentication &rarr; Providers &rarr; Google</li>
+                                    <li>Make sure <strong>both Client ID and Client Secret</strong> are filled in</li>
+                                    <li>The Client Secret comes from <strong>Google Cloud Console</strong> &rarr; APIs &amp; Services &rarr; Credentials &rarr; your OAuth 2.0 Client ID</li>
+                                    <li>Also verify the <strong>Authorized redirect URI</strong> in Google Cloud Console is set to:<br />
+                                      <code className="bg-red-100 dark:bg-red-900/40 px-1 break-all">https://&lt;your-project-ref&gt;.supabase.co/auth/v1/callback</code>
+                                    </li>
+                                    <li>Make sure you are using the traditional <strong>&quot;OAuth 2.0&quot;</strong> config (not &quot;Sign in with Google&quot; / Google Identity Services which does not return API tokens)</li>
+                                  </ol>
+                                  <p className="mt-2 text-red-500 dark:text-red-300 font-medium">
+                                    Key: If you only entered a Client ID (no Secret) in Supabase, that is the &quot;Sign in with Google&quot; mode which cannot access Gmail. You need to also add the Client Secret.
+                                  </p>
+                                </div>
                               ) : (
                                 <ol className="list-decimal list-inside mt-2 space-y-1">
                                   <li>Go to <strong>Google Cloud Console</strong> &rarr; APIs &amp; Services &rarr; Library</li>
