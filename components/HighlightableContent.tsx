@@ -140,9 +140,13 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
     selectedRangeRef.current = range.cloneRange();
 
-    const rect = range.getBoundingClientRect();
-    const top = Math.max(8, rect.top + window.scrollY - 64);
-    const left = clampX(rect.left + rect.width / 2, TOOLBAR_WIDTH);
+    const rects = range.getClientRects();
+    const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
+    const anchorRect = (range.startContainer as Element)?.parentElement?.getBoundingClientRect?.();
+    const baseRect = (rect && (rect.width > 0 || rect.height > 0)) ? rect : anchorRect || rect;
+
+    const top = Math.max(8, (baseRect?.top || 16) + window.scrollY - 64);
+    const left = clampX((baseRect?.left || 40) + ((baseRect?.width || 40) / 2), TOOLBAR_WIDTH);
 
     setSelectedText(text);
     setToolbarPosition({ top, left });

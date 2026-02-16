@@ -2,6 +2,7 @@
 
 import { type MouseEvent } from 'react';
 import { Archive, BookmarkPlus } from 'lucide-react';
+import IssueDeleteButton from './IssueDeleteButton';
 import { useRouter } from 'next/navigation';
 import { triggerToast } from './Toast';
 
@@ -49,6 +50,7 @@ export default function RackIssueActions({ issueId }: RackIssueActionsProps) {
         <Archive className="h-3.5 w-3.5" />
         Archive
       </button>
+      <IssueDeleteButton issueId={issueId} />
     </div>
   );
 }

@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { ArrowLeft, Clock, Globe, ArrowUpRight } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import UnsubscribeButton from './UnsubscribeButton';
+import IssueDeleteButton from '@/components/IssueDeleteButton';
 
 export default async function SenderPage({
   params,
@@ -84,9 +85,12 @@ export default async function SenderPage({
                     <Clock className="h-3 w-3" />
                     {new Date(issue.received_at).toLocaleDateString()}
                   </span>
-                  {issue.status === 'read' && (
-                    <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">SAVED</span>
-                  )}
+                  <div className="flex items-center gap-1">
+                    {issue.status === 'read' && (
+                      <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">SAVED</span>
+                    )}
+                    <IssueDeleteButton issueId={issue.id} compact />
+                  </div>
                 </div>
                 <h3 className="mt-2 line-clamp-3 text-sm font-semibold leading-tight text-ink transition-colors group-hover:text-accent md:text-base">
                   {issue.subject}

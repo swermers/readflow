@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
 import Link from 'next/link';
 import { Search, ArrowUpRight, Archive, AlertCircle } from 'lucide-react';
+import IssueDeleteButton from '@/components/IssueDeleteButton';
 
 export default function ArchivePage() {
   const [issues, setIssues] = useState<any[]>([]);
@@ -96,7 +97,14 @@ export default function ArchivePage() {
                 <div>
                   <div className="flex items-start justify-between gap-2">
                   <p className="truncate text-[10px] uppercase tracking-[0.08em] text-accent">{issue.senders?.name || 'Unknown'}</p>
-                  <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">ARCH</span>
+                  <div className="flex items-center gap-1">
+                    <span className="rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-white">ARCH</span>
+                    <IssueDeleteButton
+                      issueId={issue.id}
+                      compact
+                      onDeleted={() => setIssues((prev) => prev.filter((row) => row.id !== issue.id))}
+                    />
+                  </div>
                 </div>
                   <h3 className="mt-2 text-sm md:text-base font-semibold leading-tight text-ink line-clamp-3 group-hover:text-accent transition-colors">
                     {issue.subject}
