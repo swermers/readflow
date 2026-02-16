@@ -19,7 +19,6 @@ export default function AddSenderModal() {
     e.preventDefault();
     setIsLoading(true);
 
-    // 1. Get current user
     const { data: { user } } = await supabase.auth.getUser();
 
     if (!user) {
@@ -28,11 +27,10 @@ export default function AddSenderModal() {
       return;
     }
 
-    // 2. Insert into Supabase
     const { error } = await supabase.from('senders').insert({
       user_id: user.id,
       email: email,
-      name: name || email.split('@')[0], // Use email prefix if no name provided
+      name: name || email.split('@')[0],
       status: 'approved'
     });
 
@@ -46,30 +44,28 @@ export default function AddSenderModal() {
       refreshSidebar();
       router.refresh();
     }
-    
+
     setIsLoading(false);
   };
 
   return (
     <>
-      {/* The Trigger Button */}
-      <button 
+      <button
         onClick={() => setIsOpen(true)}
-        className="flex items-center justify-center w-full gap-2 p-2 mt-4 text-xs font-medium text-gray-600 border border-dashed border-gray-300 rounded-md hover:border-[#FF4E4E] hover:text-[#FF4E4E] transition-colors"
+        className="flex items-center justify-center w-full gap-2 p-2 mt-4 text-xs font-medium text-ink-faint border border-dashed border-line hover:border-accent hover:text-accent transition-colors rounded-lg"
       >
         <Plus className="w-3 h-3" />
         Add Newsletter
       </button>
 
-      {/* The Modal Overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md bg-white rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
-            
+          <div className="w-full max-w-md bg-surface border border-line shadow-2xl overflow-hidden animate-fade-in">
+
             {/* Header */}
-            <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gray-50/50">
-              <h3 className="font-semibold text-gray-900">Add New Subscription</h3>
-              <button onClick={() => setIsOpen(false)} className="text-gray-400 hover:text-gray-900">
+            <div className="flex items-center justify-between p-4 border-b border-line bg-surface-raised">
+              <h3 className="font-bold text-ink">Add New Source</h3>
+              <button onClick={() => setIsOpen(false)} className="text-ink-faint hover:text-ink">
                 <X className="w-5 h-5" />
               </button>
             </div>
@@ -77,46 +73,45 @@ export default function AddSenderModal() {
             {/* Form */}
             <form onSubmit={handleSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                <label className="block text-label uppercase text-ink-faint mb-1.5">
                   Newsletter Name
                 </label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="e.g. Morning Brew"
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#FF4E4E]/20 focus:border-[#FF4E4E]"
+                  className="w-full p-2.5 bg-surface-raised border border-line text-sm text-ink focus:outline-none focus:border-accent transition-colors placeholder:text-ink-faint"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-1.5">
+                <label className="block text-label uppercase text-ink-faint mb-1.5">
                   Sender Email
                 </label>
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   required
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder="e.g. crew@morningbrew.com"
-                  className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-[#FF4E4E]/20 focus:border-[#FF4E4E]"
+                  className="w-full p-2.5 bg-surface-raised border border-line text-sm text-ink focus:outline-none focus:border-accent transition-colors placeholder:text-ink-faint"
                 />
-                <p className="mt-1.5 text-[11px] text-gray-400">
+                <p className="mt-1.5 text-[11px] text-ink-faint">
                   The address that sends you the newsletter.
                 </p>
               </div>
 
               <div className="pt-2">
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={isLoading}
-                  className="w-full flex items-center justify-center gap-2 bg-[#1A1A1A] hover:bg-black text-white font-medium py-2.5 rounded-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="w-full flex items-center justify-center gap-2 bg-ink text-surface font-medium py-2.5 hover:bg-accent transition-all disabled:opacity-50"
                 >
-                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add Subscription'}
+                  {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Add Source'}
                 </button>
               </div>
             </form>
-
           </div>
         </div>
       )}

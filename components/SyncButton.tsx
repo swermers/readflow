@@ -29,7 +29,6 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
         }
       } else {
         triggerToast(data.message || `Imported ${data.imported} newsletters`);
-        // Refresh page data and sidebar (new senders may have been created)
         refreshSidebar();
         router.refresh();
       }
@@ -46,7 +45,7 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
       <button
         onClick={handleSync}
         disabled={syncing}
-        className="inline-flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-[#FF4E4E] hover:text-[#1A1A1A] transition-colors disabled:opacity-50"
+        className="inline-flex items-center gap-2 text-label uppercase text-accent hover:text-accent-hover transition-colors disabled:opacity-50"
       >
         {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
         {syncing ? 'Syncing...' : 'Sync Now'}
@@ -58,7 +57,7 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
     <button
       onClick={handleSync}
       disabled={syncing}
-      className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest bg-[#1A1A1A] text-white px-6 py-3 hover:bg-[#FF4E4E] transition-colors disabled:opacity-50"
+      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50"
     >
       {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
       {syncing ? 'Syncing...' : 'Sync Now'}

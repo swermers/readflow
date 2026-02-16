@@ -28,12 +28,12 @@ export default function Toast() {
   if (!show) return null;
 
   return (
-    <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-5 fade-in duration-300">
-      <div className="bg-[#1A1A1A] text-white px-4 py-3 rounded shadow-xl flex items-center gap-3">
+    <div className="fixed bottom-6 right-6 z-50 animate-fade-in">
+      <div className="bg-ink text-surface px-4 py-3 shadow-xl flex items-center gap-3 border border-line">
         {type === 'error' ? (
           <AlertCircle className="w-4 h-4 text-red-400" />
         ) : (
-          <CheckCircle className="w-4 h-4 text-[#FF4E4E]" />
+          <CheckCircle className="w-4 h-4 text-accent" />
         )}
         <span className="text-sm font-medium">{message}</span>
       </div>

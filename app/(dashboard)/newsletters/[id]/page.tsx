@@ -1,13 +1,12 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Globe } from 'lucide-react';
+import { ArrowLeft, Clock } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import IssueActions from './IssueActions';
 
 export default async function NewsletterPage({ params }: { params: { id: string } }) {
   const supabase = await createClient();
 
-  // 1. Fetch the specific issue by ID
   const { data: email, error } = await supabase
     .from('issues')
     .select('*, senders(*)')
@@ -18,7 +17,7 @@ export default async function NewsletterPage({ params }: { params: { id: string 
     return notFound();
   }
 
-  // 2. Auto-mark as read if it's unread
+  // Auto-mark as read
   if (email.status === 'unread') {
     await supabase
       .from('issues')
@@ -27,58 +26,60 @@ export default async function NewsletterPage({ params }: { params: { id: string 
   }
 
   return (
-    <div className="max-w-3xl mx-auto p-6 md:p-12">
-      
-      {/* Navigation */}
-      <div className="mb-8">
-        <Link href="/" className="inline-flex items-center text-xs font-bold uppercase tracking-widest text-gray-400 hover:text-[#FF4E4E] transition-colors">
-          <ArrowLeft className="w-4 h-4 mr-2" />
-          Back to Rack
-        </Link>
-      </div>
+    <div className="min-h-screen">
 
-      {/* Header */}
-      <header className="mb-12 pb-8 border-b border-gray-100">
-        <div className="flex justify-between items-center mb-6">
-          <Link href={`/sender/${email.sender_id}`} className="flex items-center gap-3 group">
-            {/* Sender Avatar */}
-            <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center text-lg font-bold text-gray-400 group-hover:bg-[#FF4E4E] group-hover:text-white transition-colors">
-              {email.senders?.name?.[0] || 'N'}
-            </div>
-            <div>
-              <p className="text-sm font-bold text-[#1A1A1A] group-hover:text-[#FF4E4E] transition-colors">{email.senders?.name}</p>
-              <p className="text-xs text-gray-400">{email.senders?.email}</p>
-            </div>
+      {/* ─── Top Bar ─── */}
+      <div className="sticky top-0 z-10 bg-surface/80 backdrop-blur-md border-b border-line">
+        <div className="max-w-reading mx-auto px-6 py-3 flex items-center justify-between">
+          <Link href="/" className="inline-flex items-center gap-2 text-label uppercase text-ink-faint hover:text-accent transition-colors">
+            <ArrowLeft className="w-4 h-4" />
+            Back
           </Link>
-          
-          <span className="text-xs text-gray-400 flex items-center gap-2">
-            <Clock className="w-4 h-4" />
+          <span className="text-xs text-ink-faint flex items-center gap-1.5">
+            <Clock className="w-3.5 h-3.5" />
             {new Date(email.received_at).toLocaleDateString(undefined, {
-              weekday: 'long',
+              month: 'short',
+              day: 'numeric',
               year: 'numeric',
-              month: 'long',
-              day: 'numeric'
             })}
           </span>
         </div>
+      </div>
 
-        <h1 className="text-3xl md:text-5xl font-bold tracking-tight text-[#1A1A1A] leading-tight">
+      {/* ─── Article ─── */}
+      <article className="max-w-reading mx-auto px-6 md:px-8 py-12">
+
+        {/* Sender */}
+        <Link href={`/sender/${email.sender_id}`} className="group inline-flex items-center gap-3 mb-8">
+          <div className="w-10 h-10 rounded-full bg-surface-overlay flex items-center justify-center text-lg font-bold text-ink-faint group-hover:bg-accent group-hover:text-white transition-colors">
+            {email.senders?.name?.[0] || 'N'}
+          </div>
+          <div>
+            <p className="text-sm font-bold text-ink group-hover:text-accent transition-colors">
+              {email.senders?.name}
+            </p>
+            <p className="text-xs text-ink-faint">{email.senders?.email}</p>
+          </div>
+        </Link>
+
+        {/* Title */}
+        <h1 className="text-3xl md:text-4xl font-bold tracking-tight text-ink leading-[1.15] mb-10">
           {email.subject}
         </h1>
-      </header>
 
-      {/* The Content (Rendered HTML) */}
-      <article className="prose prose-lg prose-slate max-w-none prose-headings:font-bold prose-p:leading-relaxed prose-a:text-[#FF4E4E] prose-img:rounded-xl">
-        <div dangerouslySetInnerHTML={{ __html: email.body_html }} />
+        {/* Divider */}
+        <div className="w-16 h-px bg-accent mb-10" />
+
+        {/* Newsletter Content */}
+        <div className="reading-content newsletter-body" dangerouslySetInnerHTML={{ __html: email.body_html }} />
+
+        {/* Footer Actions */}
+        <IssueActions
+          issueId={email.id}
+          currentStatus={email.status}
+          senderWebsite={email.senders?.website_url}
+        />
       </article>
-
-      {/* Footer Actions — Now functional! */}
-      <IssueActions 
-        issueId={email.id} 
-        currentStatus={email.status}
-        senderWebsite={email.senders?.website_url}
-      />
-
     </div>
   );
 }
