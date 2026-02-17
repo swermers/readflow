@@ -74,10 +74,6 @@ export default function LoginPage() {
             <span className="bg-surface px-3 text-ink-faint uppercase tracking-widest font-bold">Or with email</span>
           </div>
         </div>
-
-        <div className="text-xs text-ink-faint">
-          Magic links are temporarily disabled while we upgrade.
-        </div>
       </div>
     </div>
   );
