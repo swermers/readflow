@@ -21,7 +21,7 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: '/icon.svg',
-    apple: '/apple-icon.png', // Use the 180x180 PNG you made!
+    apple: '/apple-touch.png', // Use the 180x180 PNG you made!
   },
 };
 
