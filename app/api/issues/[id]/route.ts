@@ -109,21 +109,51 @@ export async function DELETE(
     return NextResponse.json({ error: highlightsDeleteError.message }, { status: 500 });
   }
 
-  const { data: deletedIssue, error } = await supabase
+  const { error } = await supabase
     .from('issues')
     .delete()
     .eq('id', params.id)
-    .eq('user_id', user.id)
-    .select('id')
-    .maybeSingle();
+    .eq('user_id', user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (!deletedIssue) {
-    return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+  // Defensive verification: some RLS-filtered deletes can return no error while affecting 0 rows.
+  const { data: stillExists, error: verifyError } = await supabase
+    .from('issues')
+    .select('id')
+    .eq('id', params.id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (verifyError) {
+    return NextResponse.json({ error: verifyError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, id: deletedIssue.id });
+  if (stillExists) {
+    return NextResponse.json({ error: 'Delete did not persist. Please try again.' }, { status: 500 });
+  }
+
+  if (issue.message_id) {
+    const { error: deletedIssueInsertError } = await supabase
+      .from('deleted_issues')
+      .upsert(
+        {
+          user_id: user.id,
+          message_id: issue.message_id,
+          deleted_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'user_id,message_id',
+          ignoreDuplicates: true,
+        }
+      );
+
+    if (deletedIssueInsertError) {
+      return NextResponse.json({ error: deletedIssueInsertError.message }, { status: 500 });
+    }
+  }
+
+  return NextResponse.json({ success: true, id: issue.id });
 }
