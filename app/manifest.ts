@@ -18,7 +18,7 @@ export default function manifest(): MetadataRoute.Manifest {
         type: 'image/svg+xml',
       },
       {
-        src: '/icon-touch.png', // The PNGs you created
+        src: '/apple-touch-readflow-1.png', // The PNGs you created
         sizes: '192x192',
         type: 'image/png',
       },
