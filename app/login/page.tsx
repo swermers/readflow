@@ -71,7 +71,7 @@ export default function LoginPage() {
             <div className="w-full border-t border-line" />
           </div>
           <div className="relative flex justify-center text-[10px]">
-            <span className="bg-surface px-3 text-ink-faint uppercase tracking-widest font-bold">Or with email</span>
+            <span className="bg-surface px-3 text-ink-faint uppercase tracking-widest font-bold"></span>
           </div>
         </div>
       </div>
