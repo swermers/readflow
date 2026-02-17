@@ -24,7 +24,9 @@ export default function TermsPage() {
             revised terms.
           </p>
         </section>
-        ;)
-        
+ </div> {/* Add this closing div */}
+    </main>
+  );
+} 
 
 }
