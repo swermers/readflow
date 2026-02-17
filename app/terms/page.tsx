@@ -24,5 +24,7 @@ export default function TermsPage() {
             revised terms.
           </p>
         </section>
+        ;)
+        
 
 }
