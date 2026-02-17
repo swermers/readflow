@@ -92,20 +92,14 @@ export async function DELETE(
     return NextResponse.json({ error: highlightsDeleteError.message }, { status: 500 });
   }
 
-  const { data: deletedIssue, error } = await supabase
+  const { error } = await supabase
     .from('issues')
     .delete()
     .eq('id', params.id)
-    .eq('user_id', user.id)
-    .select('id')
-    .maybeSingle();
+    .eq('user_id', user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  if (!deletedIssue) {
-    return NextResponse.json({ error: 'Delete failed; issue still exists.' }, { status: 500 });
   }
 
   if (issue.message_id) {
@@ -125,5 +119,5 @@ export async function DELETE(
     }
   }
 
-  return NextResponse.json({ success: true, id: deletedIssue.id });
+  return NextResponse.json({ success: true, id: issue.id });
 }
