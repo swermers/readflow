@@ -83,6 +83,23 @@ export async function DELETE(
     return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
   }
 
+  if (issue.message_id) {
+    const { error: deletedIssueInsertError } = await supabase
+      .from('deleted_issues')
+      .upsert(
+        {
+          user_id: user.id,
+          message_id: issue.message_id,
+          deleted_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,message_id' }
+      );
+
+    if (deletedIssueInsertError) {
+      return NextResponse.json({ error: deletedIssueInsertError.message }, { status: 500 });
+    }
+  }
+
   const { error: highlightsDeleteError } = await supabase
     .from('highlights')
     .delete()
