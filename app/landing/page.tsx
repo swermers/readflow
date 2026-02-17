@@ -64,7 +64,6 @@ export default function LandingPage() {
             </button>
           </Link>
           <a href="https://www.readflowlibrary.xyz" className="text-xs font-bold uppercase tracking-widest border-b-2 border-gray-300 pb-1 hover:text-[#FF4E4E] hover:border-[#FF4E4E] transition-all">
-            readflowlibrary.xyz
           </a>
         </div>
       </main>
