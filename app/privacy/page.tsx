@@ -28,7 +28,7 @@ export default function PrivacyPage() {
         <section className="space-y-3">
           <h2 className="text-xl font-semibold">Contact</h2>
           <p className="text-gray-700">
-            Contact details for privacy requests will be published here before public launch.
+            Questions about this policy? Contact us at <a className="text-[#FF4E4E]" href="mailto:trail.notes.co@gmail.com">trail.notes.co@gmail.com</a>.
           </p>
         </section>
       </div>
