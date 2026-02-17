@@ -16,7 +16,7 @@ export default function IssueActions({ issueId, currentStatus, senderWebsite }: 
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const updateStatus = async (newStatus: 'read' | 'archived') => {
+  const updateStatus = async (newStatus: 'unread' | 'read' | 'archived') => {
     setLoading(true);
 
     try {
@@ -32,8 +32,10 @@ export default function IssueActions({ issueId, currentStatus, senderWebsite }: 
         if (newStatus === 'archived') {
           triggerToast('Moved to Archive');
           setTimeout(() => router.push('/archive'), 400);
-        } else {
+        } else if (newStatus === 'read') {
           triggerToast('Saved to Library');
+        } else {
+          triggerToast('Removed from Library');
         }
 
         router.refresh();
@@ -74,10 +76,14 @@ export default function IssueActions({ issueId, currentStatus, senderWebsite }: 
             Save to Library
           </button>
         ) : status === 'read' ? (
-          <span className="flex items-center gap-2 text-label uppercase text-accent">
+          <button
+            onClick={() => updateStatus('unread')}
+            disabled={loading}
+            className="flex items-center gap-2 text-label uppercase text-accent transition-colors hover:text-ink disabled:opacity-50"
+          >
             <BookmarkCheck className="h-4 w-4" />
-            Saved
-          </span>
+            Saved (click to unsave)
+          </button>
         ) : null}
       </div>
 
