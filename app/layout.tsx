@@ -10,19 +10,24 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'Readflow',
+  title: 'Readflow Library',
   description: 'Your personal newsletter sanctuary',
   applicationName: 'Readflow',
-  manifest: '/manifest.webmanifest',
+  manifest: '/manifest', // Next.js handles the extension automatically
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'black-translucent',
+    statusBarStyle: 'default', // 'black-translucent' can sometimes hide your header text
     title: 'Readflow',
   },
   icons: {
     icon: '/icon.svg',
-    apple: '/apple-icon.svg',
+    apple: '/apple-icon.png', // Use the 180x180 PNG you made!
   },
+};
+
+export const viewport: Viewport = {
+  themeColor: '#ffffff', // Status bar color
+  viewportFit: 'cover',
 };
 
 export const viewport: Viewport = {
