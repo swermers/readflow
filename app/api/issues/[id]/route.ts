@@ -102,6 +102,22 @@ export async function DELETE(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
+  // Defensive verification: some RLS-filtered deletes can return no error while affecting 0 rows.
+  const { data: stillExists, error: verifyError } = await supabase
+    .from('issues')
+    .select('id')
+    .eq('id', params.id)
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (verifyError) {
+    return NextResponse.json({ error: verifyError.message }, { status: 500 });
+  }
+
+  if (stillExists) {
+    return NextResponse.json({ error: 'Delete did not persist. Please try again.' }, { status: 500 });
+  }
+
   if (issue.message_id) {
     const { error: deletedIssueInsertError } = await supabase
       .from('deleted_issues')
