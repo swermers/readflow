@@ -24,6 +24,7 @@ export default function PrivacyPage() {
             future Gmail re-imports tied to the same message ID.
           </p>
         </section>
-
+</div> {/* Add this closing div */}
+    </main>
   );
 }
