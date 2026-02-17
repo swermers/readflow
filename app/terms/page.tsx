@@ -25,11 +25,4 @@ export default function TermsPage() {
           </p>
         </section>
 
-        <section className="space-y-3">
-          <h2 className="text-xl font-semibold">Contact</h2>
-          <p className="text-gray-700">Questions about these terms? Contact us at <a className="text-[#FF4E4E]" href="mailto:support@readflowlibrary.xyz">support@readflowlibrary.xyz</a>.</p>
-        </section>
-      </div>
-    </main>
-  );
 }
