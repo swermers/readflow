@@ -30,11 +30,6 @@ export const viewport: Viewport = {
   viewportFit: 'cover',
 };
 
-export const viewport: Viewport = {
-  themeColor: '#090d14',
-  viewportFit: 'cover',
-};
-
 export default function RootLayout({
   children,
 }: Readonly<{
