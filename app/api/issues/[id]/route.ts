@@ -111,7 +111,10 @@ export async function DELETE(
           message_id: issue.message_id,
           deleted_at: new Date().toISOString(),
         },
-        { onConflict: 'user_id,message_id' }
+        {
+          onConflict: 'user_id,message_id',
+          ignoreDuplicates: true,
+        }
       );
 
     if (deletedIssueInsertError) {
