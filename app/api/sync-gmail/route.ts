@@ -94,8 +94,16 @@ export async function POST() {
       .eq('user_id', user.id)
       .in('message_id', messageIds);
 
+    // Also exclude messages the user explicitly deleted
+    const { data: deletedIssueRows } = await supabase
+      .from('deleted_issues')
+      .select('message_id')
+      .eq('user_id', user.id)
+      .in('message_id', messageIds);
+
     const existingIds = new Set((existingIssues || []).map((i) => i.message_id));
-    const newMessageIds = messageIds.filter((id) => !existingIds.has(id));
+    const deletedIds = new Set((deletedIssueRows || []).map((i) => i.message_id));
+    const newMessageIds = messageIds.filter((id) => !existingIds.has(id) && !deletedIds.has(id));
 
     if (newMessageIds.length === 0) {
       await supabase
