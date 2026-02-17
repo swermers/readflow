@@ -82,7 +82,7 @@ export async function DELETE(
     .delete()
     .eq('id', params.id)
     .eq('user_id', user.id)
-    .select('id')
+    .select('id, message_id')
     .maybeSingle();
 
   if (error) {
@@ -90,7 +90,24 @@ export async function DELETE(
   }
 
   if (!deletedIssue) {
-    return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+    return NextResponse.json({ success: true, id: params.id, message: 'Issue already deleted' });
+  }
+
+  if (deletedIssue.message_id) {
+    const { error: deletedIssueInsertError } = await supabase
+      .from('deleted_issues')
+      .upsert(
+        {
+          user_id: user.id,
+          message_id: deletedIssue.message_id,
+          deleted_at: new Date().toISOString(),
+        },
+        { onConflict: 'user_id,message_id' }
+      );
+
+    if (deletedIssueInsertError) {
+      return NextResponse.json({ error: deletedIssueInsertError.message }, { status: 500 });
+    }
   }
 
   return NextResponse.json({ success: true, id: deletedIssue.id });
