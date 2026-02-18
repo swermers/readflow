@@ -25,17 +25,17 @@ export default function AudioWidget() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.25 }}
       transition={{ duration: 0.45 }}
-      className="rounded-2xl border border-stone-200 bg-white p-4 shadow-xl shadow-slate-200/50"
+      className="rounded-2xl border border-line bg-surface-raised p-4 shadow-sm"
     >
       <div className="flex flex-wrap items-center gap-3">
         <button
           onClick={startLifecycle}
-          className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm transition ${
+          className={`inline-flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition ${
             status === 'idle'
-              ? 'bg-slate-900 text-white'
+              ? 'bg-ink text-surface'
               : status === 'processing'
-                ? 'bg-slate-200 text-slate-600'
-                : 'bg-[#2563eb] text-white'
+                ? 'bg-surface text-ink-muted border border-line'
+                : 'bg-accent text-white'
           }`}
         >
           {status === 'idle' && <><Radio className="h-4 w-4" /> Listen</>}
@@ -43,14 +43,14 @@ export default function AudioWidget() {
           {status === 'ready' && <><Play className="h-4 w-4" /> Play Narration</>}
           {status === 'playing' && <><Play className="h-4 w-4" /> Playing</>}
         </button>
-        <p className="text-xs uppercase tracking-[0.16em] text-slate-500">Durable listen queue</p>
+        <p className="text-label uppercase text-ink-faint">Durable listen queue</p>
       </div>
 
       <motion.div animate={{ height: status === 'playing' ? 56 : 0, opacity: status === 'playing' ? 1 : 0 }} className="overflow-hidden">
-        <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+        <div className="mt-3 rounded-xl border border-line bg-surface p-3">
           <div className="flex items-end gap-1">
             {Array.from({ length: 12 }).map((_, index) => (
-              <span key={index} className="voice-bar block w-1.5 rounded-full bg-[#2563eb]" style={{ animationDelay: `${index * 0.08}s` }} />
+              <span key={index} className="voice-bar block w-1.5 rounded-full bg-accent" style={{ animationDelay: `${index * 0.08}s` }} />
             ))}
           </div>
         </div>

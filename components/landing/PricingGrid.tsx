@@ -37,21 +37,21 @@ export default function PricingGrid() {
       {tiers.map((tier) => (
         <article
           key={tier.name}
-          className={`relative rounded-2xl border p-6 shadow-xl shadow-slate-200/40 ${
+          className={`relative rounded-2xl border p-6 shadow-sm ${
             tier.highlight
-              ? 'border-blue-300 bg-blue-50/70 shadow-[0_20px_50px_rgba(37,99,235,0.22)]'
-              : 'border-stone-200 bg-white'
+              ? 'border-accent bg-accent/5 shadow-[0_12px_35px_rgba(230,57,45,0.16)]'
+              : 'border-line bg-surface-raised'
           }`}
         >
           {tier.badge ? (
-            <span className="absolute -top-3 right-4 rounded-full border border-blue-300 bg-white px-3 py-1 text-xs text-[#2563eb]">
+            <span className="absolute -top-3 right-4 rounded-full border border-accent/30 bg-surface px-3 py-1 text-xs text-accent">
               {tier.badge}
             </span>
           ) : null}
-          <h3 className="font-serif text-2xl text-slate-900">{tier.name}</h3>
-          <p className="mt-2 text-3xl font-bold text-slate-900">{tier.price}<span className="text-base text-slate-500">/mo</span></p>
-          <p className="mt-1 text-sm text-slate-600">{tier.label}</p>
-          <ul className="mt-4 space-y-2 text-sm text-slate-700">
+          <h3 className="text-heading text-ink">{tier.name}</h3>
+          <p className="mt-2 text-3xl font-bold text-ink">{tier.price}<span className="text-base text-ink-muted">/mo</span></p>
+          <p className="mt-1 text-sm text-ink-muted">{tier.label}</p>
+          <ul className="mt-4 space-y-2 text-sm text-ink-muted">
             {tier.features.map((feature) => (
               <li key={feature}>• {feature}</li>
             ))}

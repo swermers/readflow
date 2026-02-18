@@ -17,26 +17,26 @@ export default function TLDRDemo() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ duration: 0.5 }}
-      className="rounded-2xl border border-stone-200 bg-white p-5 shadow-xl shadow-slate-200/50"
+      className="rounded-2xl border border-line bg-surface-raised p-5 shadow-sm"
     >
-      <div className="mb-4 flex items-center justify-between gap-4 border-b border-stone-200 pb-3">
-        <p className="text-sm text-slate-600">Full Article</p>
+      <div className="mb-4 flex items-center justify-between gap-4 border-b border-line pb-3">
+        <p className="text-sm text-ink-muted">Full Article</p>
         <button
           type="button"
           onClick={() => setShowTLDR((prev) => !prev)}
-          className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs transition ${
-            showTLDR ? 'bg-[#2563eb] text-white' : 'bg-stone-100 text-slate-600'
+          className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+            showTLDR ? 'bg-accent text-white' : 'bg-surface text-ink-muted border border-line'
           }`}
         >
           Show TLDR
           <span
-            className={`h-3 w-6 rounded-full border border-white/40 ${showTLDR ? 'bg-blue-200/40' : 'bg-white/50'}`}
+            className={`h-3 w-6 rounded-full ${showTLDR ? 'bg-white/30' : 'bg-line'}`}
           />
         </button>
       </div>
 
       <motion.div animate={{ opacity: showTLDR ? 0.2 : 1, height: showTLDR ? 72 : 192 }} className="overflow-hidden">
-        <div className="space-y-2 text-sm leading-6 text-slate-500">
+        <div className="space-y-2 text-sm leading-6 text-ink-muted">
           {Array.from({ length: 7 }).map((_, i) => (
             <p key={i}>
               Market dynamics this quarter continue to show uneven confidence, tighter distribution channels, and rapid AI deployment in core teams.
@@ -50,8 +50,8 @@ export default function TLDRDemo() {
         animate={{ opacity: showTLDR ? 1 : 0, height: showTLDR ? 'auto' : 0 }}
         className="overflow-hidden"
       >
-        <div className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-slate-700">
-          <p className="mb-2 font-medium text-slate-900">TLDR</p>
+        <div className="mt-3 rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
+          <p className="mb-2 font-semibold text-ink">TLDR</p>
           <ul className="space-y-1">
             <li>• Revenue growth is steady, but slower heading into Q3.</li>
             <li>• Teams adopting AI agents are outperforming on output per headcount.</li>
