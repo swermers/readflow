@@ -55,7 +55,7 @@ function normalizeStyleValue(value: unknown) {
   return value;
 }
 
-function useResolvedStyle(style: Record<string, unknown> | undefined, animate: Record<string, unknown> | undefined) {
+function useResolvedStyle(style: Record<string, unknown> | undefined, animate: unknown) {
   const [dynamicStyle, setDynamicStyle] = useState<Record<string, unknown>>({});
 
   useEffect(() => {
@@ -79,8 +79,8 @@ function useResolvedStyle(style: Record<string, unknown> | undefined, animate: R
   }, [style]);
 
   const animatedStyle = useMemo(() => {
-    if (!animate) return {};
-    return Object.fromEntries(Object.entries(animate).map(([k, v]) => [k, normalizeStyleValue(v)]));
+    if (!animate || typeof animate !== 'object' || Array.isArray(animate)) return {};
+    return Object.fromEntries(Object.entries(animate as Record<string, unknown>).map(([k, v]) => [k, normalizeStyleValue(v)]));
   }, [animate]);
 
   return { ...dynamicStyle, ...animatedStyle };
