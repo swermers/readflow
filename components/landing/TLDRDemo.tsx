@@ -3,6 +3,12 @@
 import { useEffect, useState } from 'react';
 import { motion } from 'framer-motion';
 
+const articleParagraphs = [
+  'Global software teams are shifting from single-task AI copilots to orchestrated agents that can plan, execute, and hand off work across systems.',
+  'Early adopters report faster decision cycles, but only when agent outputs are paired with strong editorial checkpoints and clear source provenance.',
+  'The next advantage won\'t come from generating more content. It will come from filtering for signal and operationalizing the best ideas quickly.',
+];
+
 export default function TLDRDemo() {
   const [showTLDR, setShowTLDR] = useState(false);
 
@@ -20,30 +26,35 @@ export default function TLDRDemo() {
       className="rounded-2xl border border-line bg-surface-raised p-5 shadow-sm"
     >
       <div className="mb-4 flex items-center justify-between gap-4 border-b border-line pb-3">
-        <p className="text-sm text-ink-muted">Full Article</p>
+        <div>
+          <p className="text-sm font-medium text-ink">Full Article</p>
+          <p className="text-xs text-ink-faint">The Information Signal • 8 min read</p>
+        </div>
         <button
           type="button"
           onClick={() => setShowTLDR((prev) => !prev)}
           className={`inline-flex items-center gap-2 rounded-lg px-3 py-1.5 text-xs font-medium transition ${
-            showTLDR ? 'bg-accent text-white' : 'bg-surface text-ink-muted border border-line'
+            showTLDR ? 'bg-accent text-white' : 'border border-line bg-surface text-ink-muted'
           }`}
         >
           Show TLDR
-          <span
-            className={`h-3 w-6 rounded-full ${showTLDR ? 'bg-white/30' : 'bg-line'}`}
-          />
+          <span className={`h-3 w-6 rounded-full ${showTLDR ? 'bg-white/30' : 'bg-line'}`} />
         </button>
       </div>
 
-      <motion.div animate={{ opacity: showTLDR ? 0.2 : 1, height: showTLDR ? 72 : 192 }} className="overflow-hidden">
-        <div className="space-y-2 text-sm leading-6 text-ink-muted">
-          {Array.from({ length: 7 }).map((_, i) => (
-            <p key={i}>
-              Market dynamics this quarter continue to show uneven confidence, tighter distribution channels, and rapid AI deployment in core teams.
-            </p>
+      <motion.article
+        animate={{ opacity: showTLDR ? 0.18 : 1, height: showTLDR ? 132 : 250 }}
+        className="overflow-hidden rounded-xl border border-line bg-surface p-4"
+      >
+        <h3 className="text-heading text-ink">AI Agents Are Becoming the New Operating Layer</h3>
+        <p className="mt-1 text-xs uppercase tracking-[0.12em] text-ink-faint">By Mira Patel • Strategy Memo</p>
+
+        <div className="mt-4 space-y-3 text-sm leading-6 text-ink-muted">
+          {articleParagraphs.map((paragraph) => (
+            <p key={paragraph}>{paragraph}</p>
           ))}
         </div>
-      </motion.div>
+      </motion.article>
 
       <motion.div
         initial={false}
@@ -53,9 +64,9 @@ export default function TLDRDemo() {
         <div className="mt-3 rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
           <p className="mb-2 font-semibold text-ink">TLDR</p>
           <ul className="space-y-1">
-            <li>• Revenue growth is steady, but slower heading into Q3.</li>
-            <li>• Teams adopting AI agents are outperforming on output per headcount.</li>
-            <li>• Strategic focus is shifting from channels to durable owned distribution.</li>
+            <li>• Agents are moving from assistants to workflow infrastructure inside teams.</li>
+            <li>• Trust and adoption increase when teams can verify sources and review checkpoints.</li>
+            <li>• Competitive edge comes from faster signal filtering, not from reading more volume.</li>
           </ul>
         </div>
       </motion.div>
