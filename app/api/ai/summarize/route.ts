@@ -66,7 +66,7 @@ async function summarizeWithAnthropic(input: string) {
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-sonnet-latest',
+      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest',
       max_tokens: 500,
       temperature: 0.2,
       messages: [{ role: 'user', content: prompt }],
@@ -74,7 +74,8 @@ async function summarizeWithAnthropic(input: string) {
   });
 
   if (!res.ok) {
-    throw new Error(`Anthropic request failed: ${res.status}`);
+    const details = await res.text();
+    throw new Error(`Anthropic request failed: ${res.status} ${details}`);
   }
 
   const data = await res.json();
@@ -102,15 +103,15 @@ async function summarizeWithGrok(input: string) {
       authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({
-      model: process.env.XAI_MODEL || 'grok-2-latest',
+      model: process.env.XAI_MODEL || 'grok-beta',
       temperature: 0.2,
       messages: [{ role: 'user', content: prompt }],
-      response_format: { type: 'json_object' },
     }),
   });
 
   if (!res.ok) {
-    throw new Error(`Grok request failed: ${res.status}`);
+    const details = await res.text();
+    throw new Error(`Grok request failed: ${res.status} ${details}`);
   }
 
   const data = await res.json();
