@@ -31,6 +31,30 @@ function sanitizeForSpeech(text: string) {
     .trim();
 }
 
+function truncateAtSignoff(text: string) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (lines.length < 8) return text;
+
+  const signoffPatterns = [
+    /^(best|best regards|regards|kind regards|warm regards|warmly|cheers|thanks|thank you)[,!\-\s]*$/i,
+    /^(with love|much love|big love|love)[,!\-\s]*$/i,
+    /^(see you|see you next week|until next time)[.!\-\s]*$/i,
+  ];
+
+  const minIndex = Math.floor(lines.length * 0.6);
+  for (let i = minIndex; i < lines.length; i += 1) {
+    if (signoffPatterns.some((pattern) => pattern.test(lines[i]))) {
+      return lines.slice(0, i).join('\n').trim();
+    }
+  }
+
+  return text;
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -65,12 +89,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No article text available for audio narration' }, { status: 400 });
   }
 
+  const { data: cachedAudio } = await supabase
+    .from('issue_audio_cache')
+    .select('audio_base64, mime_type')
+    .eq('issue_id', issueId)
+    .eq('user_id', user.id)
+    .eq('status', 'ready')
+    .maybeSingle();
+
+  if (cachedAudio?.audio_base64) {
+    return new NextResponse(Buffer.from(cachedAudio.audio_base64, 'base64'), {
+      status: 200,
+      headers: {
+        'content-type': cachedAudio.mime_type || 'audio/mpeg',
+        'cache-control': 'no-store',
+      },
+    });
+  }
+
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
     return NextResponse.json({ error: 'OPENAI_API_KEY is not configured' }, { status: 500 });
   }
 
-  const speechText = sanitizeForSpeech(articleText);
+  const contentWithoutSignoff = truncateAtSignoff(articleText);
+  const speechText = sanitizeForSpeech(contentWithoutSignoff || articleText);
   const input = `${issue.subject || 'Newsletter article'}\n\n${speechText.slice(0, MAX_INPUT_CHARS)}`;
   const model = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
   const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
@@ -129,6 +172,21 @@ export async function POST(request: NextRequest) {
   }
 
   const audioBuffer = await res.arrayBuffer();
+  const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+
+  await supabase.from('issue_audio_cache').upsert(
+    {
+      issue_id: issueId,
+      user_id: user.id,
+      status: 'ready',
+      mime_type: 'audio/mpeg',
+      audio_base64: audioBase64,
+      provider: 'openai',
+      model,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'issue_id,user_id' }
+  );
 
   return new NextResponse(audioBuffer, {
     status: 200,
