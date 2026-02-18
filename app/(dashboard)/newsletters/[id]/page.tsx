@@ -1,9 +1,11 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
-import { ArrowLeft, Clock } from 'lucide-react';
+import { Clock } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import IssueActions from './IssueActions';
 import HighlightableContent from '@/components/HighlightableContent';
+import AISummaryCard from '@/components/AISummaryCard';
+import BackNavButton from '@/components/BackNavButton';
 
 export default async function NewsletterPage({ params }: { params: { id: string } }) {
   const supabase = await createClient();
@@ -12,6 +14,7 @@ export default async function NewsletterPage({ params }: { params: { id: string 
     .from('issues')
     .select('*, senders(*)')
     .eq('id', params.id)
+    .is('deleted_at', null)
     .single();
 
   if (error || !email) {
@@ -23,7 +26,8 @@ export default async function NewsletterPage({ params }: { params: { id: string 
     await supabase
       .from('issues')
       .update({ status: 'read', read_at: new Date().toISOString() })
-      .eq('id', params.id);
+      .eq('id', params.id)
+      .is('deleted_at', null);
   }
 
   return (
@@ -32,10 +36,12 @@ export default async function NewsletterPage({ params }: { params: { id: string 
       {/* ─── Top Bar ─── */}
       <div className="sticky top-0 z-10 bg-surface/80 backdrop-blur-md border-b border-line">
         <div className="max-w-reading mx-auto px-6 py-3 flex items-center justify-between">
-          <Link href="/" className="inline-flex items-center gap-2 text-label uppercase text-ink-faint hover:text-accent transition-colors">
-            <ArrowLeft className="w-4 h-4" />
-            Back
-          </Link>
+          <BackNavButton
+            label="Back"
+            fallbackHref="/"
+            className="inline-flex items-center gap-2 text-label uppercase text-ink-faint hover:text-accent transition-colors"
+            iconClassName="w-4 h-4"
+          />
           <span className="text-xs text-ink-faint flex items-center gap-1.5">
             <Clock className="w-3.5 h-3.5" />
             {new Date(email.received_at).toLocaleDateString(undefined, {
@@ -69,7 +75,9 @@ export default async function NewsletterPage({ params }: { params: { id: string 
         </h1>
 
         {/* Divider */}
-        <div className="w-16 h-px bg-accent mb-10" />
+        <div className="w-16 h-px bg-accent mb-8" />
+
+        <AISummaryCard issueId={email.id} />
 
         {/* Newsletter Content */}
         <HighlightableContent issueId={email.id} bodyHtml={email.body_html || ''} />

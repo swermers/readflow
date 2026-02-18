@@ -44,6 +44,7 @@ export async function PATCH(
     .update(updateData)
     .eq('id', params.id)
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .select()
     .single();
 
@@ -68,6 +69,22 @@ export async function DELETE(
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  const { data: issue, error: issueFetchError } = await supabase
+    .from('issues')
+    .select('id, message_id')
+    .eq('id', params.id)
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (issueFetchError) {
+    return NextResponse.json({ error: issueFetchError.message }, { status: 500 });
+  }
+
+  if (!issue) {
+    return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+  }
+
   const { error: highlightsDeleteError } = await supabase
     .from('highlights')
     .delete()
@@ -77,21 +94,60 @@ export async function DELETE(
     return NextResponse.json({ error: highlightsDeleteError.message }, { status: 500 });
   }
 
-  const { data: deletedIssue, error } = await supabase
+  const { error } = await supabase
     .from('issues')
-    .delete()
+    .update({
+      deleted_at: new Date().toISOString(),
+      archived_at: new Date().toISOString(),
+      status: 'archived',
+      body_html: null,
+      body_text: null,
+      snippet: null,
+    })
     .eq('id', params.id)
-    .eq('user_id', user.id)
-    .select('id')
-    .maybeSingle();
+    .eq('user_id', user.id);
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  if (!deletedIssue) {
-    return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+  // Defensive verification: some RLS-filtered deletes can return no error while affecting 0 rows.
+  const { data: stillExists, error: verifyError } = await supabase
+    .from('issues')
+    .select('id')
+    .eq('id', params.id)
+    .eq('user_id', user.id)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (verifyError) {
+    return NextResponse.json({ error: verifyError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, id: deletedIssue.id });
+  if (stillExists) {
+    return NextResponse.json({ error: 'Delete did not persist. Please try again.' }, { status: 500 });
+  }
+
+  if (issue.message_id) {
+    const { error: deletedIssueInsertError } = await supabase
+      .from('deleted_issues')
+      .upsert(
+        {
+          user_id: user.id,
+          message_id: issue.message_id,
+          deleted_at: new Date().toISOString(),
+        },
+        {
+          onConflict: 'user_id,message_id',
+          ignoreDuplicates: true,
+        }
+      );
+
+    if (deletedIssueInsertError) {
+      // Tombstone helps prevent Gmail re-imports, but should not block actual user deletion.
+      console.error('Failed to write deleted_issues tombstone:', deletedIssueInsertError);
+    }
+  }
+
+  return NextResponse.json({ success: true, id: issue.id });
 }

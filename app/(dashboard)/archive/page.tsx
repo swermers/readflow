@@ -22,6 +22,7 @@ export default function ArchivePage() {
       .from('issues')
       .select('*, senders!inner(name, status)')
       .eq('status', 'archived')
+      .is('deleted_at', null)
       .order('archived_at', { ascending: false });
 
     if (fetchError) {

@@ -1,9 +1,10 @@
 import { createClient } from '@/utils/supabase/server';
 import Link from 'next/link';
-import { ArrowLeft, Clock, Globe, ArrowUpRight } from 'lucide-react';
+import { Clock, Globe, ArrowUpRight } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import UnsubscribeButton from './UnsubscribeButton';
 import IssueDeleteButton from '@/components/IssueDeleteButton';
+import BackNavButton from '@/components/BackNavButton';
 
 export default async function SenderPage({
   params,
@@ -27,19 +28,19 @@ export default async function SenderPage({
     .from('issues')
     .select('*')
     .eq('sender_id', params.id)
+    .is('deleted_at', null)
     .neq('status', 'archived')
     .order('received_at', { ascending: false });
 
   return (
     <div className="min-h-screen p-6 md:p-12">
       <div className="mb-8">
-        <Link
-          href={libraryView ? '/library' : '/'}
+        <BackNavButton
+          label={libraryView ? 'Back to Library' : 'Back to Rack'}
+          fallbackHref={libraryView ? '/library' : '/'}
           className="inline-flex items-center gap-2 text-label uppercase text-ink-faint transition-colors hover:text-accent"
-        >
-          <ArrowLeft className="h-4 w-4" />
-          {libraryView ? 'Back to Library' : 'Back to Rack'}
-        </Link>
+          iconClassName="h-4 w-4"
+        />
       </div>
 
       <header className="mb-8 border-b border-line pb-8">
