@@ -416,6 +416,26 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   }, [highlights]);
 
 
+
+  useEffect(() => {
+    if (highlights.length === 0) return;
+
+    const params = new URLSearchParams(window.location.search);
+    const targetHighlightId = params.get('h');
+    if (!targetHighlightId) return;
+
+    const mark = document.querySelector(`mark[data-highlight-id="${targetHighlightId}"]`) as HTMLElement | null;
+    if (!mark) return;
+
+    mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    mark.classList.add('ring-2', 'ring-accent/60');
+    const timeout = window.setTimeout(() => {
+      mark.classList.remove('ring-2', 'ring-accent/60');
+    }, 1800);
+
+    return () => window.clearTimeout(timeout);
+  }, [highlights]);
+
   useEffect(() => {
     let frame: number | null = null;
 
