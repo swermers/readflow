@@ -142,7 +142,9 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     let inWhitespace = false;
 
     for (let i = 0; i < value.length; i++) {
-      const char = value[i];
+      const raw = value[i];
+      const char = raw === '\u00a0' ? ' ' : raw.normalize('NFKC');
+
       if (/\s/.test(char)) {
         if (!inWhitespace) {
           normalizedChars.push(' ');
@@ -176,28 +178,36 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     }
 
     const normalizedFull = normalizeWhitespaceWithMap(fullText);
-    const normalizedTarget = targetText.replace(/\s+/g, ' ').trim();
+    const baseTarget = targetText.replace(/\u00a0/g, ' ').normalize('NFKC');
+    const normalizedTarget = baseTarget.replace(/\s+/g, ' ').trim();
 
     if (!normalizedFull.text || !normalizedTarget) {
       return [];
     }
 
-    const ranges: Array<{ start: number; end: number }> = [];
-    let normalizedIndex = normalizedFull.text.indexOf(normalizedTarget);
+    const findMappedRanges = (haystack: string, needle: string) => {
+      const ranges: Array<{ start: number; end: number }> = [];
+      let normalizedIndex = haystack.indexOf(needle);
 
-    while (normalizedIndex !== -1) {
-      const mappedStart = normalizedFull.map[normalizedIndex];
-      const mappedEndIndex = normalizedIndex + normalizedTarget.length - 1;
-      const mappedEnd = (normalizedFull.map[mappedEndIndex] ?? mappedStart) + 1;
+      while (normalizedIndex !== -1) {
+        const mappedStart = normalizedFull.map[normalizedIndex];
+        const mappedEndIndex = normalizedIndex + needle.length - 1;
+        const mappedEnd = (normalizedFull.map[mappedEndIndex] ?? mappedStart) + 1;
 
-      if (mappedStart !== undefined && mappedEnd > mappedStart) {
-        ranges.push({ start: mappedStart, end: mappedEnd });
+        if (mappedStart !== undefined && mappedEnd > mappedStart) {
+          ranges.push({ start: mappedStart, end: mappedEnd });
+        }
+
+        normalizedIndex = haystack.indexOf(needle, normalizedIndex + needle.length);
       }
 
-      normalizedIndex = normalizedFull.text.indexOf(normalizedTarget, normalizedIndex + normalizedTarget.length);
-    }
+      return ranges;
+    };
 
-    return ranges;
+    const directRanges = findMappedRanges(normalizedFull.text, normalizedTarget);
+    if (directRanges.length > 0) return directRanges;
+
+    return findMappedRanges(normalizedFull.text.toLowerCase(), normalizedTarget.toLowerCase());
   };
 
   const applyHighlightToDom = (highlight: Highlight, usedRanges: Array<{ start: number; end: number }>) => {

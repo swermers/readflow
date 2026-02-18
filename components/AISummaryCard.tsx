@@ -31,14 +31,14 @@ export default function AISummaryCard({ issueId }: Props) {
 
       if (!res.ok) {
         const body = await res.json().catch(() => null);
-        setError(body?.error || 'Could not generate summary right now.');
+        setError(body?.error || 'Could not generate TLDR right now.');
         return;
       }
 
       const payload = await res.json();
       setData(payload);
     } catch {
-      setError('Could not generate summary right now.');
+      setError('Could not generate TLDR right now.');
     } finally {
       setLoading(false);
     }
@@ -51,7 +51,7 @@ export default function AISummaryCard({ issueId }: Props) {
           <p className="inline-flex items-center gap-2 text-[10px] uppercase tracking-[0.12em] text-accent">
             <Sparkles className="h-3.5 w-3.5" /> AI Reader
           </p>
-          <h2 className="mt-1 text-base font-semibold text-ink">On-demand summary and takeaways</h2>
+          <h2 className="mt-1 text-base font-semibold text-ink">On-demand TLDR and takeaways</h2>
           <p className="mt-1 text-xs text-ink-faint">Generate only when you want it to keep quality high and costs low.</p>
         </div>
 
@@ -61,7 +61,7 @@ export default function AISummaryCard({ issueId }: Props) {
           disabled={loading}
           className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
         >
-          {loading ? 'Generating...' : data ? 'Regenerate' : 'Generate summary'}
+          {loading ? 'Generating...' : data ? 'Regenerate' : 'Generate TLDR'}
         </button>
       </div>
 

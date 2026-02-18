@@ -1,3 +1,6 @@
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -10,7 +13,7 @@ const MAX_INPUT_CHARS = 12000;
 
 
 function parseJsonFromText(text: string) {
-  const direct = text.trim();
+  const direct = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
   try {
     return JSON.parse(direct);
   } catch {
@@ -75,7 +78,10 @@ async function summarizeWithAnthropic(input: string) {
   }
 
   const data = await res.json();
-  const text = data?.content?.[0]?.text;
+  const textBlock = Array.isArray(data?.content)
+    ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
+    : null;
+  const text = textBlock?.text;
   if (typeof text !== 'string') throw new Error('Anthropic response missing text');
 
   const parsed = normalizeSummaryPayload(parseJsonFromText(text));
@@ -170,7 +176,13 @@ export async function POST(request: NextRequest) {
     } catch (fallbackError) {
       console.error('AI summarize failed:', apiError, fallbackError);
       return NextResponse.json(
-        { error: 'Failed to generate summary with configured providers' },
+        {
+          error: 'Failed to generate summary with configured providers',
+          hints: [
+            'Confirm ANTHROPIC_API_KEY and/or GROK_API_KEY (or XAI_API_KEY) are set in server env',
+            'Verify provider model names are valid for your account',
+          ],
+        },
         { status: 500 }
       );
     }
