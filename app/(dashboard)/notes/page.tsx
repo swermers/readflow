@@ -189,19 +189,19 @@ export default function NotesPage() {
   }
 
   return (
-    <div className="p-6 md:p-10 min-h-screen">
+    <div className="p-4 sm:p-6 md:p-10 min-h-screen">
       <header className="mb-8 flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-display-lg text-ink font-serif">Notes Library.</h1>
+          <h1 className="text-display-lg text-ink">Notes.</h1>
           <p className="mt-1 text-sm text-ink-muted">
             {filteredHighlights.length} saved {filteredHighlights.length === 1 ? 'highlight' : 'highlights'}.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={resurfaceInsight}
             disabled={filteredHighlights.length === 0}
-            className="inline-flex items-center gap-2 border border-line bg-surface-raised px-3 py-2 text-xs uppercase tracking-[0.08em] text-ink-muted transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-line bg-surface-raised px-3 py-2 text-xs uppercase tracking-[0.08em] text-ink-muted transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Sparkles className="h-3.5 w-3.5" />
             Resurface Insight
@@ -209,7 +209,7 @@ export default function NotesPage() {
           <button
             onClick={exportNotesForNotion}
             disabled={exporting || filteredHighlights.length === 0}
-            className="inline-flex items-center gap-2 border border-line bg-surface-raised px-3 py-2 text-xs uppercase tracking-[0.08em] text-ink-muted transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex items-center gap-2 rounded-lg border border-line bg-surface-raised px-3 py-2 text-xs uppercase tracking-[0.08em] text-ink-muted transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="h-3.5 w-3.5" />
             {exporting ? 'Exporting…' : 'Export'}
@@ -291,7 +291,7 @@ export default function NotesPage() {
           </div>
         </aside>
 
-        <main>
+        <main className="min-w-0">
           {grouped.length === 0 ? (
             <div className="border border-dashed border-line bg-surface-raised py-20 text-center">
               <NotebookPen className="mx-auto mb-4 h-10 w-10 text-ink-faint" />
@@ -299,17 +299,17 @@ export default function NotesPage() {
               <p className="text-sm text-ink-faint">Highlight text in any newsletter to start your knowledge trail.</p>
             </div>
           ) : (
-            <div className="space-y-8">
+            <div className="space-y-6 md:space-y-8">
               {grouped.map(([issueId, entries]) => {
                 const first = entries[0];
                 const sectionTags = Array.from(new Set(entries.flatMap((entry) => entry.auto_tags || []))).slice(0, 8);
                 return (
                   <section key={issueId} className="rounded-2xl border border-line bg-surface-raised p-4 md:p-5 space-y-4">
-                    <div className="sticky top-16 z-[1] -mx-1 border-b border-line bg-surface-raised/95 px-1 pb-3 pt-1 backdrop-blur">
-                      <div className="flex items-end justify-between gap-4">
+                    <div className="lg:sticky lg:top-16 z-[1] -mx-1 border-b border-line bg-surface-raised/95 px-1 pb-3 pt-1 backdrop-blur">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
                           <p className="text-xs uppercase tracking-[0.12em] text-accent">{first.issues?.senders?.name || 'Unknown Sender'}</p>
-                          <h2 className="text-xl font-semibold text-ink font-serif">{first.issues?.subject || 'Untitled Issue'}</h2>
+                          <h2 className="text-lg md:text-xl font-semibold text-ink">{first.issues?.subject || 'Untitled Issue'}</h2>
                         </div>
                         <Link href={`/newsletters/${issueId}`} className="text-xs uppercase tracking-[0.1em] text-ink-faint hover:text-accent">
                           Open issue
@@ -343,16 +343,16 @@ export default function NotesPage() {
                           </blockquote>
 
                           {highlight.note?.trim() && (
-                            <div className="mt-3 rounded-lg border border-amber-200/60 bg-amber-50/60 px-3 py-2">
-                              <p className="text-[10px] uppercase tracking-[0.08em] text-amber-700">My Thought</p>
-                              <p className="mt-1 text-sm text-amber-900">{highlight.note}</p>
+                            <div className="mt-3 rounded-lg border border-line bg-surface-raised px-3 py-2">
+                              <p className="text-[10px] uppercase tracking-[0.08em] text-accent">My Thought</p>
+                              <p className="mt-1 text-sm text-ink">{highlight.note}</p>
                             </div>
                           )}
 
-                          <div className="mt-3 flex items-center justify-between text-xs text-ink-faint">
+                          <div className="mt-3 flex flex-col gap-2 text-xs text-ink-faint sm:flex-row sm:items-center sm:justify-between">
                             <span>{new Date(highlight.created_at).toLocaleString()}</span>
-                            <div className="flex items-center gap-3">
-                              <Link href={`/newsletters/${issueId}?h=${highlight.id}`} className="hover:text-accent">
+                            <div className="flex flex-wrap items-center gap-3">
+                              <Link href={`/newsletters/${issueId}?h=${highlight.id}`} className="uppercase tracking-[0.08em] hover:text-accent">
                                 Jump to paragraph
                               </Link>
                               <button onClick={() => copyHighlight(highlight)} className="inline-flex items-center gap-1 hover:text-ink">
