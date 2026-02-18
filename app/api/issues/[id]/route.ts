@@ -44,6 +44,7 @@ export async function PATCH(
     .update(updateData)
     .eq('id', params.id)
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .select()
     .single();
 
@@ -73,6 +74,7 @@ export async function DELETE(
     .select('id, message_id')
     .eq('id', params.id)
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .maybeSingle();
 
   if (issueFetchError) {
@@ -94,7 +96,14 @@ export async function DELETE(
 
   const { error } = await supabase
     .from('issues')
-    .delete()
+    .update({
+      deleted_at: new Date().toISOString(),
+      archived_at: new Date().toISOString(),
+      status: 'archived',
+      body_html: null,
+      body_text: null,
+      snippet: null,
+    })
     .eq('id', params.id)
     .eq('user_id', user.id);
 
@@ -108,6 +117,7 @@ export async function DELETE(
     .select('id')
     .eq('id', params.id)
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .maybeSingle();
 
   if (verifyError) {

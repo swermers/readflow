@@ -27,6 +27,27 @@ function clampX(centerX: number, width: number) {
   return Math.max(min, Math.min(centerX - width / 2, max));
 }
 
+function getTextNodesInRange(range: Range, root: HTMLElement) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (!node.textContent?.trim()) continue;
+
+    const nodeRange = document.createRange();
+    nodeRange.selectNodeContents(node);
+
+    const intersects =
+      range.compareBoundaryPoints(Range.END_TO_START, nodeRange) < 0 &&
+      range.compareBoundaryPoints(Range.START_TO_END, nodeRange) > 0;
+
+    if (intersects) nodes.push(node);
+  }
+
+  return nodes;
+}
+
 
 export default function HighlightableContent({ issueId, bodyHtml }: { issueId: string; bodyHtml: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -164,7 +185,28 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
       mark.appendChild(fragment);
       range.insertNode(mark);
     } catch {
-      // fall back to text-based application in highlights effect
+      // Fallback: wrap each intersecting text-node segment so multi-node selections still render reliably.
+      const textNodes = getTextNodesInRange(range, container);
+
+      textNodes.forEach((node) => {
+        const nodeStart = node === range.startContainer ? range.startOffset : 0;
+        const nodeEnd = node === range.endContainer ? range.endOffset : node.textContent?.length ?? 0;
+
+        if (nodeEnd <= nodeStart) return;
+
+        try {
+          const nodeRange = document.createRange();
+          nodeRange.setStart(node, nodeStart);
+          nodeRange.setEnd(node, nodeEnd);
+
+          const mark = document.createElement('mark');
+          mark.className = 'readflow-highlight';
+          mark.dataset.highlightId = highlightId;
+          nodeRange.surroundContents(mark);
+        } catch {
+          // no-op; text based apply in highlights effect remains a final fallback
+        }
+      });
     }
   };
 

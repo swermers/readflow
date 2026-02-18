@@ -27,6 +27,7 @@ export default async function SenderPage({
     .from('issues')
     .select('*')
     .eq('sender_id', params.id)
+    .is('deleted_at', null)
     .neq('status', 'archived')
     .order('received_at', { ascending: false });
 

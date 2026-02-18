@@ -50,6 +50,7 @@ export default function LibraryPage() {
       .from('issues')
       .select('sender_id, status, received_at, read_at')
       .in('sender_id', senderIds)
+      .is('deleted_at', null)
       .neq('status', 'archived');
 
     if (issueError) {

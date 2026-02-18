@@ -12,6 +12,7 @@ export default async function NewsletterPage({ params }: { params: { id: string 
     .from('issues')
     .select('*, senders(*)')
     .eq('id', params.id)
+    .is('deleted_at', null)
     .single();
 
   if (error || !email) {
@@ -23,7 +24,8 @@ export default async function NewsletterPage({ params }: { params: { id: string 
     await supabase
       .from('issues')
       .update({ status: 'read', read_at: new Date().toISOString() })
-      .eq('id', params.id);
+      .eq('id', params.id)
+      .is('deleted_at', null);
   }
 
   return (
