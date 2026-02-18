@@ -22,6 +22,46 @@ function getQuoteOfDay() {
   return ZEN_QUOTES[day % ZEN_QUOTES.length];
 }
 
+function normalizeSubject(subject: string | null | undefined): string {
+  return (subject || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^(re|fw|fwd):\s*/gi, '')
+    .replace(/\s+/g, ' ');
+}
+
+function toDayKey(receivedAt: string | null | undefined): string {
+  if (!receivedAt) return '';
+  const parsed = new Date(receivedAt);
+  if (Number.isNaN(parsed.getTime())) return '';
+  return parsed.toISOString().slice(0, 10);
+}
+
+function dedupeRackIssues<T extends {
+  id: string;
+  from_email?: string | null;
+  subject?: string | null;
+  snippet?: string | null;
+  received_at?: string | null;
+}>(issues: T[]): T[] {
+  const seen = new Set<string>();
+
+  return issues.filter((issue) => {
+    const senderKey = (issue.from_email || '').trim().toLowerCase();
+    const subjectKey = normalizeSubject(issue.subject);
+    const snippetKey = (issue.snippet || '').trim().toLowerCase().replace(/\s+/g, ' ').slice(0, 120);
+    const dayKey = toDayKey(issue.received_at);
+    const fingerprint = `${senderKey}|${subjectKey}|${snippetKey}|${dayKey}`;
+
+    if (seen.has(fingerprint)) {
+      return false;
+    }
+
+    seen.add(fingerprint);
+    return true;
+  });
+}
+
 export default async function Home() {
   const supabase = await createClient();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
@@ -70,6 +110,8 @@ export default async function Home() {
     );
   }
 
+  const dedupedEmails = dedupeRackIssues(emails || []);
+
   const quote = getQuoteOfDay();
 
   return (
@@ -81,19 +123,19 @@ export default async function Home() {
         <div>
           <h1 className="text-display-lg text-ink">The Rack.</h1>
           <p className="text-sm text-ink-muted mt-1">
-            {(emails?.length || 0)} {(emails?.length || 0) === 1 ? 'issue' : 'issues'} from the last 7 days.
+            {dedupedEmails.length} {dedupedEmails.length === 1 ? 'issue' : 'issues'} from the last 7 days.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          {gmailConnected && (emails?.length ?? 0) > 0 && <SyncButton variant="compact" />}
-          {(emails?.length ?? 0) > 0 && <SignalSortButton />}
+          {gmailConnected && dedupedEmails.length > 0 && <SyncButton variant="compact" />}
+          {dedupedEmails.length > 0 && <SignalSortButton />}
         </div>
       </header>
 
       <div className="h-px bg-line-strong mb-10" />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-5 lg:grid-cols-3 stagger-children">
-        {emails?.map((email: any) => (
+        {dedupedEmails.map((email: any) => (
           <article key={email.id} className="relative flex h-52 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
             <div>
               <div className="flex items-start justify-between gap-2">
@@ -131,7 +173,7 @@ export default async function Home() {
           </article>
         ))}
 
-        {(!emails || emails.length === 0) && (
+        {dedupedEmails.length === 0 && (
           !gmailConnected ? (
             <SetupGuide gmailConnected={gmailConnected} />
           ) : (
