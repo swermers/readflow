@@ -15,36 +15,36 @@ export default function ROICalculator() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ duration: 0.55 }}
-      className="rounded-2xl border border-white/10 bg-white/5 p-6 backdrop-blur-lg"
+      className="rounded-2xl border border-stone-200 bg-white p-6 shadow-xl shadow-slate-200/50"
     >
-      <h3 className="mb-4 text-2xl font-semibold text-white">ROI Calculator</h3>
+      <h3 className="mb-4 font-serif text-3xl text-slate-900">ROI Calculator</h3>
       <div className="grid gap-6 md:grid-cols-2">
-        <label className="text-sm text-white/80">
-          Hours reading per week: <span className="font-semibold text-white">{hoursReading}</span>
+        <label className="text-sm text-slate-600">
+          Hours reading per week: <span className="font-semibold text-slate-900">{hoursReading}</span>
           <input
             type="range"
             min={1}
             max={10}
             value={hoursReading}
             onChange={(event) => setHoursReading(Number(event.target.value))}
-            className="mt-3 w-full accent-blue-400"
+            className="mt-3 w-full accent-[#2563eb]"
           />
         </label>
 
-        <label className="text-sm text-white/80">
+        <label className="text-sm text-slate-600">
           Hourly rate ($/hr)
           <input
             type="number"
             min={1}
             value={hourlyRate}
             onChange={(event) => setHourlyRate(Number(event.target.value) || 0)}
-            className="mt-3 w-full rounded-xl border border-white/15 bg-black/25 px-3 py-2 text-white outline-none focus:border-blue-300"
+            className="mt-3 w-full rounded-xl border border-stone-300 bg-white px-3 py-2 text-slate-900 outline-none focus:border-[#2563eb]"
           />
         </label>
       </div>
 
-      <p className="mt-6 text-2xl font-semibold leading-tight text-white md:text-3xl">
-        Readflow saves you <span className="text-blue-300">${saved.toLocaleString()}</span> per year in billable time.
+      <p className="mt-6 text-2xl font-semibold leading-tight text-slate-900 md:text-3xl">
+        Readflow saves you <span className="text-[#2563eb]">${saved.toLocaleString()}</span> per year in billable time.
       </p>
     </motion.section>
   );
