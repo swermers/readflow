@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { consumeCredits, ensureCreditsAvailable } from '@/utils/aiEntitlements';
 
 const MAX_INPUT_CHARS = 3500;
 const STALE_PROCESSING_MS = 2 * 60 * 1000;
@@ -280,6 +281,20 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  const creditGate = await ensureCreditsAvailable(supabase, user.id, 2);
+  if (!creditGate.allowed) {
+    return NextResponse.json(
+      {
+        error: creditGate.reason || 'Monthly AI credit limit reached',
+        planTier: creditGate.tier,
+        creditsRemaining: creditGate.remaining,
+        creditsLimit: creditGate.limit,
+        resetsAt: creditGate.resetAt,
+      },
+      { status: 402 }
+    );
+  }
+
   await supabase.from('issue_audio_cache').upsert(
     {
       issue_id: issueId,
@@ -292,8 +307,18 @@ export async function POST(request: NextRequest) {
   );
 
   void generateAudioInBackground(issueId, user.id, issue);
+  await consumeCredits(supabase, user.id, 2);
 
-  return NextResponse.json({ status: 'queued' as AudioStatus, audioUrl: null }, { status: 202 });
+  return NextResponse.json(
+    {
+      status: 'queued' as AudioStatus,
+      audioUrl: null,
+      planTier: creditGate.tier,
+      creditsRemaining: Math.max(0, creditGate.remaining - 2),
+      creditsLimit: creditGate.limit,
+    },
+    { status: 202 }
+  );
 }
 
 export async function DELETE(request: NextRequest) {

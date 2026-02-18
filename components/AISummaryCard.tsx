@@ -17,6 +17,9 @@ type ErrorResponse = {
   error?: string;
   hints?: string[];
   providerErrors?: Record<string, string>;
+  creditsRemaining?: number;
+  creditsLimit?: number;
+  planTier?: string;
 };
 
 type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'canceled';
@@ -32,6 +35,7 @@ export default function AISummaryCard({ issueId }: Props) {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioHints, setAudioHints] = useState<string[]>([]);
   const [audioLoading, setAudioLoading] = useState(false);
+  const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,11 +98,21 @@ export default function AISummaryCard({ issueId }: Props) {
           : null;
 
         setError(providerErrorText || body?.error || 'Could not generate TLDR right now.');
+        if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
+          setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free' });
+        }
         return;
       }
 
       const payload = await res.json();
       setData(payload);
+      if (typeof payload.creditsRemaining === 'number' && typeof payload.creditsLimit === 'number') {
+        setCreditsMeta({
+          remaining: payload.creditsRemaining,
+          limit: payload.creditsLimit,
+          tier: payload.planTier || 'free',
+        });
+      }
     } catch {
       setError('Could not generate TLDR right now.');
     } finally {
@@ -122,15 +136,21 @@ export default function AISummaryCard({ issueId }: Props) {
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
         setAudioError(body?.error || 'Could not generate audio right now.');
         setAudioHints(body?.hints || []);
+        if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
+          setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free' });
+        }
         setAudioStatus('failed');
         return;
       }
 
-      const body = (await res.json().catch(() => null)) as { audioUrl?: string | null; status?: AudioStatus } | null;
+      const body = (await res.json().catch(() => null)) as { audioUrl?: string | null; status?: AudioStatus; creditsRemaining?: number; creditsLimit?: number; planTier?: string } | null;
       if (body?.audioUrl) {
         setAudioUrl(body.audioUrl);
       }
       setAudioStatus(body?.status || 'queued');
+      if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
+        setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free' });
+      }
     } catch {
       setAudioError('Could not generate audio right now.');
       setAudioStatus('failed');
@@ -219,6 +239,13 @@ export default function AISummaryCard({ issueId }: Props) {
             </ul>
           )}
         </div>
+      )}
+
+
+      {creditsMeta && (
+        <p className="mt-3 text-xs text-ink-faint">
+          AI credits: {creditsMeta.remaining}/{creditsMeta.limit} remaining on {creditsMeta.tier.toUpperCase()}.
+        </p>
       )}
 
       {data && (

@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, Sparkles } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -28,6 +28,9 @@ function SettingsContent() {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [labelsLoading, setLabelsLoading] = useState(false);
   const [labelsSaving, setLabelsSaving] = useState(false);
+  const [planTier, setPlanTier] = useState<'free' | 'pro' | 'elite'>('free');
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const [aiCreditsUsed, setAiCreditsUsed] = useState(0);
 
   const supabase = createClient();
   const router = useRouter();
@@ -49,10 +52,10 @@ function SettingsContent() {
       setFirstName(profile.first_name || user.user_metadata?.full_name?.split(' ')[0] || '');
       setLastName(profile.last_name || user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '');
 
-      // Gmail columns may not exist if migration 002 hasn't been run
+      // Gmail and plan columns may not exist if later migrations haven't been run
       const { data: gmailProfile } = await supabase
         .from('profiles')
-        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels')
+        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, billing_cycle, ai_credits_used')
         .eq('id', user.id)
         .single();
 
@@ -62,6 +65,9 @@ function SettingsContent() {
         if (gmailProfile.gmail_last_sync_at) {
           setLastSync(new Date(gmailProfile.gmail_last_sync_at));
         }
+        setPlanTier((gmailProfile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
+        setBillingCycle((gmailProfile.billing_cycle || 'monthly') as 'monthly' | 'annual');
+        setAiCreditsUsed(gmailProfile.ai_credits_used || 0);
       }
     } else {
       const fullName = user.user_metadata?.full_name || '';
@@ -315,6 +321,37 @@ function SettingsContent() {
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
               Save Changes
             </button>
+          </div>
+        </section>
+
+
+        {/* ─── AI Plan & Credits ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
+          <div className="md:col-span-4">
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-ink-faint" />
+              AI Plan
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">Credits reset every 30 days.</p>
+          </div>
+          <div className="md:col-span-8 bg-surface-raised border border-line p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="border border-line p-4">
+                <p className="text-label uppercase text-ink-faint">Tier</p>
+                <p className="mt-2 text-xl font-bold uppercase text-ink">{planTier}</p>
+              </div>
+              <div className="border border-line p-4">
+                <p className="text-label uppercase text-ink-faint">Billing</p>
+                <p className="mt-2 text-xl font-bold uppercase text-ink">{billingCycle}</p>
+              </div>
+              <div className="border border-line p-4">
+                <p className="text-label uppercase text-ink-faint">Credits Used</p>
+                <p className="mt-2 text-xl font-bold text-ink">{aiCreditsUsed}</p>
+              </div>
+            </div>
+            <p className="mt-4 text-xs text-ink-faint">
+              Need more credits? Upgrade to Pro or Elite for higher monthly allowances.
+            </p>
           </div>
         </section>
 

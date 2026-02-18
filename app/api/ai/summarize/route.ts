@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { consumeCredits, ensureCreditsAvailable } from '@/utils/aiEntitlements';
 
 type SummaryResult = {
   summary: string;
@@ -137,6 +138,20 @@ export async function POST(request: NextRequest) {
   const issueId = body?.issueId as string | undefined;
   const provider = body?.provider === 'grok' ? 'grok' : 'anthropic';
 
+  const creditGate = await ensureCreditsAvailable(supabase, user.id, 1);
+  if (!creditGate.allowed) {
+    return NextResponse.json(
+      {
+        error: creditGate.reason || 'Monthly AI credit limit reached',
+        planTier: creditGate.tier,
+        creditsRemaining: creditGate.remaining,
+        creditsLimit: creditGate.limit,
+        resetsAt: creditGate.resetAt,
+      },
+      { status: 402 }
+    );
+  }
+
   if (!issueId) {
     return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
   }
@@ -171,7 +186,8 @@ export async function POST(request: NextRequest) {
       ? await summarizeWithGrok(input)
       : await summarizeWithAnthropic(input);
 
-    return NextResponse.json({ provider, ...result });
+    await consumeCredits(supabase, user.id, 1);
+    return NextResponse.json({ provider, ...result, creditsRemaining: Math.max(0, creditGate.remaining - 1), creditsLimit: creditGate.limit, planTier: creditGate.tier });
   } catch (primaryError) {
     const fallbackProvider = provider === 'anthropic' ? 'grok' : 'anthropic';
 
@@ -179,7 +195,8 @@ export async function POST(request: NextRequest) {
       const fallback = fallbackProvider === 'grok'
         ? await summarizeWithGrok(input)
         : await summarizeWithAnthropic(input);
-      return NextResponse.json({ provider: fallbackProvider, ...fallback });
+      await consumeCredits(supabase, user.id, 1);
+      return NextResponse.json({ provider: fallbackProvider, ...fallback, creditsRemaining: Math.max(0, creditGate.remaining - 1), creditsLimit: creditGate.limit, planTier: creditGate.tier });
     } catch (fallbackError) {
       const primaryMessage = serializeError(primaryError);
       const fallbackMessage = serializeError(fallbackError);

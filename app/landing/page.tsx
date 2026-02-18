@@ -81,12 +81,11 @@ export default function LandingPage() {
 
       <main className="px-6 md:px-12 pt-16 pb-24 max-w-6xl">
         <h1 className="text-5xl md:text-8xl font-bold tracking-tight leading-[0.95] mb-8">
-          A calm home for your <span className="text-[#FF4E4E]">newsletter reading.</span>
+          Your personal <span className="text-[#FF4E4E]">Signal Engine.</span>
         </h1>
 
         <p className="text-xl md:text-2xl text-gray-500 max-w-3xl leading-relaxed mb-10">
-          Readflow transforms the chaos of an inbox into a focused reading practice. Import the writers you care about,
-          curate what deserves your attention, and keep every insight organized in one beautiful library.
+          Readflow acts like your executive assistant for newsletters: triage the noise, surface what matters, and brief you in minutes.
         </p>
 
         <div className="flex flex-wrap items-center gap-4">
@@ -140,31 +139,44 @@ export default function LandingPage() {
       <section className="px-6 md:px-12 py-20 border-t border-gray-100">
         <div className="max-w-6xl grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
           <div className="space-y-6">
-            <h2 className="text-3xl md:text-5xl font-bold tracking-tight">Simple pricing. Start free.</h2>
+            <h2 className="text-3xl md:text-5xl font-bold tracking-tight">Hybrid pricing. Start free, scale with AI credits.</h2>
             <p className="text-gray-500 text-lg leading-relaxed">
               Readflow is built to be useful immediately. Start with the free workflow, then upgrade when you want deeper
               organization and advanced curation features.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <article className="border border-gray-200 p-6 bg-gray-50/70 space-y-4">
               <h3 className="text-lg font-bold uppercase tracking-wide">Free</h3>
               <p className="text-3xl font-bold">$0</p>
+              <p className="text-xs uppercase tracking-[0.1em] text-gray-500">Good for trial runs</p>
               <ul className="text-sm text-gray-600 space-y-2 list-disc pl-4">
-                <li>Connect one Gmail account</li>
-                <li>Sync selected labels</li>
-                <li>Read, save, archive, and delete</li>
+                <li>Up to 5 newsletter sources/month</li>
+                <li>Basic search + read workflow</li>
+                <li>3 AI credits / month</li>
               </ul>
             </article>
 
             <article className="border border-black p-6 bg-white space-y-4">
               <h3 className="text-lg font-bold uppercase tracking-wide">Pro</h3>
-              <p className="text-3xl font-bold">$6/mo</p>
+              <p className="text-3xl font-bold">$9/mo</p>
+              <p className="text-xs uppercase tracking-[0.1em] text-gray-500">or $90/year (save $18)</p>
               <ul className="text-sm text-gray-600 space-y-2 list-disc pl-4">
-                <li>Everything in Free</li>
-                <li>Priority sync controls</li>
-                <li>Advanced reading insights</li>
+                <li>Unlimited newsletter sources</li>
+                <li>50 AI credits / month</li>
+                <li>Priority sync + automation controls</li>
+              </ul>
+            </article>
+
+            <article className="border border-gray-900 p-6 bg-gray-900 text-white space-y-4">
+              <h3 className="text-lg font-bold uppercase tracking-wide">Elite</h3>
+              <p className="text-3xl font-bold">$25/mo</p>
+              <p className="text-xs uppercase tracking-[0.1em] text-gray-300">or $250/year (save $50)</p>
+              <ul className="text-sm text-gray-200 space-y-2 list-disc pl-4">
+                <li>300 AI credits / month</li>
+                <li>Weekly synthesis brief + semantic search</li>
+                <li>Priority model access + faster queues</li>
               </ul>
             </article>
           </div>
