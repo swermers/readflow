@@ -101,6 +101,43 @@ async function summarizeWithAnthropic(input: string) {
   return normalized;
 }
 
+export async function GET() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  const { data, error } = await supabase
+    .from('weekly_briefs')
+    .select('overview, themes, created_at')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    return NextResponse.json({ error: 'Could not load weekly brief' }, { status: 500 });
+  }
+
+  if (!data) {
+    return NextResponse.json({ brief: null });
+  }
+
+  const brief = normalize({ overview: data.overview, themes: data.themes });
+  if (!brief) {
+    return NextResponse.json({ brief: null });
+  }
+
+  return NextResponse.json({
+    brief: {
+      ...brief,
+      createdAt: data.created_at,
+    },
+  });
+}
+
 export async function POST(_request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -168,6 +205,13 @@ export async function POST(_request: NextRequest) {
         { status: 402 }
       );
     }
+
+    await supabase.from('weekly_briefs').insert({
+      user_id: user.id,
+      overview: brief.overview,
+      themes: brief.themes,
+      source_issue_count: issues.length,
+    });
 
     return NextResponse.json({
       ...brief,
