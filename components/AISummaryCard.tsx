@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Headphones, Sparkles } from 'lucide-react';
+import { Headphones, List } from 'lucide-react';
 
 type Props = {
   issueId: string;
@@ -109,8 +109,8 @@ export default function AISummaryCard({ issueId }: Props) {
           disabled={loading}
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
         >
-          <Sparkles className="h-3.5 w-3.5" />
-          {loading ? 'Generating...' : data ? 'Regenerate' : 'Generate TLDR'}
+          <List className="h-3.5 w-3.5" />
+          {loading ? 'Generating...' : 'TLDR'}
         </button>
         <button
           type="button"
