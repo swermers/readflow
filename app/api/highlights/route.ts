@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('highlights')
-    .select('id, issue_id, highlighted_text, note, auto_tags, created_at, issues(subject, sender_id, senders(name, email))')
+    .select('id, issue_id, highlighted_text, note, selection_start, selection_end, auto_tags, created_at, issues(subject, sender_id, senders(name, email))')
     .eq('user_id', user.id)
     .order('created_at', { ascending: sort === 'oldest' });
 
@@ -56,9 +56,16 @@ export async function POST(request: NextRequest) {
   const issueId = body.issue_id as string | undefined;
   const highlightedText = body.highlighted_text as string | undefined;
   const note = body.note as string | undefined;
+  const selectionStart = body.selection_start as number | undefined;
+  const selectionEnd = body.selection_end as number | undefined;
 
   if (!issueId || !highlightedText?.trim()) {
     return NextResponse.json({ error: 'issue_id and highlighted_text are required' }, { status: 400 });
+  }
+
+  const hasSelectionOffsets = typeof selectionStart === 'number' && typeof selectionEnd === 'number';
+  if (hasSelectionOffsets && (!Number.isInteger(selectionStart) || !Number.isInteger(selectionEnd) || selectionStart < 0 || selectionEnd <= selectionStart)) {
+    return NextResponse.json({ error: 'selection_start and selection_end must be valid increasing integers' }, { status: 400 });
   }
 
   const { data, error } = await supabase
@@ -68,9 +75,11 @@ export async function POST(request: NextRequest) {
       issue_id: issueId,
       highlighted_text: highlightedText.trim(),
       note: note?.trim() || null,
+      selection_start: hasSelectionOffsets ? selectionStart : null,
+      selection_end: hasSelectionOffsets ? selectionEnd : null,
       auto_tags: deriveAutoTags(highlightedText.trim(), note),
     })
-    .select('id, issue_id, highlighted_text, note, auto_tags, created_at')
+    .select('id, issue_id, highlighted_text, note, selection_start, selection_end, auto_tags, created_at')
     .single();
 
   if (error) {

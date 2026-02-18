@@ -10,6 +10,8 @@ type Highlight = {
   highlighted_text: string;
   note: string | null;
   created_at: string;
+  selection_start?: number | null;
+  selection_end?: number | null;
 };
 
 const TOOLBAR_WIDTH = 280;
@@ -52,6 +54,7 @@ function getTextNodesInRange(range: Range, root: HTMLElement) {
 export default function HighlightableContent({ issueId, bodyHtml }: { issueId: string; bodyHtml: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const selectedRangeRef = useRef<Range | null>(null);
+  const selectedOffsetsRef = useRef<{ start: number; end: number } | null>(null);
 
   const [highlights, setHighlights] = useState<Highlight[]>([]);
   const [selectedText, setSelectedText] = useState('');
@@ -72,6 +75,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     setNoteMode(false);
     setNoteText('');
     selectedRangeRef.current = null;
+    selectedOffsetsRef.current = null;
     window.getSelection()?.removeAllRanges();
   };
 
@@ -122,6 +126,26 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     }
 
     return { fullText, entries };
+  };
+
+  const getGlobalOffsetsFromRange = (range: Range) => {
+    const container = containerRef.current;
+    if (!container || !container.contains(range.commonAncestorContainer)) return null;
+
+    const fullRange = document.createRange();
+    fullRange.selectNodeContents(container);
+
+    const startRange = fullRange.cloneRange();
+    startRange.setEnd(range.startContainer, range.startOffset);
+
+    const endRange = fullRange.cloneRange();
+    endRange.setEnd(range.endContainer, range.endOffset);
+
+    const start = startRange.toString().length;
+    const end = endRange.toString().length;
+
+    if (Number.isNaN(start) || Number.isNaN(end) || end <= start) return null;
+    return { start, end };
   };
 
   const createRangeFromGlobalOffsets = (entries: TextNodeEntry[], start: number, end: number) => {
@@ -211,25 +235,19 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   };
 
   const applyHighlightToDom = (highlight: Highlight, usedRanges: Array<{ start: number; end: number }>) => {
-    const { id, highlighted_text: highlightedText, note } = highlight;
+    const { id, highlighted_text: highlightedText, note, selection_start: selectionStart, selection_end: selectionEnd } = highlight;
     const container = containerRef.current;
     if (!container || !highlightedText.trim()) return;
 
     const { fullText, entries } = getTextNodeEntries();
     if (!fullText || entries.length === 0) return;
 
-    const targetText = highlightedText.trim();
-    if (!targetText) return;
-
-    const matches = findHighlightRanges(fullText, targetText);
-
-    for (const match of matches) {
-      const { start, end } = match;
+    const tryRange = (start: number, end: number) => {
       const overlapsExisting = usedRanges.some((range) => start < range.end && end > range.start);
-      if (overlapsExisting) continue;
+      if (overlapsExisting) return false;
 
       const range = createRangeFromGlobalOffsets(entries, start, end);
-      if (!range) continue;
+      if (!range) return false;
 
       const mark = document.createElement('mark');
       mark.className = 'readflow-highlight';
@@ -247,9 +265,31 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
       try {
         range.surroundContents(mark);
         usedRanges.push({ start, end });
-        return;
+        return true;
       } catch {
-        continue;
+        return false;
+      }
+    };
+
+    if (
+      typeof selectionStart === 'number' &&
+      typeof selectionEnd === 'number' &&
+      selectionEnd > selectionStart &&
+      selectionStart >= 0
+    ) {
+      if (tryRange(selectionStart, selectionEnd)) {
+        return;
+      }
+    }
+
+    const targetText = highlightedText.trim();
+    if (!targetText) return;
+
+    const matches = findHighlightRanges(fullText, targetText);
+
+    for (const match of matches) {
+      if (tryRange(match.start, match.end)) {
+        return;
       }
     }
   };
@@ -328,6 +368,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     if (!container || !container.contains(range.commonAncestorContainer)) return;
 
     selectedRangeRef.current = range.cloneRange();
+    selectedOffsetsRef.current = getGlobalOffsetsFromRange(range);
 
     const rects = range.getClientRects();
     const rect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
@@ -438,6 +479,8 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   const createHighlight = async (note?: string) => {
     if (!selectedText.trim()) return;
 
+    const selectionOffsets = selectedOffsetsRef.current;
+
     const res = await fetch('/api/highlights', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -445,6 +488,8 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
         issue_id: issueId,
         highlighted_text: selectedText,
         note: note?.trim() || undefined,
+        selection_start: selectionOffsets?.start,
+        selection_end: selectionOffsets?.end,
       }),
     });
 

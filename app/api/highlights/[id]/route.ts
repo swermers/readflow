@@ -32,7 +32,7 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     .update({ note: note?.trim() || null, auto_tags: deriveAutoTags(existing.highlighted_text, note) })
     .eq('id', params.id)
     .eq('user_id', user.id)
-    .select('id, issue_id, highlighted_text, note, auto_tags, created_at')
+    .select('id, issue_id, highlighted_text, note, selection_start, selection_end, auto_tags, created_at')
     .single();
 
   if (error) {
