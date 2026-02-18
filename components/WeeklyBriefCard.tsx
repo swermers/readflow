@@ -12,6 +12,9 @@ type BriefResponse = {
   overview: string;
   themes: Theme[];
   createdAt?: string;
+  weekStart?: string;
+  weekEnd?: string;
+  nextEligibleAt?: string;
   creditsRemaining?: number;
   creditsLimit?: number;
   planTier?: string;
@@ -20,11 +23,35 @@ type BriefResponse = {
 
 type ErrorResponse = {
   error?: string;
+  nextEligibleAt?: string;
   creditsRemaining?: number;
   creditsLimit?: number;
   planTier?: string;
   unlimitedAiAccess?: boolean;
 };
+
+type WeeklyGetResponse = {
+  brief?: BriefResponse | null;
+  weekStart?: string;
+  weekEnd?: string;
+  generatedNow?: boolean;
+  nextEligibleAt?: string;
+  tooFewIssues?: boolean;
+  creditBlockedReason?: string | null;
+  creditsRemaining?: number;
+  creditsLimit?: number;
+  planTier?: string;
+  unlimitedAiAccess?: boolean;
+};
+
+function formatWeekRange(start?: string | null, end?: string | null) {
+  if (!start || !end) return null;
+  const s = new Date(`${start}T00:00:00.000Z`);
+  const e = new Date(`${end}T00:00:00.000Z`);
+  const endExclusive = new Date(e);
+  endExclusive.setUTCDate(endExclusive.getUTCDate() - 1);
+  return `${s.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${endExclusive.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
+}
 
 export default function WeeklyBriefCard() {
   const [loading, setLoading] = useState(false);
@@ -33,6 +60,9 @@ export default function WeeklyBriefCard() {
   const [overview, setOverview] = useState<string | null>(null);
   const [themes, setThemes] = useState<Theme[]>([]);
   const [createdAt, setCreatedAt] = useState<string | null>(null);
+  const [weekStart, setWeekStart] = useState<string | null>(null);
+  const [weekEnd, setWeekEnd] = useState<string | null>(null);
+  const [nextEligibleAt, setNextEligibleAt] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
 
@@ -44,12 +74,28 @@ export default function WeeklyBriefCard() {
         const res = await fetch('/api/ai/weekly-brief', { method: 'GET', cache: 'no-store' });
         if (!res.ok) return;
 
-        const body = (await res.json().catch(() => null)) as { brief?: BriefResponse | null } | null;
-        if (cancelled || !body?.brief) return;
+        const body = (await res.json().catch(() => null)) as WeeklyGetResponse | null;
+        if (cancelled || !body) return;
 
-        setOverview(body.brief.overview);
-        setThemes(body.brief.themes || []);
-        setCreatedAt(body.brief.createdAt || null);
+        setWeekStart(body.weekStart || null);
+        setWeekEnd(body.weekEnd || null);
+        setNextEligibleAt(body.nextEligibleAt || null);
+        if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
+          setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free', unlimited: body.unlimitedAiAccess || false });
+        }
+
+        if (body.brief) {
+          setOverview(body.brief.overview);
+          setThemes(body.brief.themes || []);
+          setCreatedAt(body.brief.createdAt || null);
+          return;
+        }
+
+        if (body.creditBlockedReason) {
+          setError(body.creditBlockedReason);
+        } else if (body.tooFewIssues) {
+          setError('Not enough issues in the previous week yet. We will auto-generate when there is enough content.');
+        }
       } catch {
         // best effort
       } finally {
@@ -78,6 +124,7 @@ export default function WeeklyBriefCard() {
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
         setError(body?.error || 'Could not generate your weekly brief right now.');
+        if (body?.nextEligibleAt) setNextEligibleAt(body.nextEligibleAt);
         if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
           setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free', unlimited: body.unlimitedAiAccess || false });
         }
@@ -87,7 +134,10 @@ export default function WeeklyBriefCard() {
       const body = (await res.json()) as BriefResponse;
       setOverview(body.overview);
       setThemes(body.themes || []);
-      setCreatedAt(new Date().toISOString());
+      setCreatedAt(body.createdAt || new Date().toISOString());
+      setWeekStart(body.weekStart || null);
+      setWeekEnd(body.weekEnd || null);
+      setNextEligibleAt(body.nextEligibleAt || null);
       setCollapsed(false);
       if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
         setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free', unlimited: body.unlimitedAiAccess || false });
@@ -102,6 +152,10 @@ export default function WeeklyBriefCard() {
   const createdLabel = createdAt
     ? new Date(createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null;
+  const weekLabel = formatWeekRange(weekStart, weekEnd);
+  const nextLabel = nextEligibleAt
+    ? new Date(nextEligibleAt).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
+    : null;
 
   return (
     <section className="mb-8 rounded-2xl border border-line bg-surface-raised p-4 md:p-5">
@@ -109,7 +163,8 @@ export default function WeeklyBriefCard() {
         <div>
           <p className="text-xs uppercase tracking-[0.1em] text-accent">Signal Engine</p>
           <h2 className="text-lg font-semibold text-ink">Weekly Brief</h2>
-          <p className="text-xs text-ink-faint">Cross-newsletter synthesis from the last 7 days.</p>
+          <p className="text-xs text-ink-faint">Auto-generated on Mondays for the previous week.</p>
+          {weekLabel && <p className="mt-1 text-[11px] text-ink-faint">Coverage: {weekLabel}</p>}
           {createdLabel && <p className="mt-1 text-[11px] text-ink-faint">Latest brief: {createdLabel}</p>}
         </div>
 
@@ -120,7 +175,7 @@ export default function WeeklyBriefCard() {
             disabled={loading || initializing}
             className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
           >
-            {loading ? 'Briefing...' : 'Generate Brief'}
+            {loading ? 'Briefing...' : 'Generate This Week'}
           </button>
         ) : (
           <button
@@ -132,6 +187,10 @@ export default function WeeklyBriefCard() {
           </button>
         )}
       </div>
+
+      {nextLabel && (
+        <p className="mt-3 text-xs text-ink-faint">New weekly insight unlocks: {nextLabel}</p>
+      )}
 
       {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
 
