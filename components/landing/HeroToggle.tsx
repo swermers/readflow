@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BellRing, PauseCircle } from 'lucide-react';
+import { BellRing, Bookmark, Archive, Trash2, Clock3 } from 'lucide-react';
 
 const inboxRows = [
   { id: 'inbox-1', subject: 'LAST CHANCE SALE: 70% OFF', from: 'Flash Retail', badge: '99+' },
@@ -12,11 +12,31 @@ const inboxRows = [
   { id: 'inbox-5', subject: 'Fwd: Fwd: Market notes', from: 'Unknown Sender', badge: '27' },
 ];
 
-const rackCards = [
-  { title: 'Lenny’s Newsletter', issue: 'How great PMs use AI in planning', status: 'Active', tone: 'active' },
-  { title: 'Stratechery', issue: 'AI distribution and platform power', status: 'Paused', tone: 'paused' },
-  { title: 'Every', issue: 'Building agent workflows that stick', status: 'Active', tone: 'active' },
-  { title: 'The Pragmatic Engineer', issue: 'Engineering leverage in 2026', status: 'Active', tone: 'active' },
+const weeklyRackIssues = [
+  {
+    sender: 'JOE HUDSON',
+    title: 'The Trap of Self-Reliance',
+    excerpt:
+      'Art of Accomplishment — Self-reliance began the first time you learned to carry everything alone. But the highest leverage now is knowing what to keep and what to release.',
+    date: '2/18/2026',
+    label: 'NEWS',
+  },
+  {
+    sender: 'PIRATE WIRES',
+    title: 'Mike Solana // Wealth Tax Counterstrike',
+    excerpt:
+      'A union thug and his cabal of academics have awakened a sleeping giant. Here is your first look at the billionaire response and the second-order effects for founders.',
+    date: '2/18/2026',
+    label: 'NEWS',
+  },
+  {
+    sender: 'STRATECHERY',
+    title: 'AI Distribution and Durable Defensibility',
+    excerpt:
+      'The winning move is not shipping another model wrapper. It is owning trust, workflow habit, and memory across the stack where value compounds.',
+    date: '2/17/2026',
+    label: 'ANALYSIS',
+  },
 ];
 
 export default function HeroToggle() {
@@ -81,23 +101,55 @@ export default function HeroToggle() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="grid gap-3 sm:grid-cols-2"
+            className="space-y-3"
           >
-            {rackCards.map((card, idx) => (
-              <motion.article
-                key={card.title}
-                layoutId={`morph-row-${idx + 1}`}
-                className="rounded-2xl border border-line bg-surface p-4 shadow-sm"
-              >
-                <p className="text-sm font-semibold text-ink">{card.title}</p>
-                <p className="mt-1 text-xs text-ink-muted line-clamp-2">{card.issue}</p>
-                <p className={`mt-3 inline-flex items-center gap-1 rounded-full px-2 py-1 text-xs ${
-                  card.tone === 'paused' ? 'bg-ink-faint/10 text-ink-faint' : 'bg-accent/10 text-accent'
-                }`}>
-                  {card.tone === 'paused' ? <PauseCircle className="h-3 w-3" /> : <span className="h-2 w-2 rounded-full bg-current" />} {card.status}
-                </p>
-              </motion.article>
-            ))}
+            <div className="flex items-end justify-between border-b border-line pb-3">
+              <div>
+                <p className="text-heading text-ink">The Rack.</p>
+                <p className="text-sm text-ink-muted">{weeklyRackIssues.length} issues from the last 7 days.</p>
+              </div>
+              <p className="text-label uppercase text-ink-faint">Weekly view</p>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              {weeklyRackIssues.map((issue, idx) => (
+                <motion.article
+                  key={`${issue.sender}-${issue.title}`}
+                  layoutId={`morph-row-${idx + 1}`}
+                  className="flex min-h-[255px] flex-col rounded-2xl border border-line bg-surface p-4 shadow-sm"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold tracking-[0.08em] text-accent">{issue.sender}</p>
+                      <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-faint">{issue.label}</span>
+                    </div>
+                    <p className="inline-flex items-center gap-1 text-[11px] text-ink-faint">
+                      <Clock3 className="h-3 w-3" /> {issue.date}
+                    </p>
+                  </div>
+
+                  <h3 className="text-lg font-semibold leading-tight text-ink">{issue.title}</h3>
+                  <p className="mt-3 line-clamp-3 text-sm text-ink-muted">{issue.excerpt}</p>
+
+                  <div className="mt-auto border-t border-line pt-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <button className="text-sm font-medium text-accent hover:underline">OPEN ↗</button>
+                      <div className="flex items-center gap-2">
+                        <button className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-ink-muted hover:text-ink">
+                          <Bookmark className="h-3.5 w-3.5" /> SAVE
+                        </button>
+                        <button className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-ink-muted hover:text-ink">
+                          <Archive className="h-3.5 w-3.5" /> ARCHIVE
+                        </button>
+                        <button className="rounded-lg border border-line p-1.5 text-ink-faint hover:text-ink" aria-label="Delete issue">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.article>
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
