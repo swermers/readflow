@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Sparkles } from 'lucide-react';
 
 type Props = {
@@ -23,6 +23,17 @@ export default function AISummaryCard({ issueId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SummaryResponse | null>(null);
+  const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const [audioLoading, setAudioLoading] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl);
+      }
+    };
+  }, [audioUrl]);
 
   const generate = async () => {
     setLoading(true);
@@ -53,6 +64,36 @@ export default function AISummaryCard({ issueId }: Props) {
       setError('Could not generate TLDR right now.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateListenAudio = async () => {
+    setAudioLoading(true);
+    setAudioError(null);
+
+    try {
+      const res = await fetch('/api/ai/listen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issueId }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as ErrorResponse | null;
+        setAudioError(body?.error || 'Could not generate audio right now.');
+        return;
+      }
+
+      const audioBlob = await res.blob();
+      const nextUrl = URL.createObjectURL(audioBlob);
+      setAudioUrl((prev) => {
+        if (prev) URL.revokeObjectURL(prev);
+        return nextUrl;
+      });
+    } catch {
+      setAudioError('Could not generate audio right now.');
+    } finally {
+      setAudioLoading(false);
     }
   };
 
@@ -93,6 +134,32 @@ export default function AISummaryCard({ issueId }: Props) {
           </div>
         </div>
       )}
+
+      <div className="mt-4 space-y-3 border-t border-line pt-4">
+        <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-ink-faint">Listen mode</p>
+            <p className="mt-1 text-xs text-ink-faint">Generate audio narration of this article using xAI.</p>
+          </div>
+          <button
+            type="button"
+            onClick={generateListenAudio}
+            disabled={audioLoading}
+            className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
+          >
+            {audioLoading ? 'Generating...' : audioUrl ? 'Regenerate audio' : 'Generate audio'}
+          </button>
+        </div>
+
+        {audioError && <p className="text-xs text-red-500">{audioError}</p>}
+
+        {audioUrl && (
+          <audio controls className="w-full">
+            <source src={audioUrl} type="audio/mpeg" />
+            Your browser does not support audio playback.
+          </audio>
+        )}
+      </div>
     </section>
   );
 }
