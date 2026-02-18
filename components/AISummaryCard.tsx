@@ -25,6 +25,7 @@ export default function AISummaryCard({ issueId }: Props) {
   const [data, setData] = useState<SummaryResponse | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [audioError, setAudioError] = useState<string | null>(null);
+  const [audioHints, setAudioHints] = useState<string[]>([]);
   const [audioLoading, setAudioLoading] = useState(false);
 
   useEffect(() => {
@@ -70,6 +71,7 @@ export default function AISummaryCard({ issueId }: Props) {
   const generateListenAudio = async () => {
     setAudioLoading(true);
     setAudioError(null);
+    setAudioHints([]);
 
     try {
       const res = await fetch('/api/ai/listen', {
@@ -81,6 +83,7 @@ export default function AISummaryCard({ issueId }: Props) {
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
         setAudioError(body?.error || 'Could not generate audio right now.');
+        setAudioHints(body?.hints || []);
         return;
       }
 
@@ -151,7 +154,18 @@ export default function AISummaryCard({ issueId }: Props) {
           </button>
         </div>
 
-        {audioError && <p className="text-xs text-red-500">{audioError}</p>}
+        {audioError && (
+          <div className="space-y-2">
+            <p className="text-xs text-red-500">{audioError}</p>
+            {audioHints.length > 0 && (
+              <ul className="list-disc pl-4 text-xs text-ink-faint">
+                {audioHints.map((hint, index) => (
+                  <li key={`${hint}-${index}`}>{hint}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         {audioUrl && (
           <audio controls className="w-full">

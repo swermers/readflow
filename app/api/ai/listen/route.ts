@@ -57,12 +57,14 @@ export async function POST(request: NextRequest) {
   const input = `${issue.subject || 'Newsletter article'}\n\n${articleText.slice(0, MAX_INPUT_CHARS)}`;
   const model = process.env.XAI_VOICE_MODEL || 'grok-2-tts-latest';
   const voice = process.env.XAI_VOICE_NAME || 'alloy';
+  const endpoint = process.env.XAI_AUDIO_ENDPOINT || 'https://api.x.ai/v1/audio/speech';
 
-  const res = await fetch('https://api.x.ai/v1/audio/speech', {
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
       authorization: `Bearer ${xaiApiKey}`,
+      'x-api-key': xaiApiKey,
     },
     body: JSON.stringify({
       model,
@@ -74,14 +76,32 @@ export async function POST(request: NextRequest) {
 
   if (!res.ok) {
     const details = await res.text();
+    const parsedDetails = (() => {
+      try {
+        return JSON.parse(details) as { error?: string; code?: string; message?: string };
+      } catch {
+        return null;
+      }
+    })();
+
+    const statusMessage = parsedDetails?.error || parsedDetails?.message || details;
+    const isPermissionError = res.status === 403;
+
     return NextResponse.json(
       {
-        error: `xAI audio request failed: ${res.status} ${details}`,
-        hints: [
-          'Verify XAI_API_KEY is set for this environment and redeploy',
-          'Check that XAI_VOICE_MODEL is available on your xAI account',
-          'Try changing XAI_VOICE_NAME if your selected voice is unsupported',
-        ],
+        error: `xAI audio request failed: ${res.status} ${statusMessage}`,
+        hints: isPermissionError
+          ? [
+              'This key is valid but your xAI team likely does not have Audio/TTS access enabled for the selected model',
+              'In xAI dashboard, confirm the exact team tied to this API key has voice/audio entitlement and billing enabled',
+              'Create a fresh key under that same authorized team and redeploy Preview/Production env vars',
+              'Try a different model with XAI_VOICE_MODEL if your team is not approved for the current default',
+            ]
+          : [
+              'Verify XAI_API_KEY is set for this environment and redeploy',
+              'Check that XAI_VOICE_MODEL is available on your xAI account',
+              'Try changing XAI_VOICE_NAME if your selected voice is unsupported',
+            ],
       },
       { status: 500 }
     );
