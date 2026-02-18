@@ -1,32 +1,26 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
 import './globals.css';
 import ThemeProvider from '@/components/ThemeProvider';
 import Toast from '@/components/Toast';
-
-const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-});
 
 export const metadata: Metadata = {
   title: 'Readflow Library',
   description: 'Your personal newsletter sanctuary',
   applicationName: 'Readflow',
-  manifest: '/manifest', // Next.js handles the extension automatically
+  manifest: '/manifest',
   appleWebApp: {
     capable: true,
-    statusBarStyle: 'default', // 'black-translucent' can sometimes hide your header text
+    statusBarStyle: 'default',
     title: 'Readflow',
   },
   icons: {
     icon: '/icon.svg',
-    apple: '/apple-touch-readflow-1.png', // Use the 180x180 PNG you made!
+    apple: '/apple-touch-readflow-1.png',
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: '#ffffff', // Status bar color
+  themeColor: '#ffffff',
   viewportFit: 'cover',
 };
 
@@ -38,7 +32,6 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <head>
-        {/* Prevent flash of wrong theme */}
         <script dangerouslySetInnerHTML={{ __html: `
           try {
             if (localStorage.getItem('readflow-theme') === 'dark') {
@@ -47,7 +40,7 @@ export default function RootLayout({
           } catch (e) {}
         ` }} />
       </head>
-      <body className={`${inter.variable} font-sans antialiased`}>
+      <body className="font-sans antialiased">
         <ThemeProvider>
           {children}
           <Toast />
