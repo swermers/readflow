@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Archive, BookMarked, Compass, Newspaper, Settings, StickyNote } from 'lucide-react';
+import { Archive, BookMarked, Compass, Newspaper, StickyNote } from 'lucide-react';
 
 const navItems = [
   { href: '/', label: 'Rack', icon: Newspaper },
@@ -10,7 +10,6 @@ const navItems = [
   { href: '/library', label: 'Library', icon: BookMarked },
   { href: '/archive', label: 'Archive', icon: Archive },
   { href: '/notes', label: 'Notes', icon: StickyNote },
-  { href: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export default function MobileBottomNav() {
