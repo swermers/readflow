@@ -264,3 +264,24 @@ body {
   vertical-align: super;
   opacity: 0.9;
 }
+
+@keyframes voicePulse {
+  0%, 100% { height: 8px; opacity: 0.5; }
+  50% { height: 24px; opacity: 1; }
+}
+
+.voice-bar {
+  height: 8px;
+  animation: voicePulse 0.9s ease-in-out infinite;
+}
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.sender-marquee {
+  display: inline-block;
+  min-width: max-content;
+  animation: marquee 20s linear infinite;
+}
