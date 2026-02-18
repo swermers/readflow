@@ -157,7 +157,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     }
 
     return {
-      text: normalizedChars.join('').trim(),
+      text: normalizedChars.join(''),
       map,
     };
   };

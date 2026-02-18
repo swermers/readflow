@@ -4,6 +4,7 @@ import { Clock } from 'lucide-react';
 import { notFound } from 'next/navigation';
 import IssueActions from './IssueActions';
 import HighlightableContent from '@/components/HighlightableContent';
+import AISummaryCard from '@/components/AISummaryCard';
 import BackNavButton from '@/components/BackNavButton';
 
 export default async function NewsletterPage({ params }: { params: { id: string } }) {
@@ -74,7 +75,9 @@ export default async function NewsletterPage({ params }: { params: { id: string 
         </h1>
 
         {/* Divider */}
-        <div className="w-16 h-px bg-accent mb-10" />
+        <div className="w-16 h-px bg-accent mb-8" />
+
+        <AISummaryCard issueId={email.id} />
 
         {/* Newsletter Content */}
         <HighlightableContent issueId={email.id} bodyHtml={email.body_html || ''} />
