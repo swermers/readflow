@@ -49,22 +49,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No article text available for audio narration' }, { status: 400 });
   }
 
-  const xaiApiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
-  if (!xaiApiKey) {
-    return NextResponse.json({ error: 'XAI_API_KEY (or GROK_API_KEY) is not configured' }, { status: 500 });
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!openaiApiKey) {
+    return NextResponse.json({ error: 'OPENAI_API_KEY is not configured' }, { status: 500 });
   }
 
   const input = `${issue.subject || 'Newsletter article'}\n\n${articleText.slice(0, MAX_INPUT_CHARS)}`;
-  const model = process.env.XAI_VOICE_MODEL || 'grok-2-tts-latest';
-  const voice = process.env.XAI_VOICE_NAME || 'alloy';
-  const endpoint = process.env.XAI_AUDIO_ENDPOINT || 'https://api.x.ai/v1/audio/speech';
+  const model = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
+  const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
+  const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
 
   const res = await fetch(endpoint, {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${xaiApiKey}`,
-      'x-api-key': xaiApiKey,
+      authorization: `Bearer ${openaiApiKey}`,
     },
     body: JSON.stringify({
       model,
@@ -78,29 +77,34 @@ export async function POST(request: NextRequest) {
     const details = await res.text();
     const parsedDetails = (() => {
       try {
-        return JSON.parse(details) as { error?: string; code?: string; message?: string };
+        return JSON.parse(details) as {
+          error?: string | { message?: string; code?: string; type?: string };
+          code?: string;
+          message?: string;
+        };
       } catch {
         return null;
       }
     })();
 
-    const statusMessage = parsedDetails?.error || parsedDetails?.message || details;
-    const isPermissionError = res.status === 403;
+    const nestedError = parsedDetails?.error;
+    const statusMessage =
+      (typeof nestedError === 'object' ? nestedError?.message : nestedError) || parsedDetails?.message || details;
+    const isPermissionError = res.status === 401 || res.status === 403;
 
     return NextResponse.json(
       {
-        error: `xAI audio request failed: ${res.status} ${statusMessage}`,
+        error: `OpenAI audio request failed: ${res.status} ${statusMessage}`,
         hints: isPermissionError
           ? [
-              'This key is valid but your xAI team likely does not have Audio/TTS access enabled for the selected model',
-              'In xAI dashboard, confirm the exact team tied to this API key has voice/audio entitlement and billing enabled',
-              'Create a fresh key under that same authorized team and redeploy Preview/Production env vars',
-              'Try a different model with XAI_VOICE_MODEL if your team is not approved for the current default',
+              'Verify OPENAI_API_KEY is valid for this deployment environment and redeploy',
+              'Confirm your OpenAI project/billing is active and has access to the selected TTS model',
+              'If this key was recently rotated, update the env var and trigger a fresh deploy',
             ]
           : [
-              'Verify XAI_API_KEY is set for this environment and redeploy',
-              'Check that XAI_VOICE_MODEL is available on your xAI account',
-              'Try changing XAI_VOICE_NAME if your selected voice is unsupported',
+              'Check that OPENAI_TTS_MODEL is available on your account',
+              'Try changing OPENAI_TTS_VOICE if your selected voice is unsupported',
+              'Optionally override OPENAI_AUDIO_ENDPOINT if routing through a gateway/proxy',
             ],
       },
       { status: 500 }
