@@ -65,19 +65,6 @@ export default function LoginPage() {
         >
           {loading ? 'Connecting...' : 'Continue with Google'}
         </button>
-
-        <div className="relative mb-8">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-line" />
-          </div>
-          <div className="relative flex justify-center text-[10px]">
-            <span className="bg-surface px-3 text-ink-faint uppercase tracking-widest font-bold">Or with email</span>
-          </div>
-        </div>
-
-        <div className="text-xs text-ink-faint">
-          Magic links are temporarily disabled while we upgrade.
-        </div>
       </div>
     </div>
   );

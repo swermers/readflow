@@ -90,11 +90,11 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     setHighlights(data || []);
   };
 
-  const clearExistingMarks = () => {
+  const removeMarksById = (highlightId: string) => {
     const container = containerRef.current;
     if (!container) return;
 
-    const marks = Array.from(container.querySelectorAll('mark[data-highlight-id]'));
+    const marks = Array.from(container.querySelectorAll(`mark[data-highlight-id="${highlightId}"]`));
     marks.forEach((mark) => {
       const parent = mark.parentNode;
       if (!parent) return;
@@ -278,17 +278,28 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
     container.innerHTML = bodyHtml || '';
   }, [bodyHtml]);
 
   useEffect(() => {
-    clearExistingMarks();
-    const usedRanges: Array<{ start: number; end: number }> = [];
-    highlights
-      .slice()
-      .reverse()
-      .forEach((highlight) => applyHighlightToDom(highlight, usedRanges));
-  }, [highlights, bodyHtml]);
+    const container = containerRef.current;
+    if (!container) return;
+
+    const markCount = container.querySelectorAll('mark[data-highlight-id]').length;
+
+    if (markCount === 0 && highlights.length > 0) {
+      const usedRanges: Array<{ start: number; end: number }> = [];
+      highlights
+        .slice()
+        .reverse()
+        .forEach((highlight) => applyHighlightToDom(highlight, usedRanges));
+    }
+
+    highlights.forEach((highlight) => {
+      updateMarkMetadata(highlight.id, highlight.note);
+    });
+  }, [highlights]);
 
 
   useEffect(() => {
@@ -422,6 +433,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
     if (!res.ok) return;
 
+    removeMarksById(activeHighlight.id);
     setHighlights((prev) => prev.filter((h) => h.id !== activeHighlight.id));
     closePopover();
   };
