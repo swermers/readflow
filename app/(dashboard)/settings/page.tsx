@@ -6,6 +6,7 @@ import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, Spark
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 interface GmailLabel {
   id: string;
@@ -333,6 +334,22 @@ function SettingsContent() {
       </header>
 
       <div className="h-px bg-line-strong mb-12" />
+
+      <section className="mb-10 border border-line bg-surface-raised p-5 md:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-ink-faint">Organization</p>
+            <h2 className="text-lg font-bold text-ink">Manage Sources</h2>
+            <p className="mt-1 text-sm text-ink-muted">Source subscriptions are now tucked into Settings to keep navigation cleaner.</p>
+          </div>
+          <Link
+            href="/subscriptions"
+            className="inline-flex items-center justify-center border border-line px-4 py-2 text-label uppercase text-ink hover:border-line-strong"
+          >
+            Open Sources
+          </Link>
+        </div>
+      </section>
 
       <div className="space-y-16">
 
