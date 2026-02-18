@@ -135,7 +135,8 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     return range;
   };
 
-  const applyHighlightToDom = (id: string, highlightedText: string, usedRanges: Array<{ start: number; end: number }>) => {
+  const applyHighlightToDom = (highlight: Highlight, usedRanges: Array<{ start: number; end: number }>) => {
+    const { id, highlighted_text: highlightedText, note } = highlight;
     const container = containerRef.current;
     if (!container || !highlightedText.trim()) return;
 
@@ -157,6 +158,15 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
         const mark = document.createElement('mark');
         mark.className = 'readflow-highlight';
         mark.dataset.highlightId = id;
+        const hasNote = !!note?.trim();
+        mark.dataset.hasNote = hasNote ? 'true' : 'false';
+        if (hasNote) {
+          mark.setAttribute('title', note!.trim());
+          mark.setAttribute('aria-label', `Highlight note: ${note!.trim()}`);
+        } else {
+          mark.removeAttribute('title');
+          mark.removeAttribute('aria-label');
+        }
 
         try {
           range.surroundContents(mark);
@@ -171,6 +181,27 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     }
   };
 
+
+  const updateMarkMetadata = (highlightId: string, note: string | null) => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const marks = Array.from(container.querySelectorAll(`mark[data-highlight-id="${highlightId}"]`)) as HTMLElement[];
+    const noteValue = note?.trim() || '';
+    const hasNote = noteValue.length > 0;
+
+    marks.forEach((mark) => {
+      mark.dataset.hasNote = hasNote ? 'true' : 'false';
+      if (hasNote) {
+        mark.setAttribute('title', noteValue);
+        mark.setAttribute('aria-label', `Highlight note: ${noteValue}`);
+      } else {
+        mark.removeAttribute('title');
+        mark.removeAttribute('aria-label');
+      }
+    });
+  };
+
   const tryApplyCurrentRangeHighlight = (highlightId: string) => {
     const range = selectedRangeRef.current;
     if (!range) return;
@@ -181,6 +212,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
       const mark = document.createElement('mark');
       mark.className = 'readflow-highlight';
       mark.dataset.highlightId = highlightId;
+      mark.dataset.hasNote = 'false';
       const fragment = range.extractContents();
       mark.appendChild(fragment);
       range.insertNode(mark);
@@ -202,6 +234,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
           const mark = document.createElement('mark');
           mark.className = 'readflow-highlight';
           mark.dataset.highlightId = highlightId;
+          mark.dataset.hasNote = 'false';
           nodeRange.surroundContents(mark);
         } catch {
           // no-op; text based apply in highlights effect remains a final fallback
@@ -254,8 +287,8 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     highlights
       .slice()
       .reverse()
-      .forEach((highlight) => applyHighlightToDom(highlight.id, highlight.highlighted_text, usedRanges));
-  }, [highlights]);
+      .forEach((highlight) => applyHighlightToDom(highlight, usedRanges));
+  }, [highlights, bodyHtml]);
 
 
   useEffect(() => {
@@ -335,6 +368,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
     const created = await res.json();
     tryApplyCurrentRangeHighlight(created.id);
+    updateMarkMetadata(created.id, created.note ?? null);
     setHighlights((prev) => [created, ...prev]);
     closeToolbar();
   };
@@ -374,6 +408,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const updated = await res.json();
 
     setHighlights((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
+    updateMarkMetadata(updated.id, updated.note ?? null);
     setActiveHighlight(updated);
     setEditMode(false);
   };
