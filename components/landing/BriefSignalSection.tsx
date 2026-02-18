@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Sparkles, BookOpenText } from 'lucide-react';
+import { SlidersHorizontal, BookOpenText } from 'lucide-react';
 
 export default function BriefSignalSection() {
   return (
@@ -32,7 +32,7 @@ export default function BriefSignalSection() {
       </article>
 
       <article className="md:col-span-2 rounded-2xl border border-line bg-surface-raised p-5 shadow-sm">
-        <p className="inline-flex items-center gap-2 text-sm font-medium text-ink"><Sparkles className="h-4 w-4 text-accent" /> Sources control</p>
+        <p className="inline-flex items-center gap-2 text-sm font-medium text-ink"><SlidersHorizontal className="h-4 w-4 text-accent" /> Sources control</p>
         <div className="mt-4 grid gap-3 sm:grid-cols-3">
           {[
             { source: 'Lenny’s Newsletter', active: true },

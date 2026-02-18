@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Shield, Sparkles, Headphones, Moon, Sun } from 'lucide-react';
+import { Shield, FileText, Headphones, Moon, Sun, Newspaper } from 'lucide-react';
 import { useTheme } from '@/components/ThemeProvider';
 import HeroToggle from '@/components/landing/HeroToggle';
 import TLDRDemo from '@/components/landing/TLDRDemo';
@@ -44,7 +44,7 @@ export default function LandingPage() {
               {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
             </button>
             <Link href="/login" className="rounded-xl bg-ink px-4 py-2 text-sm font-medium text-surface">
-              Get the Brief
+              Cut the chaos
             </Link>
           </div>
         </nav>
@@ -55,14 +55,14 @@ export default function LandingPage() {
               Win your war on noise.
             </motion.h1>
             <motion.p {...fadeUp} className="mx-auto max-w-3xl text-lg text-ink-muted">
-              Turn your inbox into a sanctuary. Filter signal, auto-synthesize insights, and listen on the go.
+              Turn your inbox into a sanctuary. Zero your inbox, save highlights and notes, get TLDRs for long newsletters, and listen on the go.
             </motion.p>
             <HeroToggle />
           </section>
 
           <section className="space-y-5">
             <motion.h2 {...fadeUp} className="flex items-center gap-2 text-display">
-              <Sparkles className="h-6 w-6 text-accent" /> The Brief + High Signal.
+              <Newspaper className="h-6 w-6 text-accent" /> The Brief + High Signal.
             </motion.h2>
             <motion.p {...fadeUp} className="max-w-3xl text-ink-muted">
               Your Rack is a newsletter grid. Then Readflow elevates the most important reads into your brief and high-signal queue.
@@ -72,7 +72,7 @@ export default function LandingPage() {
 
           <section className="space-y-5">
             <motion.h2 {...fadeUp} className="flex items-center gap-2 text-display">
-              <Sparkles className="h-6 w-6 text-accent" /> TLDR, on demand.
+              <FileText className="h-6 w-6 text-accent" /> TLDR, on demand.
             </motion.h2>
             <motion.p {...fadeUp} className="max-w-3xl text-ink-muted">
               Use the Show TLDR toggle to collapse long reads into clear executive bullets.
