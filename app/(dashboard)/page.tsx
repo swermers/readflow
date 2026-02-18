@@ -7,6 +7,7 @@ import AutoSync from '@/components/AutoSync';
 import RackIssueActions from '@/components/RackIssueActions';
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough';
 import WeeklyBriefCard from '@/components/WeeklyBriefCard';
+import SignalSortButton from '@/components/SignalSortButton';
 
 const ZEN_QUOTES = [
   { text: 'The mind is everything. What you think you become.', author: 'Buddha' },
@@ -28,7 +29,7 @@ export default async function Home() {
 
   const { data: emails, error } = await supabase
     .from('issues')
-    .select('*, senders!inner(name, status)')
+    .select('*, senders!inner(name, status), signal_tier, signal_reason')
     .eq('senders.status', 'approved')
     .eq('status', 'unread')
     .is('deleted_at', null)
@@ -83,7 +84,10 @@ export default async function Home() {
             {(emails?.length || 0)} {(emails?.length || 0) === 1 ? 'issue' : 'issues'} from the last 7 days.
           </p>
         </div>
-        {gmailConnected && (emails?.length ?? 0) > 0 && <SyncButton variant="compact" />}
+        <div className="flex items-center gap-2">
+          {gmailConnected && (emails?.length ?? 0) > 0 && <SyncButton variant="compact" />}
+          {(emails?.length ?? 0) > 0 && <SignalSortButton />}
+        </div>
       </header>
 
       <div className="h-px bg-line-strong mb-10" />
@@ -95,7 +99,14 @@ export default async function Home() {
           <article key={email.id} className="relative flex h-52 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
             <div>
               <div className="flex items-start justify-between gap-2">
-                <p className="truncate text-[10px] uppercase tracking-[0.08em] text-accent">{email.senders?.name || 'Unknown'}</p>
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-[10px] uppercase tracking-[0.08em] text-accent">{email.senders?.name || 'Unknown'}</p>
+                  {email.signal_tier && email.signal_tier !== 'unclassified' && (
+                    <span className="rounded-full border border-line px-2 py-0.5 text-[9px] uppercase tracking-[0.08em] text-ink-faint" title={email.signal_reason || undefined}>
+                      {email.signal_tier === 'high_signal' ? 'High Signal' : email.signal_tier === 'news' ? 'News' : 'Reference'}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   <div className="unread-dot" />
                   <span className="text-[10px] text-ink-faint flex items-center gap-1">
