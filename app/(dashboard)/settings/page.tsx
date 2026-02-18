@@ -31,6 +31,10 @@ function SettingsContent() {
   const [planTier, setPlanTier] = useState<'free' | 'pro' | 'elite'>('free');
   const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
   const [aiCreditsUsed, setAiCreditsUsed] = useState(0);
+  const [creditsLimit, setCreditsLimit] = useState<number>(3);
+  const [unlimitedAiAccess, setUnlimitedAiAccess] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [redeemingCode, setRedeemingCode] = useState(false);
 
   const supabase = createClient();
   const router = useRouter();
@@ -55,7 +59,7 @@ function SettingsContent() {
       // Gmail and plan columns may not exist if later migrations haven't been run
       const { data: gmailProfile } = await supabase
         .from('profiles')
-        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, billing_cycle, ai_credits_used')
+        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, billing_cycle, ai_credits_used, unlimited_ai_access')
         .eq('id', user.id)
         .single();
 
@@ -68,6 +72,7 @@ function SettingsContent() {
         setPlanTier((gmailProfile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
         setBillingCycle((gmailProfile.billing_cycle || 'monthly') as 'monthly' | 'annual');
         setAiCreditsUsed(gmailProfile.ai_credits_used || 0);
+        setUnlimitedAiAccess(Boolean(gmailProfile.unlimited_ai_access));
       }
     } else {
       const fullName = user.user_metadata?.full_name || '';
@@ -78,10 +83,68 @@ function SettingsContent() {
     setLoading(false);
   }, [supabase]);
 
+  const refreshAiUsage = useCallback(async () => {
+    try {
+      const res = await fetch('/api/profile/ai-usage', { cache: 'no-store' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      setPlanTier((payload.planTier || 'free') as 'free' | 'pro' | 'elite');
+      setBillingCycle((payload.billingCycle || 'monthly') as 'monthly' | 'annual');
+      setAiCreditsUsed(payload.creditsUsed || 0);
+      setCreditsLimit(typeof payload.creditsLimit === 'number' ? payload.creditsLimit : 3);
+      setUnlimitedAiAccess(Boolean(payload.unlimitedAiAccess));
+    } catch {
+      // best effort
+    }
+  }, []);
+
+  const redeemInviteCode = async () => {
+    if (!inviteCode.trim()) return;
+    setRedeemingCode(true);
+    try {
+      const res = await fetch('/api/profile/redeem-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: inviteCode.trim() }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        triggerToast(body?.error || 'Could not redeem code');
+        return;
+      }
+      triggerToast(body?.message || 'Code redeemed');
+      setInviteCode('');
+      await refreshAiUsage();
+      await loadProfile();
+    } catch {
+      triggerToast('Could not redeem code');
+    } finally {
+      setRedeemingCode(false);
+    }
+  };
+
+
   useEffect(() => {
     loadProfile();
     handleGmailCallbackResult();
+    void refreshAiUsage();
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void refreshAiUsage();
+    }, 15000);
+
+    const onFocus = () => {
+      void refreshAiUsage();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refreshAiUsage]);
 
   // Fetch labels when gmail becomes connected
   useEffect(() => {
@@ -178,6 +241,7 @@ function SettingsContent() {
     }
     setSaving(false);
   };
+
 
   const handleReconnectGmail = async () => {
     setGmailError(null);
@@ -346,12 +410,34 @@ function SettingsContent() {
               </div>
               <div className="border border-line p-4">
                 <p className="text-label uppercase text-ink-faint">Credits Used</p>
-                <p className="mt-2 text-xl font-bold text-ink">{aiCreditsUsed}</p>
+                <p className="mt-2 text-xl font-bold text-ink">{unlimitedAiAccess ? 'Unlimited' : `${aiCreditsUsed}/${creditsLimit}`}</p>
               </div>
             </div>
             <p className="mt-4 text-xs text-ink-faint">
-              Need more credits? Upgrade to Pro or Elite for higher monthly allowances.
+              {unlimitedAiAccess
+                ? 'Unlimited access is active for this account.'
+                : 'Need more credits? Upgrade to Pro or Elite for higher monthly allowances.'}
             </p>
+
+            <div className="mt-4 border-t border-line pt-4">
+              <label className="text-label uppercase text-ink-faint">Invite / Premium Code</label>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Enter access code"
+                  className="flex-1 border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-line-strong focus:outline-none"
+                />
+                <button
+                  onClick={redeemInviteCode}
+                  disabled={redeemingCode || !inviteCode.trim()}
+                  className="px-4 py-2 bg-ink text-surface text-label uppercase disabled:opacity-50 hover:bg-accent transition-colors"
+                >
+                  {redeemingCode ? 'Redeeming...' : 'Redeem'}
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 

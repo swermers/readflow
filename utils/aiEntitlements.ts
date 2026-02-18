@@ -6,6 +6,7 @@ type ProfileEntitlements = {
   plan_tier: string | null;
   ai_cycle_started_at: string | null;
   ai_credits_used: number | null;
+  unlimited_ai_access?: boolean | null;
 };
 
 type EnsureResult = {
@@ -15,6 +16,7 @@ type EnsureResult = {
   tier: PlanTier;
   resetAt: string;
   reason?: string;
+  unlimitedAiAccess?: boolean;
 };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -48,7 +50,7 @@ export async function ensureCreditsAvailable(
 ): Promise<EnsureResult> {
   const { data: profile } = await supabase
     .from('profiles')
-    .select('plan_tier, ai_cycle_started_at, ai_credits_used')
+    .select('plan_tier, ai_cycle_started_at, ai_credits_used, unlimited_ai_access')
     .eq('id', userId)
     .single<ProfileEntitlements>();
 
@@ -56,6 +58,18 @@ export async function ensureCreditsAvailable(
   const limit = getMonthlyCreditLimit(tier);
 
   let cycleStartedAt = getCycleStartIso(profile?.ai_cycle_started_at);
+
+  if (profile?.unlimited_ai_access) {
+    return {
+      allowed: true,
+      remaining: -1,
+      limit: -1,
+      tier,
+      resetAt: new Date().toISOString(),
+      unlimitedAiAccess: true,
+    };
+  }
+
   let used = Math.max(0, profile?.ai_credits_used || 0);
 
   if (isCycleExpired(profile?.ai_cycle_started_at)) {
@@ -91,6 +105,11 @@ export async function ensureCreditsAvailable(
 }
 
 export async function consumeCreditsAtomic(supabase: SupabaseClient, userId: string, credits: number): Promise<EnsureResult> {
+  const preflight = await ensureCreditsAvailable(supabase, userId, credits);
+  if (!preflight.allowed || preflight.unlimitedAiAccess) {
+    return preflight;
+  }
+
   const { data, error } = await supabase.rpc('consume_ai_credits', {
     p_user_id: userId,
     p_credits: credits,
@@ -113,12 +132,12 @@ export async function consumeCreditsAtomic(supabase: SupabaseClient, userId: str
       tier: normalizeTier(row.plan_tier),
       resetAt: row.reset_at || new Date().toISOString(),
       reason: row.reason || undefined,
+      unlimitedAiAccess: row.credit_limit === -1,
     };
   }
 
   // Backward-compatible fallback when function isn't deployed yet.
-  const gate = await ensureCreditsAvailable(supabase, userId, credits);
-  if (!gate.allowed) return gate;
+  const gate = preflight;
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -144,6 +163,6 @@ export async function consumeCreditsAtomic(supabase: SupabaseClient, userId: str
 
   return {
     ...gate,
-    remaining: Math.max(0, gate.remaining - credits),
+    remaining: gate.remaining < 0 ? -1 : Math.max(0, gate.remaining - credits),
   };
 }

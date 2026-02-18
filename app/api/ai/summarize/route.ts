@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
         creditsRemaining: creditGate.remaining,
         creditsLimit: creditGate.limit,
         resetsAt: creditGate.resetAt,
+        unlimitedAiAccess: creditGate.unlimitedAiAccess || false,
       },
       { status: 402 }
     );
@@ -193,6 +194,7 @@ export async function POST(request: NextRequest) {
       creditsRemaining: consumeResult.remaining,
       creditsLimit: consumeResult.limit,
       planTier: consumeResult.tier,
+      unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
     });
   } catch (primaryError) {
     const fallbackProvider = provider === 'anthropic' ? 'grok' : 'anthropic';
@@ -208,6 +210,7 @@ export async function POST(request: NextRequest) {
         creditsRemaining: consumeResult.remaining,
         creditsLimit: consumeResult.limit,
         planTier: consumeResult.tier,
+        unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
       });
     } catch (fallbackError) {
       const primaryMessage = serializeError(primaryError);

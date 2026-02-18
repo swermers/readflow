@@ -15,6 +15,7 @@ type BriefResponse = {
   creditsRemaining?: number;
   creditsLimit?: number;
   planTier?: string;
+  unlimitedAiAccess?: boolean;
 };
 
 type ErrorResponse = {
@@ -22,6 +23,7 @@ type ErrorResponse = {
   creditsRemaining?: number;
   creditsLimit?: number;
   planTier?: string;
+  unlimitedAiAccess?: boolean;
 };
 
 export default function WeeklyBriefCard() {
@@ -29,7 +31,7 @@ export default function WeeklyBriefCard() {
   const [error, setError] = useState<string | null>(null);
   const [overview, setOverview] = useState<string | null>(null);
   const [themes, setThemes] = useState<Theme[]>([]);
-  const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string } | null>(null);
+  const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
 
   const generateBrief = async () => {
     setLoading(true);
@@ -45,7 +47,7 @@ export default function WeeklyBriefCard() {
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
         setError(body?.error || 'Could not generate your weekly brief right now.');
         if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
-          setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free' });
+          setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free', unlimited: body.unlimitedAiAccess || false });
         }
         return;
       }
@@ -54,7 +56,7 @@ export default function WeeklyBriefCard() {
       setOverview(body.overview);
       setThemes(body.themes || []);
       if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
-        setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free' });
+        setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free', unlimited: body.unlimitedAiAccess || false });
       }
     } catch {
       setError('Could not generate your weekly brief right now.');
@@ -86,7 +88,7 @@ export default function WeeklyBriefCard() {
 
       {creditsMeta && (
         <p className="mt-3 text-xs text-ink-faint">
-          AI credits: {creditsMeta.remaining}/{creditsMeta.limit} remaining on {creditsMeta.tier.toUpperCase()}.
+          AI credits: {creditsMeta.unlimited ? 'Unlimited' : `${creditsMeta.remaining}/${creditsMeta.limit} remaining`} on {creditsMeta.tier.toUpperCase()}.
         </p>
       )}
 

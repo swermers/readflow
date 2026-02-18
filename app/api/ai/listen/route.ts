@@ -316,6 +316,7 @@ export async function POST(request: NextRequest) {
         creditsRemaining: creditGate.remaining,
         creditsLimit: creditGate.limit,
         resetsAt: creditGate.resetAt,
+        unlimitedAiAccess: creditGate.unlimitedAiAccess || false,
       },
       { status: 402 }
     );
@@ -341,6 +342,7 @@ export async function POST(request: NextRequest) {
       planTier: creditGate.tier,
       creditsRemaining: creditGate.remaining,
       creditsLimit: creditGate.limit,
+      unlimitedAiAccess: creditGate.unlimitedAiAccess || false,
     },
     { status: 202 }
   );

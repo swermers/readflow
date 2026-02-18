@@ -163,6 +163,7 @@ export async function POST(_request: NextRequest) {
           creditsLimit: consume.limit,
           planTier: consume.tier,
           resetsAt: consume.resetAt,
+          unlimitedAiAccess: consume.unlimitedAiAccess || false,
         },
         { status: 402 }
       );
@@ -173,6 +174,7 @@ export async function POST(_request: NextRequest) {
       creditsRemaining: consume.remaining,
       creditsLimit: consume.limit,
       planTier: consume.tier,
+      unlimitedAiAccess: consume.unlimitedAiAccess || false,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to generate weekly brief';
