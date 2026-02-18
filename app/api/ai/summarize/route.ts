@@ -159,13 +159,19 @@ export async function POST(request: NextRequest) {
 
   const input = `${issue.subject || 'Newsletter article'}\n\n${rawText.slice(0, MAX_INPUT_CHARS)}`;
 
+  const serializeError = (err: unknown) => {
+    if (err instanceof Error) return err.message;
+    if (typeof err === 'string') return err;
+    return 'Unknown provider error';
+  };
+
   try {
     const result = provider === 'grok'
       ? await summarizeWithGrok(input)
       : await summarizeWithAnthropic(input);
 
     return NextResponse.json({ provider, ...result });
-  } catch (apiError) {
+  } catch (primaryError) {
     const fallbackProvider = provider === 'anthropic' ? 'grok' : 'anthropic';
 
     try {
@@ -174,14 +180,22 @@ export async function POST(request: NextRequest) {
         : await summarizeWithAnthropic(input);
       return NextResponse.json({ provider: fallbackProvider, ...fallback });
     } catch (fallbackError) {
-      console.error('AI summarize failed:', apiError, fallbackError);
+      const primaryMessage = serializeError(primaryError);
+      const fallbackMessage = serializeError(fallbackError);
+
+      console.error('AI summarize failed:', primaryMessage, fallbackMessage);
       return NextResponse.json(
         {
-          error: 'Failed to generate summary with configured providers',
+          error: 'Failed to generate TLDR with configured providers',
           hints: [
-            'Confirm ANTHROPIC_API_KEY and/or GROK_API_KEY (or XAI_API_KEY) are set in server env',
+            'Confirm ANTHROPIC_API_KEY and XAI_API_KEY (or GROK_API_KEY) are set for the same Vercel environment',
             'Verify provider model names are valid for your account',
+            'After updating env vars, trigger a fresh redeploy of that environment',
           ],
+          providerErrors: {
+            [provider]: primaryMessage,
+            [fallbackProvider]: fallbackMessage,
+          },
         },
         { status: 500 }
       );

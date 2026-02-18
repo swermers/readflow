@@ -13,6 +13,12 @@ type SummaryResponse = {
   takeaways: string[];
 };
 
+type ErrorResponse = {
+  error?: string;
+  hints?: string[];
+  providerErrors?: Record<string, string>;
+};
+
 export default function AISummaryCard({ issueId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -30,8 +36,14 @@ export default function AISummaryCard({ issueId }: Props) {
       });
 
       if (!res.ok) {
-        const body = await res.json().catch(() => null);
-        setError(body?.error || 'Could not generate TLDR right now.');
+        const body = (await res.json().catch(() => null)) as ErrorResponse | null;
+        const providerErrorText = body?.providerErrors
+          ? Object.entries(body.providerErrors)
+              .map(([name, message]) => `${name}: ${message}`)
+              .join(' | ')
+          : null;
+
+        setError(providerErrorText || body?.error || 'Could not generate TLDR right now.');
         return;
       }
 
