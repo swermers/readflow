@@ -29,7 +29,7 @@ export default function HighlightPopover({
 }: HighlightPopoverProps) {
   return (
     <div
-      className="fixed z-50 w-[320px] rounded-xl border border-line bg-surface-raised p-3 shadow-xl animate-fade-in"
+      className="fixed z-50 w-[min(320px,calc(100vw-16px))] rounded-xl border border-line bg-surface-raised p-3 shadow-xl animate-fade-in"
       style={{ top: position.top, left: position.left }}
     >
       <div className="mb-2 flex items-start justify-between gap-2">

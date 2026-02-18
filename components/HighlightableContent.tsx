@@ -23,7 +23,7 @@ type TextNodeEntry = {
 
 function clampX(centerX: number, width: number) {
   const min = 8;
-  const max = window.innerWidth - width - 8;
+  const max = Math.max(min, window.innerWidth - width - 8);
   return Math.max(min, Math.min(centerX - width / 2, max));
 }
 
@@ -228,7 +228,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const anchorRect = (range.startContainer as Element)?.parentElement?.getBoundingClientRect?.();
     const baseRect = (rect && (rect.width > 0 || rect.height > 0)) ? rect : anchorRect || rect;
 
-    const top = Math.max(8, (baseRect?.top || 16) + window.scrollY - 64);
+    const top = Math.max(8, (baseRect?.top || 16) - 64);
     const left = clampX((baseRect?.left || 40) + ((baseRect?.width || 40) / 2), TOOLBAR_WIDTH);
 
     setSelectedText(rawText.trim());
@@ -282,7 +282,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   }, []);
 
   useEffect(() => {
-    const handleDocumentClick = (event: MouseEvent) => {
+    const handleDocumentClick = (event: Event) => {
       const target = event.target as HTMLElement;
       if (target.closest('.readflow-highlight')) return;
       if (target.closest('[data-highlight-ui="true"]')) return;
@@ -302,10 +302,12 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     };
 
     document.addEventListener('mousedown', handleDocumentClick);
+    document.addEventListener('touchstart', handleDocumentClick, { passive: true });
     document.addEventListener('keydown', handleEscape);
 
     return () => {
       document.removeEventListener('mousedown', handleDocumentClick);
+      document.removeEventListener('touchstart', handleDocumentClick);
       document.removeEventListener('keydown', handleEscape);
     };
   }, []);
@@ -349,7 +351,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     if (!highlight) return;
 
     const rect = mark.getBoundingClientRect();
-    const top = rect.bottom + window.scrollY + 8;
+    const top = rect.bottom + 8;
     const left = clampX(rect.left + rect.width / 2, POPOVER_WIDTH);
 
     setActiveHighlight(highlight);
