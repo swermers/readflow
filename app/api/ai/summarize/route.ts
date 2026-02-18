@@ -56,7 +56,7 @@ async function summarizeWithAnthropic(input: string) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('Anthropic key is not configured');
 
-  const prompt = `You are helping summarize a newsletter article for a reader app.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
+  const prompt = `You are helping summarize a newsletter article for a reader app.\nDetect the primary language used in the article and write both summary and takeaways in that same language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -94,7 +94,7 @@ async function summarizeWithGrok(input: string) {
   const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
   if (!apiKey) throw new Error('Grok key is not configured');
 
-  const prompt = `Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\n\nArticle:\n${input}`;
+  const prompt = `Detect the primary language of the article and keep the response in that same language. Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\n\nArticle:\n${input}`;
 
   const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',

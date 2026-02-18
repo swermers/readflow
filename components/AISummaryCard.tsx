@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Headphones, List } from 'lucide-react';
+import { Headphones, List, X } from 'lucide-react';
 
 type Props = {
   issueId: string;
@@ -19,17 +19,23 @@ type ErrorResponse = {
   providerErrors?: Record<string, string>;
 };
 
+type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'canceled';
+
+const POLL_INTERVAL_MS = 4000;
+
 export default function AISummaryCard({ issueId }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SummaryResponse | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
-  const [audioStatus, setAudioStatus] = useState<'missing' | 'processing' | 'failed' | 'ready'>('missing');
+  const [audioStatus, setAudioStatus] = useState<AudioStatus>('missing');
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioHints, setAudioHints] = useState<string[]>([]);
   const [audioLoading, setAudioLoading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     const checkAudioStatus = async () => {
       try {
         const res = await fetch(`/api/ai/listen?issueId=${encodeURIComponent(issueId)}`, {
@@ -39,10 +45,12 @@ export default function AISummaryCard({ issueId }: Props) {
         if (!res.ok) return;
 
         const payload = (await res.json()) as {
-          status?: 'missing' | 'processing' | 'failed' | 'ready';
+          status?: AudioStatus;
           audioAvailable?: boolean;
           audioUrl?: string | null;
         };
+
+        if (cancelled) return;
 
         setAudioStatus(payload.status || 'missing');
         if (payload.audioAvailable && payload.audioUrl) {
@@ -54,7 +62,17 @@ export default function AISummaryCard({ issueId }: Props) {
     };
 
     void checkAudioStatus();
-  }, [issueId]);
+    const interval = setInterval(() => {
+      if (audioStatus === 'queued' || audioStatus === 'processing') {
+        void checkAudioStatus();
+      }
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [audioStatus, issueId]);
 
   const generate = async () => {
     setLoading(true);
@@ -92,7 +110,6 @@ export default function AISummaryCard({ issueId }: Props) {
     setAudioLoading(true);
     setAudioError(null);
     setAudioHints([]);
-    setAudioStatus('processing');
 
     try {
       const res = await fetch('/api/ai/listen', {
@@ -109,14 +126,36 @@ export default function AISummaryCard({ issueId }: Props) {
         return;
       }
 
-      const body = (await res.json().catch(() => null)) as { audioUrl?: string; status?: 'ready' } | null;
+      const body = (await res.json().catch(() => null)) as { audioUrl?: string | null; status?: AudioStatus } | null;
       if (body?.audioUrl) {
         setAudioUrl(body.audioUrl);
       }
-      setAudioStatus(body?.status || 'ready');
+      setAudioStatus(body?.status || 'queued');
     } catch {
       setAudioError('Could not generate audio right now.');
       setAudioStatus('failed');
+    } finally {
+      setAudioLoading(false);
+    }
+  };
+
+  const cancelListenAudio = async () => {
+    setAudioLoading(true);
+
+    try {
+      const res = await fetch(`/api/ai/listen?issueId=${encodeURIComponent(issueId)}`, {
+        method: 'DELETE',
+      });
+
+      if (!res.ok) {
+        setAudioError('Could not cancel generation right now.');
+        return;
+      }
+
+      const body = (await res.json().catch(() => null)) as { status?: AudioStatus } | null;
+      setAudioStatus(body?.status || 'canceled');
+    } catch {
+      setAudioError('Could not cancel generation right now.');
     } finally {
       setAudioLoading(false);
     }
@@ -141,14 +180,32 @@ export default function AISummaryCard({ issueId }: Props) {
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
         >
           <Headphones className="h-3.5 w-3.5" />
-          {audioLoading ? 'Generating...' : 'Listen'}
+          {audioLoading ? 'Working...' : 'Listen'}
         </button>
       </div>
 
       {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
 
-      {audioStatus === 'processing' && !audioError && (
-        <p className="mt-3 text-xs text-ink-faint">Generating audio… this can take a moment.</p>
+      {(audioStatus === 'queued' || audioStatus === 'processing') && !audioError && (
+        <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2">
+          <p className="text-xs text-ink-faint">Preparing narration… we&apos;ll auto-refresh until it&apos;s ready.</p>
+          <button
+            type="button"
+            onClick={cancelListenAudio}
+            className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
+          >
+            <X className="h-3 w-3" />
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {audioStatus === 'ready' && !audioError && (
+        <p className="mt-3 text-xs text-emerald-600">Ready to play.</p>
+      )}
+
+      {audioStatus === 'canceled' && !audioError && (
+        <p className="mt-3 text-xs text-ink-faint">Narration canceled. You can start it again anytime.</p>
       )}
 
       {audioError && (
