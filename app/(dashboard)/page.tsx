@@ -30,6 +30,7 @@ export default async function Home() {
     .select('*, senders!inner(name, status)')
     .eq('senders.status', 'approved')
     .eq('status', 'unread')
+    .is('deleted_at', null)
     .gte('received_at', sevenDaysAgo)
     .order('received_at', { ascending: false });
 

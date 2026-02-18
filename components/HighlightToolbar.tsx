@@ -25,7 +25,7 @@ export default function HighlightToolbar({
 }: HighlightToolbarProps) {
   return (
     <div
-      className="fixed z-50 w-[280px] rounded-xl border border-line-strong bg-ink text-surface shadow-2xl animate-fade-in"
+      className="fixed z-50 w-[min(280px,calc(100vw-16px))] rounded-xl border border-line-strong bg-ink text-surface shadow-2xl animate-fade-in"
       style={{ top: position.top, left: position.left }}
     >
       <div className="flex items-center gap-2 p-2">

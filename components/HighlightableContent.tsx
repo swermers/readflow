@@ -23,8 +23,29 @@ type TextNodeEntry = {
 
 function clampX(centerX: number, width: number) {
   const min = 8;
-  const max = window.innerWidth - width - 8;
+  const max = Math.max(min, window.innerWidth - width - 8);
   return Math.max(min, Math.min(centerX - width / 2, max));
+}
+
+function getTextNodesInRange(range: Range, root: HTMLElement) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes: Text[] = [];
+
+  while (walker.nextNode()) {
+    const node = walker.currentNode as Text;
+    if (!node.textContent?.trim()) continue;
+
+    const nodeRange = document.createRange();
+    nodeRange.selectNodeContents(node);
+
+    const intersects =
+      range.compareBoundaryPoints(Range.END_TO_START, nodeRange) < 0 &&
+      range.compareBoundaryPoints(Range.START_TO_END, nodeRange) > 0;
+
+    if (intersects) nodes.push(node);
+  }
+
+  return nodes;
 }
 
 
@@ -69,11 +90,11 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     setHighlights(data || []);
   };
 
-  const clearExistingMarks = () => {
+  const removeMarksById = (highlightId: string) => {
     const container = containerRef.current;
     if (!container) return;
 
-    const marks = Array.from(container.querySelectorAll('mark[data-highlight-id]'));
+    const marks = Array.from(container.querySelectorAll(`mark[data-highlight-id="${highlightId}"]`));
     marks.forEach((mark) => {
       const parent = mark.parentNode;
       if (!parent) return;
@@ -114,7 +135,83 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     return range;
   };
 
-  const applyHighlightToDom = (id: string, highlightedText: string, usedRanges: Array<{ start: number; end: number }>) => {
+
+  const normalizeWhitespaceWithMap = (value: string) => {
+    const normalizedChars: string[] = [];
+    const map: number[] = [];
+    let inWhitespace = false;
+
+    for (let i = 0; i < value.length; i++) {
+      const raw = value[i];
+      const char = raw === '\u00a0' ? ' ' : raw.normalize('NFKC');
+
+      if (/\s/.test(char)) {
+        if (!inWhitespace) {
+          normalizedChars.push(' ');
+          map.push(i);
+          inWhitespace = true;
+        }
+      } else {
+        normalizedChars.push(char);
+        map.push(i);
+        inWhitespace = false;
+      }
+    }
+
+    return {
+      text: normalizedChars.join(''),
+      map,
+    };
+  };
+
+  const findHighlightRanges = (fullText: string, targetText: string) => {
+    const exactRanges: Array<{ start: number; end: number }> = [];
+
+    let exactIndex = fullText.indexOf(targetText);
+    while (exactIndex !== -1) {
+      exactRanges.push({ start: exactIndex, end: exactIndex + targetText.length });
+      exactIndex = fullText.indexOf(targetText, exactIndex + targetText.length);
+    }
+
+    if (exactRanges.length > 0) {
+      return exactRanges;
+    }
+
+    const normalizedFull = normalizeWhitespaceWithMap(fullText);
+    const baseTarget = targetText.replace(/\u00a0/g, ' ').normalize('NFKC');
+    const normalizedTarget = baseTarget.replace(/\s+/g, ' ').trim();
+
+    if (!normalizedFull.text || !normalizedTarget) {
+      return [];
+    }
+
+    const findMappedRanges = (haystack: string, needle: string) => {
+      const ranges: Array<{ start: number; end: number }> = [];
+      let normalizedIndex = haystack.indexOf(needle);
+
+      while (normalizedIndex !== -1) {
+        const mappedStart = normalizedFull.map[normalizedIndex];
+        const mappedEndIndex = normalizedIndex + needle.length - 1;
+        const mappedEnd = (normalizedFull.map[mappedEndIndex] ?? mappedStart) + 1;
+
+        if (mappedStart !== undefined && mappedEnd > mappedStart) {
+          ranges.push({ start: mappedStart, end: mappedEnd });
+        }
+
+        normalizedIndex = haystack.indexOf(needle, normalizedIndex + needle.length);
+      }
+
+      return ranges;
+    };
+
+    const directRanges = findMappedRanges(normalizedFull.text, normalizedTarget);
+    if (directRanges.length > 0) return directRanges;
+
+    return findMappedRanges(normalizedFull.text.toLowerCase(), normalizedTarget.toLowerCase());
+  };
+
+  const applyHighlightToDom = (highlight: Highlight, usedRanges: Array<{ start: number; end: number }>) => {
+    const { id, highlighted_text: highlightedText, note } = highlight;
     const container = containerRef.current;
     if (!container || !highlightedText.trim()) return;
 
@@ -124,30 +221,58 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const targetText = highlightedText.trim();
     if (!targetText) return;
 
-    let matchIndex = fullText.indexOf(targetText);
-    while (matchIndex !== -1) {
-      const start = matchIndex;
-      const end = matchIndex + targetText.length;
+    const matches = findHighlightRanges(fullText, targetText);
+
+    for (const match of matches) {
+      const { start, end } = match;
       const overlapsExisting = usedRanges.some((range) => start < range.end && end > range.start);
-      if (!overlapsExisting) {
-        const range = createRangeFromGlobalOffsets(entries, start, end);
-        if (!range) return;
+      if (overlapsExisting) continue;
 
-        const mark = document.createElement('mark');
-        mark.className = 'readflow-highlight';
-        mark.dataset.highlightId = id;
+      const range = createRangeFromGlobalOffsets(entries, start, end);
+      if (!range) continue;
 
-        try {
-          range.surroundContents(mark);
-          usedRanges.push({ start, end });
-          return;
-        } catch {
-          return;
-        }
+      const mark = document.createElement('mark');
+      mark.className = 'readflow-highlight';
+      mark.dataset.highlightId = id;
+      const hasNote = !!note?.trim();
+      mark.dataset.hasNote = hasNote ? 'true' : 'false';
+      if (hasNote) {
+        mark.setAttribute('title', note!.trim());
+        mark.setAttribute('aria-label', `Highlight note: ${note!.trim()}`);
+      } else {
+        mark.removeAttribute('title');
+        mark.removeAttribute('aria-label');
       }
 
-      matchIndex = fullText.indexOf(targetText, matchIndex + targetText.length);
+      try {
+        range.surroundContents(mark);
+        usedRanges.push({ start, end });
+        return;
+      } catch {
+        continue;
+      }
     }
+  };
+
+
+  const updateMarkMetadata = (highlightId: string, note: string | null) => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const marks = Array.from(container.querySelectorAll(`mark[data-highlight-id="${highlightId}"]`)) as HTMLElement[];
+    const noteValue = note?.trim() || '';
+    const hasNote = noteValue.length > 0;
+
+    marks.forEach((mark) => {
+      mark.dataset.hasNote = hasNote ? 'true' : 'false';
+      if (hasNote) {
+        mark.setAttribute('title', noteValue);
+        mark.setAttribute('aria-label', `Highlight note: ${noteValue}`);
+      } else {
+        mark.removeAttribute('title');
+        mark.removeAttribute('aria-label');
+      }
+    });
   };
 
   const tryApplyCurrentRangeHighlight = (highlightId: string) => {
@@ -160,11 +285,34 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
       const mark = document.createElement('mark');
       mark.className = 'readflow-highlight';
       mark.dataset.highlightId = highlightId;
+      mark.dataset.hasNote = 'false';
       const fragment = range.extractContents();
       mark.appendChild(fragment);
       range.insertNode(mark);
     } catch {
-      // fall back to text-based application in highlights effect
+      // Fallback: wrap each intersecting text-node segment so multi-node selections still render reliably.
+      const textNodes = getTextNodesInRange(range, container);
+
+      textNodes.forEach((node) => {
+        const nodeStart = node === range.startContainer ? range.startOffset : 0;
+        const nodeEnd = node === range.endContainer ? range.endOffset : node.textContent?.length ?? 0;
+
+        if (nodeEnd <= nodeStart) return;
+
+        try {
+          const nodeRange = document.createRange();
+          nodeRange.setStart(node, nodeStart);
+          nodeRange.setEnd(node, nodeEnd);
+
+          const mark = document.createElement('mark');
+          mark.className = 'readflow-highlight';
+          mark.dataset.highlightId = highlightId;
+          mark.dataset.hasNote = 'false';
+          nodeRange.surroundContents(mark);
+        } catch {
+          // no-op; text based apply in highlights effect remains a final fallback
+        }
+      });
     }
   };
 
@@ -186,7 +334,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const anchorRect = (range.startContainer as Element)?.parentElement?.getBoundingClientRect?.();
     const baseRect = (rect && (rect.width > 0 || rect.height > 0)) ? rect : anchorRect || rect;
 
-    const top = Math.max(8, (baseRect?.top || 16) + window.scrollY - 64);
+    const top = Math.max(8, (baseRect?.top || 16) - 64);
     const left = clampX((baseRect?.left || 40) + ((baseRect?.width || 40) / 2), TOOLBAR_WIDTH);
 
     setSelectedText(rawText.trim());
@@ -203,16 +351,27 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
     container.innerHTML = bodyHtml || '';
   }, [bodyHtml]);
 
   useEffect(() => {
-    clearExistingMarks();
-    const usedRanges: Array<{ start: number; end: number }> = [];
-    highlights
-      .slice()
-      .reverse()
-      .forEach((highlight) => applyHighlightToDom(highlight.id, highlight.highlighted_text, usedRanges));
+    const container = containerRef.current;
+    if (!container) return;
+
+    const markCount = container.querySelectorAll('mark[data-highlight-id]').length;
+
+    if (markCount === 0 && highlights.length > 0) {
+      const usedRanges: Array<{ start: number; end: number }> = [];
+      highlights
+        .slice()
+        .reverse()
+        .forEach((highlight) => applyHighlightToDom(highlight, usedRanges));
+    }
+
+    highlights.forEach((highlight) => {
+      updateMarkMetadata(highlight.id, highlight.note);
+    });
   }, [highlights]);
 
 
@@ -240,7 +399,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   }, []);
 
   useEffect(() => {
-    const handleDocumentClick = (event: MouseEvent) => {
+    const handleDocumentClick = (event: Event) => {
       const target = event.target as HTMLElement;
       if (target.closest('.readflow-highlight')) return;
       if (target.closest('[data-highlight-ui="true"]')) return;
@@ -260,10 +419,12 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     };
 
     document.addEventListener('mousedown', handleDocumentClick);
+    document.addEventListener('touchstart', handleDocumentClick, { passive: true });
     document.addEventListener('keydown', handleEscape);
 
     return () => {
       document.removeEventListener('mousedown', handleDocumentClick);
+      document.removeEventListener('touchstart', handleDocumentClick);
       document.removeEventListener('keydown', handleEscape);
     };
   }, []);
@@ -291,6 +452,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
     const created = await res.json();
     tryApplyCurrentRangeHighlight(created.id);
+    updateMarkMetadata(created.id, created.note ?? null);
     setHighlights((prev) => [created, ...prev]);
     closeToolbar();
   };
@@ -307,7 +469,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     if (!highlight) return;
 
     const rect = mark.getBoundingClientRect();
-    const top = rect.bottom + window.scrollY + 8;
+    const top = rect.bottom + 8;
     const left = clampX(rect.left + rect.width / 2, POPOVER_WIDTH);
 
     setActiveHighlight(highlight);
@@ -330,6 +492,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const updated = await res.json();
 
     setHighlights((prev) => prev.map((h) => (h.id === updated.id ? updated : h)));
+    updateMarkMetadata(updated.id, updated.note ?? null);
     setActiveHighlight(updated);
     setEditMode(false);
   };
@@ -343,6 +506,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
     if (!res.ok) return;
 
+    removeMarksById(activeHighlight.id);
     setHighlights((prev) => prev.filter((h) => h.id !== activeHighlight.id));
     closePopover();
   };

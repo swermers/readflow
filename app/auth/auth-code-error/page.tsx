@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import BackNavButton from '@/components/BackNavButton';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
 
@@ -57,12 +58,12 @@ function ErrorContent() {
         >
           Return to Login
         </Link>
-        <Link
-          href="/settings"
-          className="inline-block w-full border border-gray-300 text-[#1A1A1A] font-medium text-sm p-4 rounded hover:bg-gray-50 transition-colors text-center"
-        >
-          Back to Settings
-        </Link>
+        <BackNavButton
+          label="Back to Settings"
+          fallbackHref="/settings"
+          className="inline-flex w-full items-center justify-center gap-2 border border-gray-300 text-[#1A1A1A] font-medium text-sm p-4 rounded hover:bg-gray-50 transition-colors text-center"
+          iconClassName="h-4 w-4"
+        />
       </div>
     </div>
   );

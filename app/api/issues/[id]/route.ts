@@ -44,6 +44,7 @@ export async function PATCH(
     .update(updateData)
     .eq('id', params.id)
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .select()
     .single();
 
@@ -73,6 +74,7 @@ export async function DELETE(
     .select('id, message_id')
     .eq('id', params.id)
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .maybeSingle();
 
   if (issueFetchError) {
@@ -81,23 +83,6 @@ export async function DELETE(
 
   if (!issue) {
     return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
-  }
-
-  if (issue.message_id) {
-    const { error: deletedIssueInsertError } = await supabase
-      .from('deleted_issues')
-      .upsert(
-        {
-          user_id: user.id,
-          message_id: issue.message_id,
-          deleted_at: new Date().toISOString(),
-        },
-        { onConflict: 'user_id,message_id' }
-      );
-
-    if (deletedIssueInsertError) {
-      return NextResponse.json({ error: deletedIssueInsertError.message }, { status: 500 });
-    }
   }
 
   const { error: highlightsDeleteError } = await supabase
@@ -111,7 +96,14 @@ export async function DELETE(
 
   const { error } = await supabase
     .from('issues')
-    .delete()
+    .update({
+      deleted_at: new Date().toISOString(),
+      archived_at: new Date().toISOString(),
+      status: 'archived',
+      body_html: null,
+      body_text: null,
+      snippet: null,
+    })
     .eq('id', params.id)
     .eq('user_id', user.id);
 
@@ -125,6 +117,7 @@ export async function DELETE(
     .select('id')
     .eq('id', params.id)
     .eq('user_id', user.id)
+    .is('deleted_at', null)
     .maybeSingle();
 
   if (verifyError) {
@@ -151,7 +144,8 @@ export async function DELETE(
       );
 
     if (deletedIssueInsertError) {
-      return NextResponse.json({ error: deletedIssueInsertError.message }, { status: 500 });
+      // Tombstone helps prevent Gmail re-imports, but should not block actual user deletion.
+      console.error('Failed to write deleted_issues tombstone:', deletedIssueInsertError);
     }
   }
 
