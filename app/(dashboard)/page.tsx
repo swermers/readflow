@@ -6,6 +6,7 @@ import SyncButton from '@/components/SyncButton';
 import AutoSync from '@/components/AutoSync';
 import RackIssueActions from '@/components/RackIssueActions';
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough';
+import WeeklyBriefCard from '@/components/WeeklyBriefCard';
 
 const ZEN_QUOTES = [
   { text: 'The mind is everything. What you think you become.', author: 'Buddha' },
@@ -86,6 +87,8 @@ export default async function Home() {
       </header>
 
       <div className="h-px bg-line-strong mb-10" />
+
+      <WeeklyBriefCard />
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 md:gap-5 lg:grid-cols-3 stagger-children">
         {emails?.map((email: any) => (
