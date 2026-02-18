@@ -72,6 +72,24 @@ export default async function Home() {
 
   const quote = getQuoteOfDay();
 
+  const signalStats = (emails || []).reduce(
+    (acc: { highSignal: number; news: number; reference: number; unclassified: number }, email: any) => {
+      if (email.signal_tier === 'high_signal') acc.highSignal += 1;
+      else if (email.signal_tier === 'news') acc.news += 1;
+      else if (email.signal_tier === 'reference') acc.reference += 1;
+      else acc.unclassified += 1;
+      return acc;
+    },
+    { highSignal: 0, news: 0, reference: 0, unclassified: 0 }
+  );
+
+  const executiveStats = [
+    { label: 'High Signal', value: signalStats.highSignal, tone: 'text-emerald-600' },
+    { label: 'News', value: signalStats.news, tone: 'text-sky-600' },
+    { label: 'Reference', value: signalStats.reference, tone: 'text-violet-600' },
+    { label: 'Unsorted', value: signalStats.unclassified, tone: 'text-ink-faint' },
+  ];
+
   return (
     <div className="p-6 md:p-12 min-h-screen">
       {!onboardingCompleted && <OnboardingWalkthrough open />}
@@ -89,6 +107,27 @@ export default async function Home() {
           {(emails?.length ?? 0) > 0 && <SignalSortButton />}
         </div>
       </header>
+
+      <div className="mb-8 rounded-2xl border border-line bg-surface-raised p-4 md:p-5">
+        <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.1em] text-accent">Executive Assistant</p>
+            <h2 className="text-lg font-semibold text-ink">Signal Snapshot</h2>
+            <p className="text-xs text-ink-faint">Quick triage across your unread stack this week.</p>
+          </div>
+          {lastSyncAt && (
+            <p className="text-[11px] text-ink-faint">Last sync: {new Date(lastSyncAt).toLocaleString()}</p>
+          )}
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+          {executiveStats.map((item) => (
+            <div key={item.label} className="rounded-lg border border-line bg-surface px-3 py-2">
+              <p className="text-[10px] uppercase tracking-[0.08em] text-ink-faint">{item.label}</p>
+              <p className={`mt-1 text-xl font-semibold ${item.tone}`}>{item.value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
 
       <div className="h-px bg-line-strong mb-10" />
 
