@@ -3,6 +3,7 @@ import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { refreshAccessToken, listMessageIdsByLabel, getMessage } from '@/utils/gmailClient';
 import { parseGmailMessage } from '@/utils/emailParser';
+import { classifyIssueSignal } from '@/utils/signalSortHeuristics';
 
 export async function POST() {
   const cookieStore = cookies();
@@ -146,6 +147,12 @@ export async function POST() {
 
         if (!sender) continue;
 
+        const signal = classifyIssueSignal({
+          subject: parsed.subject,
+          snippet: parsed.snippet,
+          bodyText: parsed.body_text,
+        });
+
         // Insert the issue
         const { error: insertError } = await supabase.from('issues').insert({
           user_id: user.id,
@@ -158,6 +165,8 @@ export async function POST() {
           message_id: parsed.message_id,
           received_at: parsed.received_at,
           status: 'unread',
+          signal_tier: signal.tier,
+          signal_reason: signal.reason,
         });
 
         if (!insertError) {

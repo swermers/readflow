@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
+import { deriveAutoTags } from '@/utils/noteTags';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -19,7 +20,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('highlights')
-    .select('id, issue_id, highlighted_text, note, created_at, issues(subject, sender_id, senders(name, email))')
+    .select('id, issue_id, highlighted_text, note, auto_tags, created_at, issues(subject, sender_id, senders(name, email))')
     .eq('user_id', user.id)
     .order('created_at', { ascending: sort === 'oldest' });
 
@@ -67,8 +68,9 @@ export async function POST(request: NextRequest) {
       issue_id: issueId,
       highlighted_text: highlightedText.trim(),
       note: note?.trim() || null,
+      auto_tags: deriveAutoTags(highlightedText.trim(), note),
     })
-    .select('id, issue_id, highlighted_text, note, created_at')
+    .select('id, issue_id, highlighted_text, note, auto_tags, created_at')
     .single();
 
   if (error) {

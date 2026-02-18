@@ -1,11 +1,12 @@
 import { createClient } from '@/utils/supabase/server';
-import Link from 'next/link';
+import TrackIssueLink from '@/components/TrackIssueLink';
 import { ArrowUpRight, Clock } from 'lucide-react';
 import SetupGuide from '@/components/SetupGuide';
 import SyncButton from '@/components/SyncButton';
 import AutoSync from '@/components/AutoSync';
 import RackIssueActions from '@/components/RackIssueActions';
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough';
+import SignalSortButton from '@/components/SignalSortButton';
 
 const ZEN_QUOTES = [
   { text: 'The mind is everything. What you think you become.', author: 'Buddha' },
@@ -27,7 +28,7 @@ export default async function Home() {
 
   const { data: emails, error } = await supabase
     .from('issues')
-    .select('*, senders!inner(name, status)')
+    .select('*, senders!inner(name, status), signal_tier, signal_reason')
     .eq('senders.status', 'approved')
     .eq('status', 'unread')
     .is('deleted_at', null)
@@ -37,6 +38,7 @@ export default async function Home() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
   let gmailConnected = false;
   let lastSyncAt: string | null = null;
   let onboardingCompleted = false;
@@ -82,7 +84,10 @@ export default async function Home() {
             {(emails?.length || 0)} {(emails?.length || 0) === 1 ? 'issue' : 'issues'} from the last 7 days.
           </p>
         </div>
-        {gmailConnected && (emails?.length ?? 0) > 0 && <SyncButton variant="compact" />}
+        <div className="flex items-center gap-2">
+          {gmailConnected && (emails?.length ?? 0) > 0 && <SyncButton variant="compact" />}
+          {(emails?.length ?? 0) > 0 && <SignalSortButton />}
+        </div>
       </header>
 
       <div className="h-px bg-line-strong mb-10" />
@@ -92,7 +97,14 @@ export default async function Home() {
           <article key={email.id} className="relative flex h-52 md:h-56 flex-col justify-between rounded-2xl border border-line bg-surface p-4 md:p-5 shadow-[0_8px_24px_rgba(15,23,42,0.04)] transition-all duration-200 hover:-translate-y-0.5 hover:border-accent/50 hover:shadow-[0_14px_32px_rgba(15,23,42,0.12)]">
             <div>
               <div className="flex items-start justify-between gap-2">
-                <p className="truncate text-[10px] uppercase tracking-[0.08em] text-accent">{email.senders?.name || 'Unknown'}</p>
+                <div className="flex items-center gap-2">
+                  <p className="truncate text-[10px] uppercase tracking-[0.08em] text-accent">{email.senders?.name || 'Unknown'}</p>
+                  {email.signal_tier && email.signal_tier !== 'unclassified' && (
+                    <span className="rounded-full border border-line px-2 py-0.5 text-[9px] uppercase tracking-[0.08em] text-ink-faint" title={email.signal_reason || undefined}>
+                      {email.signal_tier === 'high_signal' ? 'High Signal' : email.signal_tier === 'news' ? 'News' : 'Reference'}
+                    </span>
+                  )}
+                </div>
                 <div className="flex items-center gap-2">
                   <div className="unread-dot" />
                   <span className="text-[10px] text-ink-faint flex items-center gap-1">
@@ -102,18 +114,18 @@ export default async function Home() {
                 </div>
               </div>
 
-              <Link href={`/newsletters/${email.id}`} className="group mt-2 block">
+              <TrackIssueLink issueId={email.id} senderEmail={email.from_email} href={`/newsletters/${email.id}`} className="group mt-2 block">
                 <h3 className="text-sm md:text-base font-semibold leading-tight text-ink line-clamp-3 group-hover:text-accent transition-colors">
                   {email.subject}
                 </h3>
                 <p className="mt-2 text-[11px] text-ink-faint line-clamp-2">{email.snippet}</p>
-              </Link>
+              </TrackIssueLink>
             </div>
 
             <div className="pt-3 border-t border-line flex items-center justify-between gap-3">
-              <Link href={`/newsletters/${email.id}`} className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.08em] text-accent hover:opacity-80">
+              <TrackIssueLink issueId={email.id} senderEmail={email.from_email} href={`/newsletters/${email.id}`} className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.08em] text-accent hover:opacity-80">
                 Open <ArrowUpRight className="w-3 h-3" />
-              </Link>
+              </TrackIssueLink>
               <RackIssueActions issueId={email.id} />
             </div>
           </article>

@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Newspaper, Archive, Rss, Settings, LogOut, Sun, Moon, StickyNote, BookMarked, X,
+  Newspaper, Archive, Settings, LogOut, Sun, Moon, StickyNote, BookMarked, Compass, X,
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 
@@ -35,10 +35,10 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
 
   const navItems: NavItem[] = [
     { href: '/', label: 'The Rack', icon: <Newspaper className="w-[18px] h-[18px]" /> },
+    { href: '/briefing', label: 'Briefing', icon: <Compass className="w-[18px] h-[18px]" /> },
     { href: '/library', label: 'Library', icon: <BookMarked className="w-[18px] h-[18px]" /> },
     { href: '/archive', label: 'Archive', icon: <Archive className="w-[18px] h-[18px]" /> },
     { href: '/notes', label: 'Notes', icon: <StickyNote className="w-[18px] h-[18px]" /> },
-    { href: '/subscriptions', label: 'Sources', icon: <Rss className="w-[18px] h-[18px]" /> },
   ];
 
   return (

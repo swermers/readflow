@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { NotebookPen, Search, Trash2, AlertCircle } from 'lucide-react';
+import { NotebookPen, Search, Trash2, AlertCircle, Download } from 'lucide-react';
 
 type Highlight = {
   id: string;
   issue_id: string;
   highlighted_text: string;
   note: string | null;
+  auto_tags?: string[];
   created_at: string;
   issues?: {
     subject?: string;
@@ -25,6 +26,7 @@ export default function NotesPage() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+  const [exporting, setExporting] = useState(false);
 
   const fetchHighlights = async (query = '') => {
     const base = query.trim() ? `/api/highlights?search=${encodeURIComponent(query.trim())}` : '/api/highlights';
@@ -74,6 +76,31 @@ export default function NotesPage() {
     setHighlights((prev) => prev.filter((highlight) => highlight.id !== id));
   };
 
+  const exportNotesForNotion = async () => {
+    setExporting(true);
+
+    try {
+      const res = await fetch('/api/notes/export?format=notion_markdown');
+
+      if (!res.ok) {
+        setError('Failed to export notes.');
+        return;
+      }
+
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `readflow-notes-${new Date().toISOString().slice(0, 10)}.md`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      window.URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (loading) {
     return <div className="p-12 text-ink-muted animate-pulse">Loading notes...</div>;
   }
@@ -103,6 +130,14 @@ export default function NotesPage() {
             {highlights.length} saved {highlights.length === 1 ? 'highlight' : 'highlights'}.
           </p>
         </div>
+        <button
+          onClick={exportNotesForNotion}
+          disabled={exporting || highlights.length === 0}
+          className="inline-flex items-center gap-2 border border-line bg-surface-raised px-4 py-2 text-xs uppercase tracking-[0.1em] text-ink-muted transition hover:border-line-strong hover:text-ink disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <Download className="h-3.5 w-3.5" />
+          {exporting ? 'Exporting…' : 'Export for Notion'}
+        </button>
       </header>
 
       <div className="h-px bg-line-strong mb-8" />
@@ -161,6 +196,16 @@ export default function NotesPage() {
 
                       {highlight.note?.trim() && (
                         <p className="mt-3 rounded-lg bg-surface px-3 py-2 text-sm text-ink">{highlight.note}</p>
+                      )}
+
+                      {!!highlight.auto_tags?.length && (
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          {highlight.auto_tags.map((tag) => (
+                            <span key={`${highlight.id}-${tag}`} className="rounded-full border border-line bg-surface px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-ink-faint">
+                              #{tag}
+                            </span>
+                          ))}
+                        </div>
                       )}
 
                       <div className="mt-3 flex items-center justify-between text-xs text-ink-faint">

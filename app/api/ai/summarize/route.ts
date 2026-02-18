@@ -3,6 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
+import { consumeCreditsAtomic, ensureCreditsAvailable } from '@/utils/aiEntitlements';
 
 type SummaryResult = {
   summary: string;
@@ -56,7 +57,7 @@ async function summarizeWithAnthropic(input: string) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('Anthropic key is not configured');
 
-  const prompt = `You are helping summarize a newsletter article for a reader app.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
+  const prompt = `You are helping summarize a newsletter article for a reader app.\nDetect the primary language used in the article and write both summary and takeaways in that same language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
 
   const res = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -94,7 +95,7 @@ async function summarizeWithGrok(input: string) {
   const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
   if (!apiKey) throw new Error('Grok key is not configured');
 
-  const prompt = `Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\n\nArticle:\n${input}`;
+  const prompt = `Detect the primary language of the article and keep the response in that same language. Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\n\nArticle:\n${input}`;
 
   const res = await fetch('https://api.x.ai/v1/chat/completions', {
     method: 'POST',
@@ -137,6 +138,21 @@ export async function POST(request: NextRequest) {
   const issueId = body?.issueId as string | undefined;
   const provider = body?.provider === 'grok' ? 'grok' : 'anthropic';
 
+  const creditGate = await ensureCreditsAvailable(supabase, user.id, 1);
+  if (!creditGate.allowed) {
+    return NextResponse.json(
+      {
+        error: creditGate.reason || 'Monthly AI credit limit reached',
+        planTier: creditGate.tier,
+        creditsRemaining: creditGate.remaining,
+        creditsLimit: creditGate.limit,
+        resetsAt: creditGate.resetAt,
+        unlimitedAiAccess: creditGate.unlimitedAiAccess || false,
+      },
+      { status: 402 }
+    );
+  }
+
   if (!issueId) {
     return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
   }
@@ -171,7 +187,15 @@ export async function POST(request: NextRequest) {
       ? await summarizeWithGrok(input)
       : await summarizeWithAnthropic(input);
 
-    return NextResponse.json({ provider, ...result });
+    const consumeResult = await consumeCreditsAtomic(supabase, user.id, 1);
+    return NextResponse.json({
+      provider,
+      ...result,
+      creditsRemaining: consumeResult.remaining,
+      creditsLimit: consumeResult.limit,
+      planTier: consumeResult.tier,
+      unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
+    });
   } catch (primaryError) {
     const fallbackProvider = provider === 'anthropic' ? 'grok' : 'anthropic';
 
@@ -179,7 +203,15 @@ export async function POST(request: NextRequest) {
       const fallback = fallbackProvider === 'grok'
         ? await summarizeWithGrok(input)
         : await summarizeWithAnthropic(input);
-      return NextResponse.json({ provider: fallbackProvider, ...fallback });
+      const consumeResult = await consumeCreditsAtomic(supabase, user.id, 1);
+      return NextResponse.json({
+        provider: fallbackProvider,
+        ...fallback,
+        creditsRemaining: consumeResult.remaining,
+        creditsLimit: consumeResult.limit,
+        planTier: consumeResult.tier,
+        unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
+      });
     } catch (fallbackError) {
       const primaryMessage = serializeError(primaryError);
       const fallbackMessage = serializeError(fallbackError);

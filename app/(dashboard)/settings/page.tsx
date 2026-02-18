@@ -2,10 +2,11 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, Sparkles } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 
 interface GmailLabel {
   id: string;
@@ -28,6 +29,13 @@ function SettingsContent() {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [labelsLoading, setLabelsLoading] = useState(false);
   const [labelsSaving, setLabelsSaving] = useState(false);
+  const [planTier, setPlanTier] = useState<'free' | 'pro' | 'elite'>('free');
+  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
+  const [aiCreditsUsed, setAiCreditsUsed] = useState(0);
+  const [creditsLimit, setCreditsLimit] = useState<number>(3);
+  const [unlimitedAiAccess, setUnlimitedAiAccess] = useState(false);
+  const [inviteCode, setInviteCode] = useState('');
+  const [redeemingCode, setRedeemingCode] = useState(false);
 
   const supabase = createClient();
   const router = useRouter();
@@ -49,10 +57,10 @@ function SettingsContent() {
       setFirstName(profile.first_name || user.user_metadata?.full_name?.split(' ')[0] || '');
       setLastName(profile.last_name || user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '');
 
-      // Gmail columns may not exist if migration 002 hasn't been run
+      // Gmail and plan columns may not exist if later migrations haven't been run
       const { data: gmailProfile } = await supabase
         .from('profiles')
-        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels')
+        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, billing_cycle, ai_credits_used, unlimited_ai_access')
         .eq('id', user.id)
         .single();
 
@@ -62,6 +70,10 @@ function SettingsContent() {
         if (gmailProfile.gmail_last_sync_at) {
           setLastSync(new Date(gmailProfile.gmail_last_sync_at));
         }
+        setPlanTier((gmailProfile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
+        setBillingCycle((gmailProfile.billing_cycle || 'monthly') as 'monthly' | 'annual');
+        setAiCreditsUsed(gmailProfile.ai_credits_used || 0);
+        setUnlimitedAiAccess(Boolean(gmailProfile.unlimited_ai_access));
       }
     } else {
       const fullName = user.user_metadata?.full_name || '';
@@ -72,10 +84,68 @@ function SettingsContent() {
     setLoading(false);
   }, [supabase]);
 
+  const refreshAiUsage = useCallback(async () => {
+    try {
+      const res = await fetch('/api/profile/ai-usage', { cache: 'no-store' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      setPlanTier((payload.planTier || 'free') as 'free' | 'pro' | 'elite');
+      setBillingCycle((payload.billingCycle || 'monthly') as 'monthly' | 'annual');
+      setAiCreditsUsed(payload.creditsUsed || 0);
+      setCreditsLimit(typeof payload.creditsLimit === 'number' ? payload.creditsLimit : 3);
+      setUnlimitedAiAccess(Boolean(payload.unlimitedAiAccess));
+    } catch {
+      // best effort
+    }
+  }, []);
+
+  const redeemInviteCode = async () => {
+    if (!inviteCode.trim()) return;
+    setRedeemingCode(true);
+    try {
+      const res = await fetch('/api/profile/redeem-code', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: inviteCode.trim() }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        triggerToast(body?.error || 'Could not redeem code');
+        return;
+      }
+      triggerToast(body?.message || 'Code redeemed');
+      setInviteCode('');
+      await refreshAiUsage();
+      await loadProfile();
+    } catch {
+      triggerToast('Could not redeem code');
+    } finally {
+      setRedeemingCode(false);
+    }
+  };
+
+
   useEffect(() => {
     loadProfile();
     handleGmailCallbackResult();
+    void refreshAiUsage();
   }, []);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      void refreshAiUsage();
+    }, 15000);
+
+    const onFocus = () => {
+      void refreshAiUsage();
+    };
+
+    window.addEventListener('focus', onFocus);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+    };
+  }, [refreshAiUsage]);
 
   // Fetch labels when gmail becomes connected
   useEffect(() => {
@@ -173,6 +243,7 @@ function SettingsContent() {
     setSaving(false);
   };
 
+
   const handleReconnectGmail = async () => {
     setGmailError(null);
     // Sign out + re-auth to get fresh provider tokens
@@ -264,6 +335,22 @@ function SettingsContent() {
 
       <div className="h-px bg-line-strong mb-12" />
 
+      <section className="mb-10 border border-line bg-surface-raised p-5 md:p-6">
+        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.08em] text-ink-faint">Organization</p>
+            <h2 className="text-lg font-bold text-ink">Manage Sources</h2>
+            <p className="mt-1 text-sm text-ink-muted">Source subscriptions are now tucked into Settings to keep navigation cleaner.</p>
+          </div>
+          <Link
+            href="/subscriptions"
+            className="inline-flex items-center justify-center border border-line px-4 py-2 text-label uppercase text-ink hover:border-line-strong"
+          >
+            Open Sources
+          </Link>
+        </div>
+      </section>
+
       <div className="space-y-16">
 
         {/* ─── Profile Section ─── */}
@@ -315,6 +402,59 @@ function SettingsContent() {
               {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
               Save Changes
             </button>
+          </div>
+        </section>
+
+
+        {/* ─── AI Plan & Credits ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
+          <div className="md:col-span-4">
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-ink-faint" />
+              AI Plan
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">Credits reset every 30 days.</p>
+          </div>
+          <div className="md:col-span-8 bg-surface-raised border border-line p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="border border-line p-4">
+                <p className="text-label uppercase text-ink-faint">Tier</p>
+                <p className="mt-2 text-xl font-bold uppercase text-ink">{planTier}</p>
+              </div>
+              <div className="border border-line p-4">
+                <p className="text-label uppercase text-ink-faint">Billing</p>
+                <p className="mt-2 text-xl font-bold uppercase text-ink">{billingCycle}</p>
+              </div>
+              <div className="border border-line p-4">
+                <p className="text-label uppercase text-ink-faint">Credits Used</p>
+                <p className="mt-2 text-xl font-bold text-ink">{unlimitedAiAccess ? 'Unlimited' : `${aiCreditsUsed}/${creditsLimit}`}</p>
+              </div>
+            </div>
+            <p className="mt-4 text-xs text-ink-faint">
+              {unlimitedAiAccess
+                ? 'Unlimited access is active for this account.'
+                : 'Need more credits? Upgrade to Pro or Elite for higher monthly allowances.'}
+            </p>
+
+            <div className="mt-4 border-t border-line pt-4">
+              <label className="text-label uppercase text-ink-faint">Invite / Premium Code</label>
+              <div className="mt-2 flex gap-2">
+                <input
+                  type="text"
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  placeholder="Enter access code"
+                  className="flex-1 border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-line-strong focus:outline-none"
+                />
+                <button
+                  onClick={redeemInviteCode}
+                  disabled={redeemingCode || !inviteCode.trim()}
+                  className="px-4 py-2 bg-ink text-surface text-label uppercase disabled:opacity-50 hover:bg-accent transition-colors"
+                >
+                  {redeemingCode ? 'Redeeming...' : 'Redeem'}
+                </button>
+              </div>
+            </div>
           </div>
         </section>
 
