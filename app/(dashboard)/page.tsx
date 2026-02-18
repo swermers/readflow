@@ -90,6 +90,16 @@ export default async function Home() {
     { label: 'Unsorted', value: signalStats.unclassified, tone: 'text-ink-faint' },
   ];
 
+  const startHere = (emails || [])
+    .filter((email: any) => email.signal_tier === 'high_signal')
+    .slice(0, 3);
+
+  const fallbackStartHere = (emails || [])
+    .filter((email: any) => email.signal_tier !== 'high_signal')
+    .slice(0, Math.max(0, 3 - startHere.length));
+
+  const recommendedIssues = [...startHere, ...fallbackStartHere];
+
   return (
     <div className="p-6 md:p-12 min-h-screen">
       {!onboardingCompleted && <OnboardingWalkthrough open />}
@@ -128,6 +138,41 @@ export default async function Home() {
           ))}
         </div>
       </div>
+
+      <div className="h-px bg-line-strong mb-8" />
+
+      {recommendedIssues.length > 0 && (
+        <section className="mb-8 rounded-2xl border border-line bg-surface-raised p-4 md:p-5">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xs uppercase tracking-[0.1em] text-accent">Start Here</p>
+              <h2 className="text-lg font-semibold text-ink">Top 3 issues to read now</h2>
+              <p className="text-xs text-ink-faint">Auto-prioritized from this week’s stack.</p>
+            </div>
+          </div>
+
+          <div className="mt-4 space-y-2">
+            {recommendedIssues.map((issue: any, index: number) => (
+              <Link
+                key={issue.id}
+                href={`/newsletters/${issue.id}`}
+                className="block rounded-lg border border-line bg-surface px-3 py-2 hover:border-line-strong"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.08em] text-accent">#{index + 1} · {issue.signal_tier === 'high_signal' ? 'High Signal' : 'Recommended'}</p>
+                    <p className="mt-1 line-clamp-1 text-sm font-medium text-ink">{issue.subject}</p>
+                    {issue.signal_reason && (
+                      <p className="mt-1 line-clamp-1 text-xs text-ink-faint">Why: {issue.signal_reason}</p>
+                    )}
+                  </div>
+                  <ArrowUpRight className="h-4 w-4 text-ink-faint" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
 
       <div className="h-px bg-line-strong mb-10" />
 
