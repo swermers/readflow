@@ -1,5 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
-import Link from 'next/link';
+import TrackIssueLink from '@/components/TrackIssueLink';
 import { ArrowUpRight, Clock } from 'lucide-react';
 import SetupGuide from '@/components/SetupGuide';
 import SyncButton from '@/components/SyncButton';
@@ -43,6 +43,8 @@ export default async function Home() {
   let lastSyncAt: string | null = null;
   let onboardingCompleted = false;
 
+  let senderAffinity = new Map<string, number>();
+
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
@@ -53,6 +55,35 @@ export default async function Home() {
     gmailConnected = profile?.gmail_connected || false;
     lastSyncAt = profile?.gmail_last_sync_at || null;
     onboardingCompleted = profile?.onboarding_completed || false;
+
+    const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: events } = await supabase
+      .from('user_issue_events')
+      .select('sender_email, event_type, created_at')
+      .eq('user_id', user.id)
+      .gte('created_at', sixtyDaysAgo)
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    const eventWeights: Record<string, number> = {
+      issue_opened: 1,
+      tldr_generated: 2,
+      listen_started: 2,
+      listen_completed: 3,
+      highlight_created: 4,
+      note_created: 4,
+      issue_archived: 1,
+      issue_deleted: -1,
+    };
+
+    senderAffinity = (events || []).reduce((acc: Map<string, number>, event: any) => {
+      const senderEmail = event.sender_email || '';
+      if (!senderEmail) return acc;
+      const current = acc.get(senderEmail) || 0;
+      const weighted = current + (eventWeights[event.event_type] || 0);
+      acc.set(senderEmail, weighted);
+      return acc;
+    }, new Map<string, number>());
   }
 
   if (error) {
@@ -90,15 +121,44 @@ export default async function Home() {
     { label: 'Unsorted', value: signalStats.unclassified, tone: 'text-ink-faint' },
   ];
 
-  const startHere = (emails || [])
-    .filter((email: any) => email.signal_tier === 'high_signal')
+  const tierBaseScore: Record<string, number> = {
+    high_signal: 70,
+    news: 45,
+    reference: 30,
+    unclassified: 20,
+  };
+
+  const scoredIssues = (emails || []).map((email: any) => {
+    const tierScore = tierBaseScore[email.signal_tier || 'unclassified'] || tierBaseScore.unclassified;
+    const ageInDays = Math.max(
+      0,
+      (Date.now() - new Date(email.received_at).getTime()) / (1000 * 60 * 60 * 24)
+    );
+    const freshnessScore = Math.max(0, 20 - ageInDays * 3);
+    const senderScore = Math.min(30, Math.max(0, (senderAffinity.get(email.from_email || '') || 0) * 2));
+    const score = tierScore + freshnessScore + senderScore;
+
+    const why: string[] = [];
+    if ((senderAffinity.get(email.from_email || '') || 0) >= 3) {
+      why.push('You frequently engage with this sender');
+    }
+    if (email.signal_tier === 'high_signal') {
+      why.push('Classified as high signal');
+    }
+    if (ageInDays <= 1) {
+      why.push('Fresh from the last 24h');
+    }
+
+    return {
+      ...email,
+      recommendationScore: score,
+      recommendationReason: why[0] || email.signal_reason || 'Recommended from your current signal mix',
+    };
+  });
+
+  const recommendedIssues = scoredIssues
+    .sort((a: any, b: any) => b.recommendationScore - a.recommendationScore)
     .slice(0, 3);
-
-  const fallbackStartHere = (emails || [])
-    .filter((email: any) => email.signal_tier !== 'high_signal')
-    .slice(0, Math.max(0, 3 - startHere.length));
-
-  const recommendedIssues = [...startHere, ...fallbackStartHere];
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
@@ -153,8 +213,10 @@ export default async function Home() {
 
           <div className="mt-4 space-y-2">
             {recommendedIssues.map((issue: any, index: number) => (
-              <Link
+              <TrackIssueLink
                 key={issue.id}
+                issueId={issue.id}
+                senderEmail={issue.from_email}
                 href={`/newsletters/${issue.id}`}
                 className="block rounded-lg border border-line bg-surface px-3 py-2 hover:border-line-strong"
               >
@@ -162,13 +224,11 @@ export default async function Home() {
                   <div>
                     <p className="text-[10px] uppercase tracking-[0.08em] text-accent">#{index + 1} · {issue.signal_tier === 'high_signal' ? 'High Signal' : 'Recommended'}</p>
                     <p className="mt-1 line-clamp-1 text-sm font-medium text-ink">{issue.subject}</p>
-                    {issue.signal_reason && (
-                      <p className="mt-1 line-clamp-1 text-xs text-ink-faint">Why: {issue.signal_reason}</p>
-                    )}
+                    <p className="mt-1 line-clamp-1 text-xs text-ink-faint">Why: {issue.recommendationReason}</p>
                   </div>
                   <ArrowUpRight className="h-4 w-4 text-ink-faint" />
                 </div>
-              </Link>
+              </TrackIssueLink>
             ))}
           </div>
         </section>
@@ -200,18 +260,18 @@ export default async function Home() {
                 </div>
               </div>
 
-              <Link href={`/newsletters/${email.id}`} className="group mt-2 block">
+              <TrackIssueLink issueId={email.id} senderEmail={email.from_email} href={`/newsletters/${email.id}`} className="group mt-2 block">
                 <h3 className="text-sm md:text-base font-semibold leading-tight text-ink line-clamp-3 group-hover:text-accent transition-colors">
                   {email.subject}
                 </h3>
                 <p className="mt-2 text-[11px] text-ink-faint line-clamp-2">{email.snippet}</p>
-              </Link>
+              </TrackIssueLink>
             </div>
 
             <div className="pt-3 border-t border-line flex items-center justify-between gap-3">
-              <Link href={`/newsletters/${email.id}`} className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.08em] text-accent hover:opacity-80">
+              <TrackIssueLink issueId={email.id} senderEmail={email.from_email} href={`/newsletters/${email.id}`} className="inline-flex items-center gap-1 text-[10px] uppercase tracking-[0.08em] text-accent hover:opacity-80">
                 Open <ArrowUpRight className="w-3 h-3" />
-              </Link>
+              </TrackIssueLink>
               <RackIssueActions issueId={email.id} />
             </div>
           </article>

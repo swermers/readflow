@@ -41,6 +41,19 @@ export default function AISummaryCard({ issueId }: Props) {
 
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
 
+  const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
+    try {
+      await fetch('/api/events/track', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issueId, eventType, metadata }),
+        keepalive: true,
+      });
+    } catch {
+      // best effort only
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
 
@@ -63,6 +76,9 @@ export default function AISummaryCard({ issueId }: Props) {
         setAudioStatus(payload.status || 'missing');
         if (payload.audioAvailable && payload.audioUrl) {
           setAudioUrl(payload.audioUrl);
+          if ((payload.status || 'missing') === 'ready') {
+            void trackEvent('listen_completed');
+          }
         }
       } catch {
         // best effort only
@@ -118,6 +134,7 @@ export default function AISummaryCard({ issueId }: Props) {
       const payload = await res.json();
       setData(payload);
       setSummaryCollapsed(false);
+      void trackEvent('tldr_generated');
       if (typeof payload.creditsRemaining === 'number' && typeof payload.creditsLimit === 'number') {
         setCreditsMeta({
           remaining: payload.creditsRemaining,
@@ -141,6 +158,8 @@ export default function AISummaryCard({ issueId }: Props) {
     setAudioHints([]);
 
     try {
+      void trackEvent('listen_started');
+
       const res = await fetch('/api/ai/listen', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
