@@ -90,8 +90,35 @@ export async function ensureCreditsAvailable(
   };
 }
 
-export async function consumeCredits(supabase: SupabaseClient, userId: string, credits: number) {
-  if (credits <= 0) return;
+export async function consumeCreditsAtomic(supabase: SupabaseClient, userId: string, credits: number): Promise<EnsureResult> {
+  const { data, error } = await supabase.rpc('consume_ai_credits', {
+    p_user_id: userId,
+    p_credits: credits,
+  });
+
+  if (!error && Array.isArray(data) && data.length > 0) {
+    const row = data[0] as {
+      success: boolean;
+      remaining: number;
+      credit_limit: number;
+      plan_tier: string;
+      reset_at: string;
+      reason?: string | null;
+    };
+
+    return {
+      allowed: Boolean(row.success),
+      remaining: row.remaining ?? 0,
+      limit: row.credit_limit ?? 0,
+      tier: normalizeTier(row.plan_tier),
+      resetAt: row.reset_at || new Date().toISOString(),
+      reason: row.reason || undefined,
+    };
+  }
+
+  // Backward-compatible fallback when function isn't deployed yet.
+  const gate = await ensureCreditsAvailable(supabase, userId, credits);
+  if (!gate.allowed) return gate;
 
   const { data: profile } = await supabase
     .from('profiles')
@@ -114,4 +141,9 @@ export async function consumeCredits(supabase: SupabaseClient, userId: string, c
       ai_cycle_started_at: cycleStartedAt || new Date().toISOString(),
     })
     .eq('id', userId);
+
+  return {
+    ...gate,
+    remaining: Math.max(0, gate.remaining - credits),
+  };
 }

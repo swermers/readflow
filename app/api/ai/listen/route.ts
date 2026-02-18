@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { consumeCredits, ensureCreditsAvailable } from '@/utils/aiEntitlements';
+import { consumeCreditsAtomic, ensureCreditsAvailable } from '@/utils/aiEntitlements';
 
 const MAX_INPUT_CHARS = 3500;
 const STALE_PROCESSING_MS = 2 * 60 * 1000;
@@ -79,7 +79,7 @@ async function getUserIssue(supabase: Awaited<ReturnType<typeof createClient>>, 
 async function getCachedAudio(supabase: Awaited<ReturnType<typeof createClient>>, issueId: string, userId: string) {
   const { data: cachedAudio } = await supabase
     .from('issue_audio_cache')
-    .select('audio_base64, mime_type, status, updated_at')
+    .select('audio_base64, mime_type, status, updated_at, credits_charged, credits_charged_at')
     .eq('issue_id', issueId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -173,6 +173,30 @@ async function generateAudioInBackground(
   const audioBuffer = await res.arrayBuffer();
   const audioBase64 = Buffer.from(audioBuffer).toString('base64');
 
+  let chargedCredits = Number(latest?.credits_charged || 0);
+  let chargedAt = latest?.credits_charged_at || null;
+
+  if (!chargedAt || chargedCredits < 2) {
+    const consumeResult = await consumeCreditsAtomic(supabase, userId, 2);
+    if (!consumeResult.allowed) {
+      await supabase.from('issue_audio_cache').upsert(
+        {
+          issue_id: issueId,
+          user_id: userId,
+          status: 'failed',
+          provider: 'openai',
+          model,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'issue_id,user_id' }
+      );
+      return;
+    }
+
+    chargedCredits = 2;
+    chargedAt = new Date().toISOString();
+  }
+
   await supabase.from('issue_audio_cache').upsert(
     {
       issue_id: issueId,
@@ -182,6 +206,8 @@ async function generateAudioInBackground(
       audio_base64: audioBase64,
       provider: 'openai',
       model,
+      credits_charged: chargedCredits,
+      credits_charged_at: chargedAt,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'issue_id,user_id' }
@@ -307,14 +333,13 @@ export async function POST(request: NextRequest) {
   );
 
   void generateAudioInBackground(issueId, user.id, issue);
-  await consumeCredits(supabase, user.id, 2);
 
   return NextResponse.json(
     {
       status: 'queued' as AudioStatus,
       audioUrl: null,
       planTier: creditGate.tier,
-      creditsRemaining: Math.max(0, creditGate.remaining - 2),
+      creditsRemaining: creditGate.remaining,
       creditsLimit: creditGate.limit,
     },
     { status: 202 }

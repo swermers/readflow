@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { consumeCredits, ensureCreditsAvailable } from '@/utils/aiEntitlements';
+import { consumeCreditsAtomic, ensureCreditsAvailable } from '@/utils/aiEntitlements';
 
 type SummaryResult = {
   summary: string;
@@ -186,8 +186,14 @@ export async function POST(request: NextRequest) {
       ? await summarizeWithGrok(input)
       : await summarizeWithAnthropic(input);
 
-    await consumeCredits(supabase, user.id, 1);
-    return NextResponse.json({ provider, ...result, creditsRemaining: Math.max(0, creditGate.remaining - 1), creditsLimit: creditGate.limit, planTier: creditGate.tier });
+    const consumeResult = await consumeCreditsAtomic(supabase, user.id, 1);
+    return NextResponse.json({
+      provider,
+      ...result,
+      creditsRemaining: consumeResult.remaining,
+      creditsLimit: consumeResult.limit,
+      planTier: consumeResult.tier,
+    });
   } catch (primaryError) {
     const fallbackProvider = provider === 'anthropic' ? 'grok' : 'anthropic';
 
@@ -195,8 +201,14 @@ export async function POST(request: NextRequest) {
       const fallback = fallbackProvider === 'grok'
         ? await summarizeWithGrok(input)
         : await summarizeWithAnthropic(input);
-      await consumeCredits(supabase, user.id, 1);
-      return NextResponse.json({ provider: fallbackProvider, ...fallback, creditsRemaining: Math.max(0, creditGate.remaining - 1), creditsLimit: creditGate.limit, planTier: creditGate.tier });
+      const consumeResult = await consumeCreditsAtomic(supabase, user.id, 1);
+      return NextResponse.json({
+        provider: fallbackProvider,
+        ...fallback,
+        creditsRemaining: consumeResult.remaining,
+        creditsLimit: consumeResult.limit,
+        planTier: consumeResult.tier,
+      });
     } catch (fallbackError) {
       const primaryMessage = serializeError(primaryError);
       const fallbackMessage = serializeError(fallbackError);
