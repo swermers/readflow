@@ -393,16 +393,11 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const container = containerRef.current;
     if (!container) return;
 
+    // Always rehydrate from clean HTML so marks stay in sync after refreshes,
+    // edits, migrations, and "jump to paragraph" deep-links.
     container.innerHTML = bodyHtml || '';
-  }, [bodyHtml]);
 
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
-
-    const markCount = container.querySelectorAll('mark[data-highlight-id]').length;
-
-    if (markCount === 0 && highlights.length > 0) {
+    if (highlights.length > 0) {
       const usedRanges: Array<{ start: number; end: number }> = [];
       highlights
         .slice()
@@ -413,7 +408,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     highlights.forEach((highlight) => {
       updateMarkMetadata(highlight.id, highlight.note);
     });
-  }, [highlights]);
+  }, [bodyHtml, highlights]);
 
 
 
@@ -425,7 +420,22 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     if (!targetHighlightId) return;
 
     const mark = document.querySelector(`mark[data-highlight-id="${targetHighlightId}"]`) as HTMLElement | null;
-    if (!mark) return;
+    if (!mark) {
+      const fallback = highlights.find((highlight) => highlight.id === targetHighlightId);
+      if (fallback?.highlighted_text?.trim()) {
+        const container = containerRef.current;
+        if (!container) return;
+        const textNodeWalker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+        while (textNodeWalker.nextNode()) {
+          const node = textNodeWalker.currentNode as Text;
+          if (node.textContent?.includes(fallback.highlighted_text.trim())) {
+            (node.parentElement || container).scrollIntoView({ behavior: 'smooth', block: 'center' });
+            break;
+          }
+        }
+      }
+      return;
+    }
 
     mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
     mark.classList.add('ring-2', 'ring-accent/60');
