@@ -3,16 +3,12 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
-import { Shield, FileText, Headphones, Moon, Sun, Newspaper } from 'lucide-react';
-import { useTheme } from '@/components/ThemeProvider';
+import { Shield, Sparkles, Headphones, ScrollText } from 'lucide-react';
 import HeroToggle from '@/components/landing/HeroToggle';
 import TLDRDemo from '@/components/landing/TLDRDemo';
 import AudioWidget from '@/components/landing/AudioWidget';
 import ROICalculator from '@/components/landing/ROICalculator';
 import PricingGrid from '@/components/landing/PricingGrid';
-import BriefSignalSection from '@/components/landing/BriefSignalSection';
-import HighlightsSection from '@/components/landing/HighlightsSection';
-import ManifestoReveal from '@/components/landing/ManifestoReveal';
 
 const senders = ['Substack', 'Beehiiv', 'The New York Times', 'Stratechery', 'a16z', 'Lenny’s Newsletter'];
 
@@ -24,8 +20,6 @@ const fadeUp = {
 };
 
 export default function LandingPage() {
-  const { theme, toggleTheme } = useTheme();
-
   return (
     <div className="min-h-screen bg-surface text-ink">
       <div className="relative z-10">
@@ -39,14 +33,9 @@ export default function LandingPage() {
             <a href="#pricing" className="hover:text-ink">Pricing</a>
             <Link href="/login" className="hover:text-ink">Login</Link>
           </div>
-          <div className="flex items-center gap-2">
-            <button onClick={toggleTheme} className="rounded-xl border border-line bg-surface-raised p-2 text-ink-muted hover:text-ink" aria-label="Toggle theme">
-              {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
-            </button>
-            <Link href="/login" className="rounded-xl bg-ink px-4 py-2 text-sm font-medium text-surface">
-              Cut the chaos
-            </Link>
-          </div>
+          <Link href="/login" className="rounded-xl bg-ink px-4 py-2 text-sm font-medium text-surface">
+            Get the Brief
+          </Link>
         </nav>
 
         <main className="mx-auto w-full max-w-6xl space-y-20 px-5 pb-20 pt-8 md:px-8 md:pt-12">
@@ -55,24 +44,14 @@ export default function LandingPage() {
               Win your war on noise.
             </motion.h1>
             <motion.p {...fadeUp} className="mx-auto max-w-3xl text-lg text-ink-muted">
-              Turn your inbox into a sanctuary. Zero your inbox, save highlights and notes, get TLDRs for long newsletters, and listen on the go.
+              Turn your inbox into a sanctuary. Filter signal, auto-synthesize insights, and listen on the go.
             </motion.p>
             <HeroToggle />
           </section>
 
           <section className="space-y-5">
             <motion.h2 {...fadeUp} className="flex items-center gap-2 text-display">
-              <Newspaper className="h-6 w-6 text-accent" /> The Brief + High Signal.
-            </motion.h2>
-            <motion.p {...fadeUp} className="max-w-3xl text-ink-muted">
-              Your Rack is a newsletter grid. Then Readflow elevates the most important reads into your brief and high-signal queue.
-            </motion.p>
-            <BriefSignalSection />
-          </section>
-
-          <section className="space-y-5">
-            <motion.h2 {...fadeUp} className="flex items-center gap-2 text-display">
-              <FileText className="h-6 w-6 text-accent" /> TLDR, on demand.
+              <Sparkles className="h-6 w-6 text-accent" /> TLDR, on demand.
             </motion.h2>
             <motion.p {...fadeUp} className="max-w-3xl text-ink-muted">
               Use the Show TLDR toggle to collapse long reads into clear executive bullets.
@@ -82,15 +61,13 @@ export default function LandingPage() {
 
           <section className="space-y-5">
             <motion.h2 {...fadeUp} className="flex items-center gap-2 text-display">
-              <Headphones className="h-6 w-6 text-accent" /> Listen on the go.
+              <Headphones className="h-6 w-6 text-accent" /> Listen lifecycle, built to last.
             </motion.h2>
             <motion.p {...fadeUp} className="max-w-3xl text-ink-muted">
-              Catch up while you work, walk, or commute with durable narration for your top reads.
+              Queue narration from any article and track each stage from processing to playback.
             </motion.p>
             <AudioWidget />
           </section>
-
-          <HighlightsSection />
 
           <motion.section {...fadeUp} className="overflow-hidden rounded-2xl border border-line bg-surface-raised py-5 shadow-sm">
             <div className="sender-marquee whitespace-nowrap text-center text-sm text-ink-muted">
@@ -100,10 +77,27 @@ export default function LandingPage() {
             </div>
           </motion.section>
 
-          <section id="manifesto" className="space-y-4">
-            <motion.p {...fadeUp} className="text-label uppercase text-ink-faint">The Readflow Manifesto</motion.p>
-            <ManifestoReveal />
-          </section>
+          <motion.section id="manifesto" {...fadeUp} className="rounded-2xl border border-line bg-[#f6f2eb] p-8 shadow-sm md:p-12">
+            <p className="mb-3 flex items-center gap-2 text-label uppercase text-ink-faint"><ScrollText className="h-4 w-4" /> The Readflow Manifesto</p>
+            <h2 className="text-display-lg tracking-[0.01em] text-ink">The Readflow Manifesto</h2>
+            <div className="mt-7 space-y-5 text-base leading-8 text-ink-muted md:text-lg">
+              <p className="text-ink">We are drowning in information, but starving for wisdom.</p>
+              <p>
+                Your inbox was designed for communication, but it has become a battlefield of attention. Every “Unsubscribe” is a micro-stress.
+                Every “Sale” is a distraction. The writers you love are buried under the clutter of the things you merely tolerate.
+              </p>
+              <p className="font-semibold text-ink">We believe:</p>
+              <p>Attention is your most valuable asset. It should not be sold to the highest bidder.</p>
+              <p>Curation is a superpower. What you don&apos;t read is as important as what you do.</p>
+              <p>
+                Knowledge should compound. A newsletter shouldn&apos;t disappear after you read it; it should become a permanent brick in your intellectual foundation.
+              </p>
+              <p>
+                The Readflow Library is your sanctuary. It is the quiet room in a loud world. It is where inbox anxiety goes to die and where insights go to live.
+              </p>
+              <p className="font-semibold uppercase tracking-[0.08em] text-ink">Filter the noise. Keep the signal. Build your library.</p>
+            </div>
+          </motion.section>
 
           <section id="pricing" className="space-y-8">
             <ROICalculator />
