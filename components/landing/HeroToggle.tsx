@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { BellRing, BookOpenText } from 'lucide-react';
+import { BellRing, Bookmark, Archive, Trash2, Clock3 } from 'lucide-react';
 
 const inboxRows = [
   { id: 'inbox-1', subject: 'LAST CHANCE SALE: 70% OFF', from: 'Flash Retail', badge: '99+' },
@@ -10,6 +10,33 @@ const inboxRows = [
   { id: 'inbox-3', subject: '⚠ Action required by tonight', from: 'Vendor Digest', badge: '8' },
   { id: 'inbox-4', subject: 'Weekly roundup + promo drop', from: 'Marketing Blast', badge: '31' },
   { id: 'inbox-5', subject: 'Fwd: Fwd: Market notes', from: 'Unknown Sender', badge: '27' },
+];
+
+const weeklyRackIssues = [
+  {
+    sender: 'JOE HUDSON',
+    title: 'The Trap of Self-Reliance',
+    excerpt:
+      'Art of Accomplishment — Self-reliance began the first time you learned to carry everything alone. But the highest leverage now is knowing what to keep and what to release.',
+    date: '2/18/2026',
+    label: 'NEWS',
+  },
+  {
+    sender: 'PIRATE WIRES',
+    title: 'Mike Solana // Wealth Tax Counterstrike',
+    excerpt:
+      'A union thug and his cabal of academics have awakened a sleeping giant. Here is your first look at the billionaire response and the second-order effects for founders.',
+    date: '2/18/2026',
+    label: 'NEWS',
+  },
+  {
+    sender: 'STRATECHERY',
+    title: 'AI Distribution and Durable Defensibility',
+    excerpt:
+      'The winning move is not shipping another model wrapper. It is owning trust, workflow habit, and memory across the stack where value compounds.',
+    date: '2/17/2026',
+    label: 'ANALYSIS',
+  },
 ];
 
 export default function HeroToggle() {
@@ -74,32 +101,55 @@ export default function HeroToggle() {
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -8 }}
-            className="grid gap-3 md:grid-cols-2"
+            className="space-y-3"
           >
-            <motion.article
-              layoutId="morph-row-1"
-              className="rounded-2xl border border-line bg-surface-raised p-5 shadow-sm"
-            >
-              <p className="text-heading text-ink">Your Monday Briefing</p>
-              <p className="mt-1 text-label uppercase text-ink-faint">Weekly Brief Workspace</p>
-              <ul className="mt-4 space-y-2 text-sm text-ink-muted">
-                <li>• Start Here: 5 high-signal reads curated</li>
-                <li>• TLDR pre-generated for top issues</li>
-                <li>• Listen queue ready for commute</li>
-              </ul>
-            </motion.article>
+            <div className="flex items-end justify-between border-b border-line pb-3">
+              <div>
+                <p className="text-heading text-ink">The Rack.</p>
+                <p className="text-sm text-ink-muted">{weeklyRackIssues.length} issues from the last 7 days.</p>
+              </div>
+              <p className="text-label uppercase text-ink-faint">Weekly view</p>
+            </div>
 
-            <motion.article
-              layoutId="morph-row-3"
-              className="rounded-2xl border border-line bg-surface-raised p-5 shadow-sm"
-            >
-              <span className="rounded-full bg-accent/10 px-2 py-1 text-xs text-accent">High Signal</span>
-              <h3 className="mt-3 text-heading text-ink">The AI Agent Economy Is Becoming Infrastructure</h3>
-              <p className="mt-2 line-clamp-3 text-sm text-ink-muted">
-                Why the next wave of products won&apos;t be single apps, but orchestrated agent workflows with durable memory.
-              </p>
-              <p className="mt-4 inline-flex items-center gap-2 text-xs text-ink-faint"><BookOpenText className="h-4 w-4" /> Saved to Rack</p>
-            </motion.article>
+            <div className="grid gap-3 md:grid-cols-3">
+              {weeklyRackIssues.map((issue, idx) => (
+                <motion.article
+                  key={`${issue.sender}-${issue.title}`}
+                  layoutId={`morph-row-${idx + 1}`}
+                  className="flex min-h-[255px] flex-col rounded-2xl border border-line bg-surface p-4 shadow-sm"
+                >
+                  <div className="mb-3 flex items-start justify-between gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-xs font-semibold tracking-[0.08em] text-accent">{issue.sender}</p>
+                      <span className="rounded-full border border-line px-2 py-0.5 text-[10px] text-ink-faint">{issue.label}</span>
+                    </div>
+                    <p className="inline-flex items-center gap-1 text-[11px] text-ink-faint">
+                      <Clock3 className="h-3 w-3" /> {issue.date}
+                    </p>
+                  </div>
+
+                  <h3 className="text-lg font-semibold leading-tight text-ink">{issue.title}</h3>
+                  <p className="mt-3 line-clamp-3 text-sm text-ink-muted">{issue.excerpt}</p>
+
+                  <div className="mt-auto border-t border-line pt-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <button className="text-sm font-medium text-accent hover:underline">OPEN ↗</button>
+                      <div className="flex items-center gap-2">
+                        <button className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-ink-muted hover:text-ink">
+                          <Bookmark className="h-3.5 w-3.5" /> SAVE
+                        </button>
+                        <button className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1 text-xs text-ink-muted hover:text-ink">
+                          <Archive className="h-3.5 w-3.5" /> ARCHIVE
+                        </button>
+                        <button className="rounded-lg border border-line p-1.5 text-ink-faint hover:text-ink" aria-label="Delete issue">
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.article>
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
