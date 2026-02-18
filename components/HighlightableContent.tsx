@@ -135,6 +135,71 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     return range;
   };
 
+
+  const normalizeWhitespaceWithMap = (value: string) => {
+    const normalizedChars: string[] = [];
+    const map: number[] = [];
+    let inWhitespace = false;
+
+    for (let i = 0; i < value.length; i++) {
+      const char = value[i];
+      if (/\s/.test(char)) {
+        if (!inWhitespace) {
+          normalizedChars.push(' ');
+          map.push(i);
+          inWhitespace = true;
+        }
+      } else {
+        normalizedChars.push(char);
+        map.push(i);
+        inWhitespace = false;
+      }
+    }
+
+    return {
+      text: normalizedChars.join('').trim(),
+      map,
+    };
+  };
+
+  const findHighlightRanges = (fullText: string, targetText: string) => {
+    const exactRanges: Array<{ start: number; end: number }> = [];
+
+    let exactIndex = fullText.indexOf(targetText);
+    while (exactIndex !== -1) {
+      exactRanges.push({ start: exactIndex, end: exactIndex + targetText.length });
+      exactIndex = fullText.indexOf(targetText, exactIndex + targetText.length);
+    }
+
+    if (exactRanges.length > 0) {
+      return exactRanges;
+    }
+
+    const normalizedFull = normalizeWhitespaceWithMap(fullText);
+    const normalizedTarget = targetText.replace(/\s+/g, ' ').trim();
+
+    if (!normalizedFull.text || !normalizedTarget) {
+      return [];
+    }
+
+    const ranges: Array<{ start: number; end: number }> = [];
+    let normalizedIndex = normalizedFull.text.indexOf(normalizedTarget);
+
+    while (normalizedIndex !== -1) {
+      const mappedStart = normalizedFull.map[normalizedIndex];
+      const mappedEndIndex = normalizedIndex + normalizedTarget.length - 1;
+      const mappedEnd = (normalizedFull.map[mappedEndIndex] ?? mappedStart) + 1;
+
+      if (mappedStart !== undefined && mappedEnd > mappedStart) {
+        ranges.push({ start: mappedStart, end: mappedEnd });
+      }
+
+      normalizedIndex = normalizedFull.text.indexOf(normalizedTarget, normalizedIndex + normalizedTarget.length);
+    }
+
+    return ranges;
+  };
+
   const applyHighlightToDom = (highlight: Highlight, usedRanges: Array<{ start: number; end: number }>) => {
     const { id, highlighted_text: highlightedText, note } = highlight;
     const container = containerRef.current;
@@ -146,38 +211,36 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     const targetText = highlightedText.trim();
     if (!targetText) return;
 
-    let matchIndex = fullText.indexOf(targetText);
-    while (matchIndex !== -1) {
-      const start = matchIndex;
-      const end = matchIndex + targetText.length;
+    const matches = findHighlightRanges(fullText, targetText);
+
+    for (const match of matches) {
+      const { start, end } = match;
       const overlapsExisting = usedRanges.some((range) => start < range.end && end > range.start);
-      if (!overlapsExisting) {
-        const range = createRangeFromGlobalOffsets(entries, start, end);
-        if (!range) return;
+      if (overlapsExisting) continue;
 
-        const mark = document.createElement('mark');
-        mark.className = 'readflow-highlight';
-        mark.dataset.highlightId = id;
-        const hasNote = !!note?.trim();
-        mark.dataset.hasNote = hasNote ? 'true' : 'false';
-        if (hasNote) {
-          mark.setAttribute('title', note!.trim());
-          mark.setAttribute('aria-label', `Highlight note: ${note!.trim()}`);
-        } else {
-          mark.removeAttribute('title');
-          mark.removeAttribute('aria-label');
-        }
+      const range = createRangeFromGlobalOffsets(entries, start, end);
+      if (!range) continue;
 
-        try {
-          range.surroundContents(mark);
-          usedRanges.push({ start, end });
-          return;
-        } catch {
-          return;
-        }
+      const mark = document.createElement('mark');
+      mark.className = 'readflow-highlight';
+      mark.dataset.highlightId = id;
+      const hasNote = !!note?.trim();
+      mark.dataset.hasNote = hasNote ? 'true' : 'false';
+      if (hasNote) {
+        mark.setAttribute('title', note!.trim());
+        mark.setAttribute('aria-label', `Highlight note: ${note!.trim()}`);
+      } else {
+        mark.removeAttribute('title');
+        mark.removeAttribute('aria-label');
       }
 
-      matchIndex = fullText.indexOf(targetText, matchIndex + targetText.length);
+      try {
+        range.surroundContents(mark);
+        usedRanges.push({ start, end });
+        return;
+      } catch {
+        continue;
+      }
     }
   };
 
