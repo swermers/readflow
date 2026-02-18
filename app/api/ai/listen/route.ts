@@ -4,13 +4,29 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
-const MAX_INPUT_CHARS = 5000;
+// Keep narration concise enough for responsive generation latency.
+const MAX_INPUT_CHARS = 3500;
 
 function stripHtml(html: string) {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
     .replace(/<script[\s\S]*?<\/script>/gi, ' ')
     .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function sanitizeForSpeech(text: string) {
+  return text
+    // Remove markdown links but keep human-readable label text
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, '$1')
+    // Replace raw URLs with a short token so TTS doesn't spell them out
+    .replace(/\bhttps?:\/\/[^\s]+/gi, '[link]')
+    .replace(/\bwww\.[^\s]+/gi, '[link]')
+    // Emails can be similarly verbose when read aloud
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]')
+    // Remove leftover URL-ish punctuation noise
+    .replace(/\s+\[[^\]]*link[^\]]*\]\s*/gi, ' [link] ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -54,7 +70,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'OPENAI_API_KEY is not configured' }, { status: 500 });
   }
 
-  const input = `${issue.subject || 'Newsletter article'}\n\n${articleText.slice(0, MAX_INPUT_CHARS)}`;
+  const speechText = sanitizeForSpeech(articleText);
+  const input = `${issue.subject || 'Newsletter article'}\n\n${speechText.slice(0, MAX_INPUT_CHARS)}`;
   const model = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
   const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
   const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
