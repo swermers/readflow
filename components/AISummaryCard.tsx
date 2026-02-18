@@ -24,17 +24,37 @@ export default function AISummaryCard({ issueId }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SummaryResponse | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioStatus, setAudioStatus] = useState<'missing' | 'processing' | 'failed' | 'ready'>('missing');
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioHints, setAudioHints] = useState<string[]>([]);
   const [audioLoading, setAudioLoading] = useState(false);
 
   useEffect(() => {
-    return () => {
-      if (audioUrl) {
-        URL.revokeObjectURL(audioUrl);
+    const checkAudioStatus = async () => {
+      try {
+        const res = await fetch(`/api/ai/listen?issueId=${encodeURIComponent(issueId)}`, {
+          method: 'GET',
+          cache: 'no-store',
+        });
+        if (!res.ok) return;
+
+        const payload = (await res.json()) as {
+          status?: 'missing' | 'processing' | 'failed' | 'ready';
+          audioAvailable?: boolean;
+          audioUrl?: string | null;
+        };
+
+        setAudioStatus(payload.status || 'missing');
+        if (payload.audioAvailable && payload.audioUrl) {
+          setAudioUrl(payload.audioUrl);
+        }
+      } catch {
+        // best effort only
       }
     };
-  }, [audioUrl]);
+
+    void checkAudioStatus();
+  }, [issueId]);
 
   const generate = async () => {
     setLoading(true);
@@ -72,6 +92,7 @@ export default function AISummaryCard({ issueId }: Props) {
     setAudioLoading(true);
     setAudioError(null);
     setAudioHints([]);
+    setAudioStatus('processing');
 
     try {
       const res = await fetch('/api/ai/listen', {
@@ -84,17 +105,18 @@ export default function AISummaryCard({ issueId }: Props) {
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
         setAudioError(body?.error || 'Could not generate audio right now.');
         setAudioHints(body?.hints || []);
+        setAudioStatus('failed');
         return;
       }
 
-      const audioBlob = await res.blob();
-      const nextUrl = URL.createObjectURL(audioBlob);
-      setAudioUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return nextUrl;
-      });
+      const body = (await res.json().catch(() => null)) as { audioUrl?: string; status?: 'ready' } | null;
+      if (body?.audioUrl) {
+        setAudioUrl(body.audioUrl);
+      }
+      setAudioStatus(body?.status || 'ready');
     } catch {
       setAudioError('Could not generate audio right now.');
+      setAudioStatus('failed');
     } finally {
       setAudioLoading(false);
     }
@@ -119,11 +141,15 @@ export default function AISummaryCard({ issueId }: Props) {
           className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
         >
           <Headphones className="h-3.5 w-3.5" />
-          {audioLoading ? 'Generating...' : audioUrl ? 'Regenerate audio' : 'Listen'}
+          {audioLoading ? 'Generating...' : 'Listen'}
         </button>
       </div>
 
       {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
+
+      {audioStatus === 'processing' && !audioError && (
+        <p className="mt-3 text-xs text-ink-faint">Generating audio… this can take a moment.</p>
+      )}
 
       {audioError && (
         <div className="mt-3 space-y-2">

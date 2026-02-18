@@ -55,11 +55,101 @@ function truncateAtSignoff(text: string) {
   return text;
 }
 
-export async function POST(request: NextRequest) {
+async function requireUser() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  return { supabase, user };
+}
+
+async function getUserIssue(supabase: Awaited<ReturnType<typeof createClient>>, issueId: string, userId: string) {
+  const { data: issue, error } = await supabase
+    .from('issues')
+    .select('id, subject, body_text, body_html')
+    .eq('id', issueId)
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .single();
+
+  if (error || !issue) {
+    return null;
+  }
+
+  return issue;
+}
+
+async function getCachedAudio(supabase: Awaited<ReturnType<typeof createClient>>, issueId: string, userId: string) {
+  const { data: cachedAudio } = await supabase
+    .from('issue_audio_cache')
+    .select('audio_base64, mime_type, status, updated_at')
+    .eq('issue_id', issueId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  return cachedAudio;
+}
+
+export async function GET(request: NextRequest) {
+  const { supabase, user } = await requireUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const issueId = request.nextUrl.searchParams.get('issueId');
+  if (!issueId) {
+    return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
+  }
+
+  const issue = await getUserIssue(supabase, issueId, user.id);
+  if (!issue) {
+    return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
+  }
+
+  const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
+  const isReady = Boolean(cachedAudio?.audio_base64 && cachedAudio?.status === 'ready');
+
+  return NextResponse.json(
+    {
+      status: isReady ? 'ready' : cachedAudio?.status || 'missing',
+      audioAvailable: isReady,
+      audioUrl: isReady ? `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}` : null,
+      updatedAt: cachedAudio?.updated_at || null,
+    },
+    { status: 200 }
+  );
+}
+
+export async function HEAD(request: NextRequest) {
+  const { supabase, user } = await requireUser();
+
+  if (!user) {
+    return new NextResponse(null, { status: 401 });
+  }
+
+  const issueId = request.nextUrl.searchParams.get('issueId');
+  if (!issueId) {
+    return new NextResponse(null, { status: 400 });
+  }
+
+  const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
+  if (!cachedAudio?.audio_base64 || cachedAudio.status !== 'ready') {
+    return new NextResponse(null, { status: 404 });
+  }
+
+  return new NextResponse(null, {
+    status: 200,
+    headers: {
+      'content-type': cachedAudio.mime_type || 'audio/mpeg',
+      'cache-control': 'no-store',
+    },
+  });
+}
+
+export async function POST(request: NextRequest) {
+  const { supabase, user } = await requireUser();
 
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -72,15 +162,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
   }
 
-  const { data: issue, error } = await supabase
-    .from('issues')
-    .select('id, subject, body_text, body_html')
-    .eq('id', issueId)
-    .eq('user_id', user.id)
-    .is('deleted_at', null)
-    .single();
-
-  if (error || !issue) {
+  const issue = await getUserIssue(supabase, issueId, user.id);
+  if (!issue) {
     return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
   }
 
@@ -89,23 +172,28 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'No article text available for audio narration' }, { status: 400 });
   }
 
-  const { data: cachedAudio } = await supabase
-    .from('issue_audio_cache')
-    .select('audio_base64, mime_type')
-    .eq('issue_id', issueId)
-    .eq('user_id', user.id)
-    .eq('status', 'ready')
-    .maybeSingle();
+  const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
 
-  if (cachedAudio?.audio_base64) {
-    return new NextResponse(Buffer.from(cachedAudio.audio_base64, 'base64'), {
-      status: 200,
-      headers: {
-        'content-type': cachedAudio.mime_type || 'audio/mpeg',
-        'cache-control': 'no-store',
+  if (cachedAudio?.audio_base64 && cachedAudio.status === 'ready') {
+    return NextResponse.json(
+      {
+        status: 'ready',
+        audioUrl: `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}`,
       },
-    });
+      { status: 200 }
+    );
   }
+
+  await supabase.from('issue_audio_cache').upsert(
+    {
+      issue_id: issueId,
+      user_id: user.id,
+      status: 'processing',
+      provider: 'openai',
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'issue_id,user_id' }
+  );
 
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
@@ -152,6 +240,18 @@ export async function POST(request: NextRequest) {
       (typeof nestedError === 'object' ? nestedError?.message : nestedError) || parsedDetails?.message || details;
     const isPermissionError = res.status === 401 || res.status === 403;
 
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: user.id,
+        status: 'failed',
+        provider: 'openai',
+        model,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' }
+    );
+
     return NextResponse.json(
       {
         error: `OpenAI audio request failed: ${res.status} ${statusMessage}`,
@@ -188,11 +288,11 @@ export async function POST(request: NextRequest) {
     { onConflict: 'issue_id,user_id' }
   );
 
-  return new NextResponse(audioBuffer, {
-    status: 200,
-    headers: {
-      'content-type': 'audio/mpeg',
-      'cache-control': 'no-store',
+  return NextResponse.json(
+    {
+      status: 'ready',
+      audioUrl: `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}`,
     },
-  });
+    { status: 200 }
+  );
 }
