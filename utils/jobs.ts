@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type JobType = 'briefing.generate';
+export type JobType = 'briefing.generate' | 'audio.requested';
 
 export async function enqueueJob(
   supabase: SupabaseClient,
@@ -14,6 +14,10 @@ export async function enqueueJob(
       payload,
       dedupe_key: dedupeKey,
       status: 'queued',
+      attempts: 0,
+      last_error: null,
+      completed_at: null,
+      updated_at: new Date().toISOString(),
     },
     { onConflict: 'dedupe_key' },
   );

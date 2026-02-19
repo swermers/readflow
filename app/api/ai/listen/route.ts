@@ -3,10 +3,11 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
+import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
+import { enqueueJob } from '@/utils/jobs';
+import { createAdminClient } from '@/utils/supabase/admin';
 
-const MAX_INPUT_CHARS = 3500;
-const STALE_PROCESSING_MS = 2 * 60 * 1000;
+const STALE_PROCESSING_MS = 5 * 60 * 1000;
 
 type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'canceled';
 
@@ -17,41 +18,6 @@ function stripHtml(html: string) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function sanitizeForSpeech(text: string) {
-  return text
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, '$1')
-    .replace(/\bhttps?:\/\/[^\s]+/gi, '[link]')
-    .replace(/\bwww\.[^\s]+/gi, '[link]')
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]')
-    .replace(/\s+\[[^\]]*link[^\]]*\]\s*/gi, ' [link] ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function truncateAtSignoff(text: string) {
-  const lines = text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  if (lines.length < 8) return text;
-
-  const signoffPatterns = [
-    /^(best|best regards|regards|kind regards|warm regards|warmly|cheers|thanks|thank you)[,!\-\s]*$/i,
-    /^(with love|much love|big love|love)[,!\-\s]*$/i,
-    /^(see you|see you next week|until next time)[.!\-\s]*$/i,
-  ];
-
-  const minIndex = Math.floor(lines.length * 0.6);
-  for (let i = minIndex; i < lines.length; i += 1) {
-    if (signoffPatterns.some((pattern) => pattern.test(lines[i]))) {
-      return lines.slice(0, i).join('\n').trim();
-    }
-  }
-
-  return text;
 }
 
 async function requireUser() {
@@ -79,7 +45,7 @@ async function getUserIssue(supabase: Awaited<ReturnType<typeof createClient>>, 
 async function getCachedAudio(supabase: Awaited<ReturnType<typeof createClient>>, issueId: string, userId: string) {
   const { data: cachedAudio } = await supabase
     .from('issue_audio_cache')
-    .select('audio_base64, mime_type, status, updated_at, credits_charged, credits_charged_at')
+    .select('audio_base64, mime_type, status, updated_at')
     .eq('issue_id', issueId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -87,131 +53,17 @@ async function getCachedAudio(supabase: Awaited<ReturnType<typeof createClient>>
   return cachedAudio;
 }
 
-function shouldStartProcessing(status: string | null | undefined, updatedAt: string | null | undefined) {
-  if (status === 'queued') return true;
+function shouldRequeue(status: string | null | undefined, updatedAt: string | null | undefined) {
+  if (status === 'queued') return false;
   if (status !== 'processing' || !updatedAt) return false;
 
   const ageMs = Date.now() - new Date(updatedAt).getTime();
   return Number.isFinite(ageMs) && ageMs > STALE_PROCESSING_MS;
 }
 
-async function generateAudioInBackground(
-  issueId: string,
-  userId: string,
-  issue: Awaited<ReturnType<typeof getUserIssue>>,
-) {
-  if (!issue) return;
-
-  const supabase = await createClient();
-
-  await supabase.from('issue_audio_cache').upsert(
-    {
-      issue_id: issueId,
-      user_id: userId,
-      status: 'processing',
-      provider: 'openai',
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'issue_id,user_id' }
-  );
-
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  if (!openaiApiKey) {
-    await supabase.from('issue_audio_cache').upsert(
-      {
-        issue_id: issueId,
-        user_id: userId,
-        status: 'failed',
-        provider: 'openai',
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'issue_id,user_id' }
-    );
-    return;
-  }
-
-  const articleText = (issue.body_text?.trim() || stripHtml(issue.body_html || '')).trim();
-  const contentWithoutSignoff = truncateAtSignoff(articleText);
-  const speechText = sanitizeForSpeech(contentWithoutSignoff || articleText);
-  const input = `${issue.subject || 'Newsletter article'}\n\n${speechText.slice(0, MAX_INPUT_CHARS)}`;
-  const model = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
-  const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
-  const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${openaiApiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      input,
-      voice,
-      response_format: 'mp3',
-    }),
-  });
-
-  if (!res.ok) {
-    await supabase.from('issue_audio_cache').upsert(
-      {
-        issue_id: issueId,
-        user_id: userId,
-        status: 'failed',
-        provider: 'openai',
-        model,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'issue_id,user_id' }
-    );
-    return;
-  }
-
-  const latest = await getCachedAudio(supabase, issueId, userId);
-  if (latest?.status === 'canceled') return;
-
-  const audioBuffer = await res.arrayBuffer();
-  const audioBase64 = Buffer.from(audioBuffer).toString('base64');
-
-  let chargedCredits = Number(latest?.credits_charged || 0);
-  let chargedAt = latest?.credits_charged_at || null;
-
-  if (!chargedAt || chargedCredits < 10) {
-    const consumeResult = await consumeTokensAtomic(supabase, userId, 10);
-    if (!consumeResult.allowed) {
-      await supabase.from('issue_audio_cache').upsert(
-        {
-          issue_id: issueId,
-          user_id: userId,
-          status: 'failed',
-          provider: 'openai',
-          model,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'issue_id,user_id' }
-      );
-      return;
-    }
-
-    chargedCredits = 10;
-    chargedAt = new Date().toISOString();
-  }
-
-  await supabase.from('issue_audio_cache').upsert(
-    {
-      issue_id: issueId,
-      user_id: userId,
-      status: 'ready',
-      mime_type: 'audio/mpeg',
-      audio_base64: audioBase64,
-      provider: 'openai',
-      model,
-      credits_charged: chargedCredits,
-      credits_charged_at: chargedAt,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'issue_id,user_id' }
-  );
+async function enqueueAudioJob(userId: string, issueId: string) {
+  const admin = createAdminClient();
+  await enqueueJob(admin, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`);
 }
 
 export async function GET(request: NextRequest) {
@@ -234,8 +86,18 @@ export async function GET(request: NextRequest) {
   const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
   const isReady = Boolean(cachedAudio?.audio_base64 && cachedAudio?.status === 'ready');
 
-  if (shouldStartProcessing(cachedAudio?.status, cachedAudio?.updated_at)) {
-    void generateAudioInBackground(issueId, user.id, issue);
+  if (shouldRequeue(cachedAudio?.status, cachedAudio?.updated_at)) {
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: user.id,
+        status: 'queued',
+        provider: 'openai',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' },
+    );
+    await enqueueAudioJob(user.id, issueId);
   }
 
   return NextResponse.json(
@@ -245,7 +107,7 @@ export async function GET(request: NextRequest) {
       audioUrl: isReady ? `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}` : null,
       updatedAt: cachedAudio?.updated_at || null,
     },
-    { status: 200 }
+    { status: 200 },
   );
 }
 
@@ -303,11 +165,11 @@ export async function POST(request: NextRequest) {
         status: 'ready' as AudioStatus,
         audioUrl: `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}`,
       },
-      { status: 200 }
+      { status: 200 },
     );
   }
 
-  const entitlement = await checkEntitlement(supabase, user.id, "listen");
+  const entitlement = await checkEntitlement(supabase, user.id, 'listen');
   if (!entitlement.allowed) {
     return NextResponse.json(format402Payload(entitlement), { status: 402 });
   }
@@ -320,10 +182,10 @@ export async function POST(request: NextRequest) {
       provider: 'openai',
       updated_at: new Date().toISOString(),
     },
-    { onConflict: 'issue_id,user_id' }
+    { onConflict: 'issue_id,user_id' },
   );
 
-  void generateAudioInBackground(issueId, user.id, issue);
+  await enqueueAudioJob(user.id, issueId);
 
   return NextResponse.json(
     {
@@ -334,7 +196,7 @@ export async function POST(request: NextRequest) {
       tokensLimit: entitlement.limit,
       unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
     },
-    { status: 202 }
+    { status: 202 },
   );
 }
 
@@ -362,7 +224,7 @@ export async function DELETE(request: NextRequest) {
       status: 'canceled',
       updated_at: new Date().toISOString(),
     },
-    { onConflict: 'issue_id,user_id' }
+    { onConflict: 'issue_id,user_id' },
   );
 
   return NextResponse.json({ status: 'canceled' as AudioStatus }, { status: 200 });
