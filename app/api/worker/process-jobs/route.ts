@@ -100,28 +100,7 @@ async function processNotionSyncJobs(workerId: string): Promise<ProcessResult> {
 }
 
 
-async function processNotionSyncJobs() {
-  const supabase = createAdminClient();
-  const jobs = await claimQueuedJobs(supabase, 'notion.sync', 25);
-
-  let processed = 0;
-  for (const job of jobs) {
-    try {
-      const userId = job.payload?.userId as string | undefined;
-      if (!userId) throw new Error('Missing userId payload');
-      await processNotionSyncJob(supabase, userId);
-      await markJobComplete(supabase, job.id);
-      processed += 1;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Job failed';
-      await markJobFailed(supabase, job.id, Number(job.attempts || 0), message);
-    }
-  }
-
-  return { claimed: jobs.length, processed };
-}
-
-async function processAudioJobs() {
+async function processAudioJobs(workerId: string): Promise<ProcessResult> {
   const supabase = createAdminClient();
   const jobs = await claimQueuedJobs(supabase, 'audio.requested', workerId, 25, 240);
 
@@ -163,7 +142,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [briefing, audio, notion] = await Promise.all([processBriefingJobs(), processAudioJobs(), processNotionSyncJobs()]);
+  const workerId = crypto.randomUUID();
+
+  const [briefing, audio, notion] = await Promise.all([
+    processBriefingJobs(workerId),
+    processAudioJobs(workerId),
+    processNotionSyncJobs(workerId),
+  ]);
 
   return NextResponse.json({
     ok: true,
