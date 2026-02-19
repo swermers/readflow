@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { checkEntitlement } from '@/utils/aiEntitlements';
 import { decryptNotionToken } from '@/utils/notionCrypto';
 
 type HighlightForSync = {
@@ -22,7 +23,6 @@ type HighlightForSync = {
 };
 
 type NotionProfile = {
-  notion_connected: boolean;
   notion_access_token_encrypted: string | null;
 };
 
@@ -190,7 +190,7 @@ async function upsertNotionPage(accessToken: string, item: HighlightForSync) {
       await replaceExistingPage(accessToken, item.notion_page_id, item);
       return item.notion_page_id;
     } catch {
-      // fall through to create a new page if the referenced page no longer exists or cannot be updated
+      // fall through to create new page when existing page is gone or inaccessible
     }
   }
 
@@ -198,18 +198,24 @@ async function upsertNotionPage(accessToken: string, item: HighlightForSync) {
 }
 
 export async function processNotionSyncJob(supabase: SupabaseClient, userId: string) {
-  await supabase
-    .from('profiles')
-    .update({ notion_sync_status: 'syncing', notion_last_sync_error: null })
-    .eq('id', userId);
+  const entitlement = await checkEntitlement(supabase, userId, 'notion_sync');
+  if (!entitlement.allowed) {
+    await supabase
+      .from('profiles')
+      .update({ notion_sync_status: 'failed', notion_last_error: 'Notion sync requires elite plan' })
+      .eq('id', userId);
+    return { total: 0, synced: 0, failed: 0, skipped: 0 };
+  }
+
+  await supabase.from('profiles').update({ notion_sync_status: 'syncing', notion_last_error: null }).eq('id', userId);
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('notion_connected, notion_access_token_encrypted')
+    .select('notion_access_token_encrypted')
     .eq('id', userId)
     .maybeSingle<NotionProfile>();
 
-  if (!profile?.notion_connected || !profile.notion_access_token_encrypted) {
+  if (!profile?.notion_access_token_encrypted) {
     throw new Error('Notion is not connected');
   }
 
@@ -217,7 +223,9 @@ export async function processNotionSyncJob(supabase: SupabaseClient, userId: str
 
   const { data: highlights, error } = await supabase
     .from('highlights')
-    .select('id, highlighted_text, note, auto_tags, created_at, notion_page_id, notion_source_hash, notion_last_synced_at, notion_sync_status, issues(subject, senders(name, email))')
+    .select(
+      'id, highlighted_text, note, auto_tags, created_at, notion_page_id, notion_source_hash, notion_last_synced_at, notion_sync_status, issues(subject, senders(name, email))',
+    )
     .eq('user_id', userId)
     .order('created_at', { ascending: true })
     .returns<HighlightForSync[]>();
@@ -225,12 +233,14 @@ export async function processNotionSyncJob(supabase: SupabaseClient, userId: str
   if (error) throw error;
 
   let synced = 0;
+  let skipped = 0;
   const failed: string[] = [];
 
   for (const item of highlights || []) {
     const nextHash = buildSourceHash(item);
 
-    if (item.notion_source_hash === nextHash && item.notion_last_synced_at && item.notion_sync_status === 'synced') {
+    if (item.notion_page_id && item.notion_source_hash === nextHash && item.notion_sync_status === 'synced') {
+      skipped += 1;
       continue;
     }
 
@@ -243,7 +253,6 @@ export async function processNotionSyncJob(supabase: SupabaseClient, userId: str
           notion_source_hash: nextHash,
           notion_sync_status: 'synced',
           notion_last_synced_at: new Date().toISOString(),
-          notion_last_sync_error: null,
         })
         .eq('id', item.id)
         .eq('user_id', userId);
@@ -252,31 +261,33 @@ export async function processNotionSyncJob(supabase: SupabaseClient, userId: str
     } catch (syncError) {
       failed.push(item.id);
       const message = syncError instanceof Error ? syncError.message : 'Sync failed';
+      console.error('[notion-sync] highlight sync failed', { userId, highlightId: item.id, message });
 
       await supabase
         .from('highlights')
-        .update({ notion_sync_status: 'failed', notion_last_sync_error: message.slice(0, 1000) })
+        .update({ notion_sync_status: 'failed' })
         .eq('id', item.id)
         .eq('user_id', userId);
 
-      await supabase
-        .from('profiles')
-        .update({ notion_last_sync_error: message.slice(0, 1000) })
-        .eq('id', userId);
+      await supabase.from('profiles').update({ notion_last_error: message.slice(0, 1000) }).eq('id', userId);
     }
   }
 
-  await supabase
-    .from('profiles')
-    .update({
-      notion_sync_status: failed.length > 0 ? 'failed' : 'idle',
-      notion_last_sync_at: new Date().toISOString(),
-    })
-    .eq('id', userId);
+  const profileUpdate: { notion_sync_status: 'failed' | 'idle'; notion_last_sync_at: string; notion_last_error?: string | null } = {
+    notion_sync_status: failed.length > 0 ? 'failed' : 'idle',
+    notion_last_sync_at: new Date().toISOString(),
+  };
+
+  if (failed.length === 0) {
+    profileUpdate.notion_last_error = null;
+  }
+
+  await supabase.from('profiles').update(profileUpdate).eq('id', userId);
 
   return {
     total: (highlights || []).length,
     synced,
     failed: failed.length,
+    skipped,
   };
 }

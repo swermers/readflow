@@ -24,19 +24,16 @@ export async function POST() {
 
   const { data: profile } = await supabase
     .from('profiles')
-    .select('notion_connected')
+    .select('notion_access_token_encrypted')
     .eq('id', user.id)
-    .maybeSingle<{ notion_connected: boolean }>();
+    .maybeSingle<{ notion_access_token_encrypted: string | null }>();
 
-  if (!profile?.notion_connected) {
+  if (!profile?.notion_access_token_encrypted) {
     return NextResponse.json({ error: 'Notion is not connected' }, { status: 400 });
   }
 
   const admin = createAdminClient();
-  await admin
-    .from('profiles')
-    .update({ notion_sync_status: 'queued', notion_last_sync_error: null })
-    .eq('id', user.id);
+  await admin.from('profiles').update({ notion_sync_status: 'queued', notion_last_error: null }).eq('id', user.id);
 
   await enqueueJob(admin, 'notion.sync', { userId: user.id, reason: 'manual' }, `notion-sync:${user.id}`);
 

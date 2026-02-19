@@ -2,19 +2,21 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type JobType = 'briefing.generate' | 'audio.requested' | 'notion.sync';
 
-
 type BackgroundJob = {
   id: string;
   attempts: number | null;
   max_attempts: number | null;
   payload: Record<string, unknown> | null;
   queue_latency_ms: number | null;
+  worker_id: string | null;
+  lease_expires_at: string | null;
 };
 
+const RETRY_DELAYS_SECONDS = [30, 120, 600, 1800] as const;
+
 function getRetryDelaySeconds(attempt: number) {
-  const baseDelaySeconds = 30;
-  const maxDelaySeconds = 60 * 15;
-  return Math.min(baseDelaySeconds * 2 ** Math.max(attempt - 1, 0), maxDelaySeconds);
+  const index = Math.max(0, Math.min(attempt - 1, RETRY_DELAYS_SECONDS.length - 1));
+  return RETRY_DELAYS_SECONDS[index];
 }
 
 export async function enqueueJob(
@@ -59,16 +61,16 @@ export async function markJobComplete(supabase: SupabaseClient, id: string, work
     .update({
       status: 'completed',
       completed_at: now,
-      lock_expires_at: null,
-      locked_at: null,
-      locked_by: null,
+      worker_id: null,
+      leased_at: null,
+      lease_expires_at: null,
+      dead_lettered_at: null,
       dead_letter_reason: null,
-      failed_at: null,
       updated_at: now,
     })
     .eq('id', id)
     .eq('status', 'processing')
-    .eq('locked_by', workerId);
+    .eq('worker_id', workerId);
 
   if (error) throw error;
 }
@@ -79,30 +81,30 @@ export async function markJobFailed(
   workerId: string,
   errorMessage: string,
 ) {
-  const nextAttempt = Number(job.attempts || 0) + 1;
-  const reachedMaxAttempts = nextAttempt >= Number(job.max_attempts || 5);
-  const delaySeconds = reachedMaxAttempts ? 0 : getRetryDelaySeconds(nextAttempt);
+  const attempts = Number(job.attempts || 0);
+  const maxAttempts = Number(job.max_attempts || 5);
+  const reachedMaxAttempts = attempts >= maxAttempts;
+  const delaySeconds = reachedMaxAttempts ? 0 : getRetryDelaySeconds(attempts);
   const now = new Date();
-  const nextAvailableAt = new Date(now.getTime() + delaySeconds * 1000).toISOString();
+  const nextAttemptAt = new Date(now.getTime() + delaySeconds * 1000).toISOString();
 
   const { error } = await supabase
     .from('background_jobs')
     .update({
       status: reachedMaxAttempts ? 'dead_letter' : 'queued',
-      attempts: nextAttempt,
-      available_at: reachedMaxAttempts ? now.toISOString() : nextAvailableAt,
+      next_attempt_at: reachedMaxAttempts ? now.toISOString() : nextAttemptAt,
       last_error: errorMessage.slice(0, 1000),
       last_error_at: now.toISOString(),
-      failed_at: reachedMaxAttempts ? now.toISOString() : null,
       dead_letter_reason: reachedMaxAttempts ? 'max_attempts_reached' : null,
-      lock_expires_at: null,
-      locked_at: null,
-      locked_by: null,
+      dead_lettered_at: reachedMaxAttempts ? now.toISOString() : null,
+      worker_id: null,
+      leased_at: null,
+      lease_expires_at: null,
       updated_at: now.toISOString(),
     })
     .eq('id', job.id)
     .eq('status', 'processing')
-    .eq('locked_by', workerId);
+    .eq('worker_id', workerId);
 
   if (error) throw error;
 }
@@ -131,14 +133,14 @@ export async function replayDeadLetterJobs(
     .update({
       status: 'queued',
       attempts: 0,
-      available_at: now,
-      failed_at: null,
+      next_attempt_at: now,
       dead_letter_reason: null,
+      dead_lettered_at: null,
       last_error: null,
       last_error_at: null,
-      lock_expires_at: null,
-      locked_at: null,
-      locked_by: null,
+      worker_id: null,
+      leased_at: null,
+      lease_expires_at: null,
       updated_at: now,
     })
     .in('id', ids)
