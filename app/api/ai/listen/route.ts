@@ -63,7 +63,13 @@ function shouldRequeue(status: string | null | undefined, updatedAt: string | nu
 
 async function enqueueAudioJob(userId: string, issueId: string) {
   const admin = createAdminClient();
-  await enqueueJob(admin, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`);
+  await enqueueJob({
+    supabase: admin,
+    type: 'audio.requested',
+    payload: { userId, issueId },
+    dedupeKey: `audio:${userId}:${issueId}`,
+    maxAttempts: 5,
+  });
 }
 
 export async function GET(request: NextRequest) {

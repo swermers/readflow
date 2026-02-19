@@ -30,7 +30,13 @@ export async function GET(request: Request) {
 
   let enqueued = 0;
   for (const profile of users || []) {
-    await enqueueJob(supabase, 'briefing.generate', { userId: profile.id, weekStartDate }, `briefing:${profile.id}:${weekStartDate}`);
+    await enqueueJob({
+      supabase,
+      type: 'briefing.generate',
+      payload: { userId: profile.id, weekStartDate },
+      dedupeKey: `briefing:${profile.id}:${weekStartDate}`,
+      maxAttempts: 4,
+    });
     enqueued += 1;
   }
 
