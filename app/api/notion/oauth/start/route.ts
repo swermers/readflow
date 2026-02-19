@@ -6,7 +6,16 @@ import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
-export async function GET(request: NextRequest) {
+type OAuthStatePayload = {
+  nonce: string;
+  userId: string;
+};
+
+function encodeState(payload: OAuthStatePayload) {
+  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+}
+
+export async function GET(_request: NextRequest) {
   const clientId = process.env.NOTION_CLIENT_ID;
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 
@@ -26,7 +35,11 @@ export async function GET(request: NextRequest) {
     return NextResponse.json(format402Payload(entitlement), { status: 402 });
   }
 
-  const state = crypto.randomBytes(24).toString('hex');
+  const statePayload: OAuthStatePayload = {
+    nonce: crypto.randomBytes(24).toString('hex'),
+    userId: user.id,
+  };
+  const encodedState = encodeState(statePayload);
   const redirectUri = `${appUrl}/api/notion/oauth/callback`;
 
   const authorizeUrl = new URL('https://api.notion.com/v1/oauth/authorize');
@@ -34,10 +47,10 @@ export async function GET(request: NextRequest) {
   authorizeUrl.searchParams.set('response_type', 'code');
   authorizeUrl.searchParams.set('owner', 'user');
   authorizeUrl.searchParams.set('redirect_uri', redirectUri);
-  authorizeUrl.searchParams.set('state', state);
+  authorizeUrl.searchParams.set('state', encodedState);
 
   const response = NextResponse.redirect(authorizeUrl);
-  response.cookies.set('notion_oauth_state', state, {
+  response.cookies.set('notion_oauth_state', encodedState, {
     httpOnly: true,
     sameSite: 'lax',
     secure: true,
