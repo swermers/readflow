@@ -21,6 +21,10 @@ export default async function BriefingPage() {
   } = await supabase.auth.getUser();
 
   let senderAffinity = new Map<string, number>();
+  let issueTags = new Map<string, string[]>();
+  let tagAffinity = new Map<string, number>();
+  let senderPenalty = new Map<string, number>();
+  let tagPenalty = new Map<string, number>();
 
   if (user) {
     const sixtyDaysAgo = new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString();
@@ -50,6 +54,47 @@ export default async function BriefingPage() {
       acc.set(senderEmail, current + (eventWeights[event.event_type] || 0));
       return acc;
     }, new Map<string, number>());
+
+    const { data: highlights } = await supabase
+      .from('highlights')
+      .select('issue_id, auto_tags')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(1000);
+
+    for (const row of highlights || []) {
+      const tags = (Array.isArray((row as any).auto_tags) ? (row as any).auto_tags : []).filter(
+        (tag: unknown): tag is string => typeof tag === 'string',
+      );
+      if (tags.length === 0) continue;
+
+      const issueId = (row as any).issue_id as string | null;
+      if (issueId) {
+        const existing = issueTags.get(issueId) || [];
+        issueTags.set(issueId, Array.from(new Set([...existing, ...tags])).slice(0, 12));
+      }
+
+      for (const tag of tags) {
+        tagAffinity.set(tag, (tagAffinity.get(tag) || 0) + 1);
+      }
+    }
+
+    const { data: feedback } = await supabase
+      .from('user_article_feedback')
+      .select('sender_email, auto_tags, feedback_type')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(500);
+
+    for (const row of feedback || []) {
+      if ((row as any).feedback_type !== 'not_relevant') continue;
+      const sender = ((row as any).sender_email || '') as string;
+      if (sender) senderPenalty.set(sender, (senderPenalty.get(sender) || 0) + 8);
+      const tags = (Array.isArray((row as any).auto_tags) ? (row as any).auto_tags : []) as string[];
+      for (const tag of tags) {
+        tagPenalty.set(tag, (tagPenalty.get(tag) || 0) + 3);
+      }
+    }
   }
 
   const signalStats = (emails || []).reduce(
@@ -60,7 +105,7 @@ export default async function BriefingPage() {
       else acc.unclassified += 1;
       return acc;
     },
-    { highSignal: 0, news: 0, reference: 0, unclassified: 0 }
+    { highSignal: 0, news: 0, reference: 0, unclassified: 0 },
   );
 
   const executiveStats = [
@@ -77,35 +122,51 @@ export default async function BriefingPage() {
     unclassified: 20,
   };
 
-  const recommendedIssues = (emails || [])
+  const rankedIssues = (emails || [])
     .map((email: any) => {
       const tierScore = tierBaseScore[email.signal_tier || 'unclassified'] || tierBaseScore.unclassified;
-      const ageInDays = Math.max(
-        0,
-        (Date.now() - new Date(email.received_at).getTime()) / (1000 * 60 * 60 * 24)
-      );
+      const ageInDays = Math.max(0, (Date.now() - new Date(email.received_at).getTime()) / (1000 * 60 * 60 * 24));
       const freshnessScore = Math.max(0, 20 - ageInDays * 3);
       const senderScore = Math.min(30, Math.max(0, (senderAffinity.get(email.from_email || '') || 0) * 2));
+      const issueAutoTags = issueTags.get(email.id) || [];
+      const affinityBoost = issueAutoTags.reduce((sum, tag) => sum + Math.min(4, tagAffinity.get(tag) || 0), 0);
+      const senderDownrank = senderPenalty.get(email.from_email || '') || 0;
+      const tagDownrank = issueAutoTags.reduce((sum, tag) => sum + (tagPenalty.get(tag) || 0), 0);
 
       const why: string[] = [];
-      if ((senderAffinity.get(email.from_email || '') || 0) >= 3) {
-        why.push('You frequently engage with this sender');
-      }
-      if (email.signal_tier === 'high_signal') {
-        why.push('Classified as high signal');
-      }
-      if (ageInDays <= 1) {
-        why.push('Fresh from the last 24h');
-      }
+      if ((senderAffinity.get(email.from_email || '') || 0) >= 3) why.push('You frequently engage with this sender');
+      if (affinityBoost > 0) why.push('Matches topics from your notes');
+      if (email.signal_tier === 'high_signal') why.push('Classified as high signal');
+      if (ageInDays <= 1) why.push('Fresh from the last 24h');
+      if (senderDownrank + tagDownrank > 0) why.push('Adjusted using your not relevant feedback');
 
       return {
         ...email,
-        recommendationScore: tierScore + freshnessScore + senderScore,
+        recommendationScore: tierScore + freshnessScore + senderScore + affinityBoost - senderDownrank - tagDownrank,
         recommendationReason: why[0] || email.signal_reason || 'Recommended from your current signal mix',
       };
     })
-    .sort((a: any, b: any) => b.recommendationScore - a.recommendationScore)
-    .slice(0, 3);
+    .sort((a: any, b: any) => b.recommendationScore - a.recommendationScore);
+
+  const recommendedIssues: any[] = [];
+  const seenSenders = new Set<string>();
+
+  for (const issue of rankedIssues) {
+    const sender = issue.from_email || issue.id;
+    if (recommendedIssues.length < 5 && !seenSenders.has(sender)) {
+      recommendedIssues.push(issue);
+      seenSenders.add(sender);
+    }
+    if (recommendedIssues.length >= 5) break;
+  }
+
+  if (recommendedIssues.length < 5) {
+    for (const issue of rankedIssues) {
+      if (recommendedIssues.some((item) => item.id === issue.id)) continue;
+      recommendedIssues.push(issue);
+      if (recommendedIssues.length >= 5) break;
+    }
+  }
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
@@ -139,7 +200,7 @@ export default async function BriefingPage() {
           <div className="flex items-end justify-between gap-3">
             <div>
               <p className="text-xs uppercase tracking-[0.1em] text-accent">Start Here</p>
-              <h2 className="text-lg font-semibold text-ink">Top 3 issues to read now</h2>
+              <h2 className="text-lg font-semibold text-ink">Top 5 issues to read now</h2>
               <p className="text-xs text-ink-faint">Auto-prioritized from this week’s stack.</p>
             </div>
           </div>
