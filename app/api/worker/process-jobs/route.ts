@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { claimQueuedJobs, markJobComplete, markJobFailed } from '@/utils/jobs';
 import { processAudioRequestedJob } from '@/utils/audioJob';
 import { createAdminClient } from '@/utils/supabase/admin';
+import { processNotionSyncJob } from '@/utils/notionSyncJob';
 import { generateWeeklyBriefForUser } from '@/utils/weeklyBrief';
 import { NextResponse } from 'next/server';
 
@@ -23,6 +24,28 @@ async function processBriefingJobs() {
       const userId = job.payload?.userId as string | undefined;
       if (!userId) throw new Error('Missing userId payload');
       await generateWeeklyBriefForUser(supabase, userId, true);
+      await markJobComplete(supabase, job.id);
+      processed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Job failed';
+      await markJobFailed(supabase, job.id, Number(job.attempts || 0), message);
+    }
+  }
+
+  return { claimed: jobs.length, processed };
+}
+
+
+async function processNotionSyncJobs() {
+  const supabase = createAdminClient();
+  const jobs = await claimQueuedJobs(supabase, 'notion.sync', 25);
+
+  let processed = 0;
+  for (const job of jobs) {
+    try {
+      const userId = job.payload?.userId as string | undefined;
+      if (!userId) throw new Error('Missing userId payload');
+      await processNotionSyncJob(supabase, userId);
       await markJobComplete(supabase, job.id);
       processed += 1;
     } catch (error) {
@@ -61,13 +84,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [briefing, audio] = await Promise.all([processBriefingJobs(), processAudioJobs()]);
+  const [briefing, audio, notion] = await Promise.all([processBriefingJobs(), processAudioJobs(), processNotionSyncJobs()]);
 
   return NextResponse.json({
     ok: true,
     briefing,
     audio,
-    claimed: briefing.claimed + audio.claimed,
-    processed: briefing.processed + audio.processed,
+    notion,
+    claimed: briefing.claimed + audio.claimed + notion.claimed,
+    processed: briefing.processed + audio.processed + notion.processed,
   });
 }
