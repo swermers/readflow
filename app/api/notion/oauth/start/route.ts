@@ -20,6 +20,7 @@ export async function GET(_request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
 
   if (!clientId || !appUrl) {
+    console.error('[notion-oauth/start] missing env config');
     return NextResponse.json({ error: 'Missing Notion OAuth configuration' }, { status: 500 });
   }
 
@@ -39,6 +40,7 @@ export async function GET(_request: NextRequest) {
     nonce: crypto.randomBytes(24).toString('hex'),
     userId: user.id,
   };
+
   const encodedState = encodeState(statePayload);
   const redirectUri = `${appUrl}/api/notion/oauth/callback`;
 

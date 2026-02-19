@@ -48,7 +48,7 @@ async function processBriefingJobs(workerId: string): Promise<ProcessResult> {
       await markJobFailed(supabase, job, workerId, message);
       failed += 1;
 
-      if (Number(job.attempts || 0) + 1 >= Number(job.max_attempts || 5)) {
+      if (Number(job.attempts || 0) >= Number(job.max_attempts || 5)) {
         deadLettered += 1;
       }
     }
@@ -84,7 +84,7 @@ async function processNotionSyncJobs(workerId: string): Promise<ProcessResult> {
       await markJobFailed(supabase, job, workerId, message);
       failed += 1;
 
-      if (Number(job.attempts || 0) + 1 >= Number(job.max_attempts || 5)) {
+      if (Number(job.attempts || 0) >= Number(job.max_attempts || 5)) {
         deadLettered += 1;
       }
     }
@@ -122,7 +122,7 @@ async function processAudioJobs(workerId: string): Promise<ProcessResult> {
       await markJobFailed(supabase, job, workerId, message);
       failed += 1;
 
-      if (Number(job.attempts || 0) + 1 >= Number(job.max_attempts || 5)) {
+      if (Number(job.attempts || 0) >= Number(job.max_attempts || 5)) {
         deadLettered += 1;
       }
     }

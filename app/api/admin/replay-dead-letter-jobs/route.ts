@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   const limitRaw = Number(body?.limit || 50);
   const reason = typeof body?.reason === 'string' ? body.reason.slice(0, 120) : 'manual_replay';
 
-  if (!type || !['briefing.generate', 'audio.requested'].includes(type)) {
+  if (!type || !['briefing.generate', 'audio.requested', 'notion.sync'].includes(type)) {
     return NextResponse.json({ error: 'Invalid or missing job type' }, { status: 400 });
   }
 
