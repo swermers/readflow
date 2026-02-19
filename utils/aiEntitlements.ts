@@ -244,7 +244,5 @@ export async function checkEntitlement(
 }
 
 
-// Backward-compatible aliases during credits->tokens migration.
+// Backward-compatible alias during credits->tokens migration.
 export const getMonthlyCreditLimit = getMonthlyTokenLimit;
-export const ensureCreditsAvailable = ensureTokensAvailable;
-export const consumeCreditsAtomic = consumeTokensAtomic;
