@@ -2,6 +2,21 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type JobType = 'briefing.generate' | 'audio.requested' | 'notion.sync';
 
+
+type BackgroundJob = {
+  id: string;
+  attempts: number | null;
+  max_attempts: number | null;
+  payload: Record<string, unknown> | null;
+  queue_latency_ms: number | null;
+};
+
+function getRetryDelaySeconds(attempt: number) {
+  const baseDelaySeconds = 30;
+  const maxDelaySeconds = 60 * 15;
+  return Math.min(baseDelaySeconds * 2 ** Math.max(attempt - 1, 0), maxDelaySeconds);
+}
+
 export async function enqueueJob(
   supabase: SupabaseClient,
   type: JobType,
