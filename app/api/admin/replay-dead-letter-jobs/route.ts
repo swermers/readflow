@@ -1,7 +1,7 @@
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-import { replayDeadLetterJobs, type JobType } from '@/utils/jobs';
+import { previewDeadLetterReplay, replayDeadLetterJobs, type JobType } from '@/utils/jobs';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
 
@@ -20,14 +20,27 @@ export async function POST(request: Request) {
   const type = body?.type as JobType | undefined;
   const limitRaw = Number(body?.limit || 50);
   const reason = typeof body?.reason === 'string' ? body.reason.slice(0, 120) : 'manual_replay';
+  const dryRun = Boolean(body?.dryRun);
 
-  if (!type || !['briefing.generate', 'audio.requested'].includes(type)) {
+  if (!type || !['briefing.generate', 'audio.requested', 'notion.sync'].includes(type)) {
     return NextResponse.json({ error: 'Invalid or missing job type' }, { status: 400 });
   }
 
   const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 200));
   const supabase = createAdminClient();
+
+  if (dryRun) {
+    const jobs = await previewDeadLetterReplay(supabase, type, limit);
+    return NextResponse.json({
+      ok: true,
+      type,
+      dryRun: true,
+      candidates: jobs.length,
+      jobs,
+    });
+  }
+
   const result = await replayDeadLetterJobs(supabase, type, limit, reason);
 
-  return NextResponse.json({ ok: true, type, ...result });
+  return NextResponse.json({ ok: true, type, dryRun: false, ...result });
 }

@@ -2,6 +2,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type JobType = 'briefing.generate' | 'audio.requested' | 'notion.sync';
 
+export type JobStatus = 'queued' | 'processing' | 'completed' | 'dead_letter';
+
 export type BackgroundJob = {
   id: string;
   type: JobType;
@@ -150,4 +152,36 @@ export async function replayDeadLetterJobs(
 
   if (updateError) throw updateError;
   return { replayed: ids.length, reason };
+}
+
+export async function previewDeadLetterReplay(
+  supabase: SupabaseClient,
+  type: JobType,
+  limit = 50,
+) {
+  const { data, error } = await supabase
+    .from('background_jobs')
+    .select('id, dedupe_key, attempts, failed_at, last_error')
+    .eq('type', type)
+    .eq('status', 'dead_letter')
+    .order('updated_at', { ascending: true })
+    .limit(limit);
+
+  if (error) throw error;
+  return data || [];
+}
+
+export async function countJobs(
+  supabase: SupabaseClient,
+  type: JobType,
+  status: JobStatus,
+) {
+  const { count, error } = await supabase
+    .from('background_jobs')
+    .select('id', { count: 'exact', head: true })
+    .eq('type', type)
+    .eq('status', status);
+
+  if (error) throw error;
+  return count || 0;
 }
