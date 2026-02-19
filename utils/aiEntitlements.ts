@@ -23,6 +23,19 @@ type EnsureResult = {
   unlimitedAiAccess?: boolean;
 };
 
+export type PaymentRequiredPayload = {
+  error: 'Insufficient tokens';
+  code: 'PAYMENT_REQUIRED';
+  message: string;
+  reason: string;
+  required: number;
+  available: number;
+  limit: number;
+  planTier: PlanTier;
+  resetAt: string;
+  unlimitedAiAccess: boolean;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BILLING_CYCLE_DAYS = 30;
 
@@ -55,11 +68,18 @@ function isCycleExpired(startAt: string | null | undefined) {
   return !Number.isFinite(ageMs) || ageMs >= BILLING_CYCLE_DAYS * DAY_MS;
 }
 
-export function format402Payload(result: EnsureResult) {
+export function format402Payload(result: EnsureResult): PaymentRequiredPayload {
   return {
-    error: 'Insufficient credits',
+    error: 'Insufficient tokens',
+    code: 'PAYMENT_REQUIRED',
+    message: result.reason || 'Insufficient tokens',
+    reason: result.reason || 'Insufficient tokens',
     required: result.required,
     available: result.available,
+    limit: result.limit,
+    planTier: result.tier,
+    resetAt: result.resetAt,
+    unlimitedAiAccess: Boolean(result.unlimitedAiAccess),
   };
 }
 
@@ -115,7 +135,7 @@ export async function ensureTokensAvailable(
       limit,
       tier,
       resetAt,
-      reason: 'Insufficient credits',
+      reason: 'Insufficient tokens',
     };
   }
 
@@ -215,7 +235,7 @@ export async function checkEntitlement(
       ...gate,
       allowed: false,
       required,
-      reason: 'Insufficient credits',
+      reason: 'Insufficient tokens',
       available: gate.available,
     };
   }

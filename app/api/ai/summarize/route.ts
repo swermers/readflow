@@ -178,6 +178,10 @@ export async function POST(request: NextRequest) {
       : await summarizeWithAnthropic(input);
 
     const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
+    if (!consumeResult.allowed) {
+      return NextResponse.json(format402Payload(consumeResult), { status: 402 });
+    }
+
     return NextResponse.json({
       provider,
       ...result,
@@ -194,6 +198,10 @@ export async function POST(request: NextRequest) {
         ? await summarizeWithGrok(input)
         : await summarizeWithAnthropic(input);
       const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
+      if (!consumeResult.allowed) {
+        return NextResponse.json(format402Payload(consumeResult), { status: 402 });
+      }
+
       return NextResponse.json({
         provider: fallbackProvider,
         ...fallback,

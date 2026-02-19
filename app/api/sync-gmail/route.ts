@@ -37,7 +37,7 @@ export async function POST() {
   // Get the user's Gmail tokens and label preferences
   const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('gmail_access_token, gmail_refresh_token, gmail_token_expires_at, gmail_connected, gmail_sync_labels')
+    .select('gmail_access_token, gmail_refresh_token, gmail_token_expires_at, gmail_connected, gmail_sync_labels, plan_tier')
     .eq('id', user.id)
     .single();
 
@@ -117,6 +117,16 @@ export async function POST() {
 
     let imported = 0;
 
+    const { data: approvedSenders } = await supabase
+      .from('senders')
+      .select('id, email')
+      .eq('user_id', user.id)
+      .eq('status', 'approved');
+
+    const isFreeTier = (profile.plan_tier || 'free') === 'free';
+    let approvedSenderCount = approvedSenders?.length || 0;
+    const approvedSenderEmails = new Set((approvedSenders || []).map((sender) => sender.email));
+
     // Fetch and import each new message
     for (const msgId of newMessageIds) {
       try {
@@ -132,7 +142,19 @@ export async function POST() {
           .single();
 
         if (!sender) {
-          const { data: newSender } = await supabase
+          if (isFreeTier && !approvedSenderEmails.has(parsed.from_email) && approvedSenderCount >= 5) {
+            return NextResponse.json(
+              {
+                error: 'Free plan supports up to 5 active sources.',
+                code: 'SOURCE_LIMIT_REACHED',
+                limit: 5,
+                planTier: 'free',
+              },
+              { status: 402 },
+            );
+          }
+
+          const { data: newSender, error: senderInsertError } = await supabase
             .from('senders')
             .insert({
               user_id: user.id,
@@ -142,7 +164,27 @@ export async function POST() {
             })
             .select('id, status')
             .single();
+
+          if (senderInsertError) {
+            if (senderInsertError.message?.includes('Free plan supports up to 5 active sources.')) {
+              return NextResponse.json(
+                {
+                  error: 'Free plan supports up to 5 active sources.',
+                  code: 'SOURCE_LIMIT_REACHED',
+                  limit: 5,
+                  planTier: 'free',
+                },
+                { status: 402 },
+              );
+            }
+            throw senderInsertError;
+          }
+
           sender = newSender;
+          if (sender) {
+            approvedSenderCount += 1;
+            approvedSenderEmails.add(parsed.from_email);
+          }
         }
 
         if (!sender) continue;
