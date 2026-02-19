@@ -30,7 +30,7 @@ export async function GET(request: Request) {
 
   let enqueued = 0;
   for (const profile of users || []) {
-    await enqueueJob(supabase, 'briefing.generate', { userId: profile.id, weekStartDate }, `briefing:${profile.id}:${weekStartDate}`);
+    await enqueueJob(supabase, 'briefing.generate', { userId: profile.id, weekStartDate }, `briefing:${profile.id}:${weekStartDate}`, 4);
     enqueued += 1;
   }
 

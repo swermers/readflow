@@ -132,7 +132,7 @@ export async function POST() {
           .single();
 
         if (!sender) {
-          const { data: newSender } = await supabase
+          const { data: newSender, error: senderInsertError } = await supabase
             .from('senders')
             .insert({
               user_id: user.id,
@@ -142,6 +142,22 @@ export async function POST() {
             })
             .select('id, status')
             .single();
+
+          if (senderInsertError) {
+            if (senderInsertError.message?.includes('Free plan supports up to 5 active sources.')) {
+              return NextResponse.json(
+                {
+                  error: 'Free plan supports up to 5 active sources.',
+                  code: 'SOURCE_LIMIT_REACHED',
+                  limit: 5,
+                  planTier: 'free',
+                },
+                { status: 402 },
+              );
+            }
+            throw senderInsertError;
+          }
+
           sender = newSender;
         }
 
