@@ -10,6 +10,7 @@ import {
 } from '@/utils/jobs';
 import { processAudioRequestedJob } from '@/utils/audioJob';
 import { createAdminClient } from '@/utils/supabase/admin';
+import { processNotionSyncJob } from '@/utils/notionSyncJob';
 import { generateWeeklyBriefForUser } from '@/utils/weeklyBrief';
 import { NextResponse } from 'next/server';
 
