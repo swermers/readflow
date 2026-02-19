@@ -39,6 +39,7 @@ async function processBriefingJobs(workerId: string): Promise<ProcessResult> {
     try {
       const userId = job.payload?.userId as string | undefined;
       if (!userId) throw new Error('Missing userId payload');
+
       await generateWeeklyBriefForUser(supabase, userId, true);
       await markJobComplete(supabase, job.id, workerId);
       processed += 1;
@@ -46,6 +47,7 @@ async function processBriefingJobs(workerId: string): Promise<ProcessResult> {
       const message = error instanceof Error ? error.message : 'Job failed';
       await markJobFailed(supabase, job, workerId, message);
       failed += 1;
+
       if (Number(job.attempts || 0) + 1 >= Number(job.max_attempts || 5)) {
         deadLettered += 1;
       }
@@ -61,29 +63,43 @@ async function processBriefingJobs(workerId: string): Promise<ProcessResult> {
   };
 }
 
-
-async function processNotionSyncJobs() {
+async function processNotionSyncJobs(workerId: string): Promise<ProcessResult> {
   const supabase = createAdminClient();
-  const jobs = await claimQueuedJobs(supabase, 'notion.sync', 25);
+  const jobs = await claimQueuedJobs(supabase, 'notion.sync', workerId, 25, 240);
 
   let processed = 0;
+  let failed = 0;
+  let deadLettered = 0;
+
   for (const job of jobs) {
     try {
       const userId = job.payload?.userId as string | undefined;
       if (!userId) throw new Error('Missing userId payload');
+
       await processNotionSyncJob(supabase, userId);
-      await markJobComplete(supabase, job.id);
+      await markJobComplete(supabase, job.id, workerId);
       processed += 1;
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Job failed';
-      await markJobFailed(supabase, job.id, Number(job.attempts || 0), message);
+      await markJobFailed(supabase, job, workerId, message);
+      failed += 1;
+
+      if (Number(job.attempts || 0) + 1 >= Number(job.max_attempts || 5)) {
+        deadLettered += 1;
+      }
     }
   }
 
-  return { claimed: jobs.length, processed };
+  return {
+    claimed: jobs.length,
+    processed,
+    failed,
+    deadLettered,
+    avgQueueLatencyMs: average(jobs.map((job) => Number(job.queue_latency_ms || 0))),
+  };
 }
 
-async function processAudioJobs() {
+async function processAudioJobs(workerId: string): Promise<ProcessResult> {
   const supabase = createAdminClient();
   const jobs = await claimQueuedJobs(supabase, 'audio.requested', workerId, 25, 240);
 
@@ -96,6 +112,7 @@ async function processAudioJobs() {
       const userId = job.payload?.userId as string | undefined;
       const issueId = job.payload?.issueId as string | undefined;
       if (!userId || !issueId) throw new Error('Missing userId or issueId payload');
+
       await processAudioRequestedJob(supabase, userId, issueId);
       await markJobComplete(supabase, job.id, workerId);
       processed += 1;
@@ -103,6 +120,7 @@ async function processAudioJobs() {
       const message = error instanceof Error ? error.message : 'Job failed';
       await markJobFailed(supabase, job, workerId, message);
       failed += 1;
+
       if (Number(job.attempts || 0) + 1 >= Number(job.max_attempts || 5)) {
         deadLettered += 1;
       }
@@ -123,7 +141,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const [briefing, audio, notion] = await Promise.all([processBriefingJobs(), processAudioJobs(), processNotionSyncJobs()]);
+  const workerId = crypto.randomUUID();
+
+  const [briefing, audio, notion] = await Promise.all([
+    processBriefingJobs(workerId),
+    processAudioJobs(workerId),
+    processNotionSyncJobs(workerId),
+  ]);
 
   return NextResponse.json({
     ok: true,
@@ -133,5 +157,7 @@ export async function POST(request: Request) {
     notion,
     claimed: briefing.claimed + audio.claimed + notion.claimed,
     processed: briefing.processed + audio.processed + notion.processed,
+    failed: briefing.failed + audio.failed + notion.failed,
+    deadLettered: briefing.deadLettered + audio.deadLettered + notion.deadLettered,
   });
 }
