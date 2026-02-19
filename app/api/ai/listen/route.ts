@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { consumeCreditsAtomic, ensureCreditsAvailable } from '@/utils/aiEntitlements';
+import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
 
 const MAX_INPUT_CHARS = 3500;
 const STALE_PROCESSING_MS = 2 * 60 * 1000;
@@ -176,8 +176,8 @@ async function generateAudioInBackground(
   let chargedCredits = Number(latest?.credits_charged || 0);
   let chargedAt = latest?.credits_charged_at || null;
 
-  if (!chargedAt || chargedCredits < 2) {
-    const consumeResult = await consumeCreditsAtomic(supabase, userId, 2);
+  if (!chargedAt || chargedCredits < 10) {
+    const consumeResult = await consumeTokensAtomic(supabase, userId, 10);
     if (!consumeResult.allowed) {
       await supabase.from('issue_audio_cache').upsert(
         {
@@ -193,7 +193,7 @@ async function generateAudioInBackground(
       return;
     }
 
-    chargedCredits = 2;
+    chargedCredits = 10;
     chargedAt = new Date().toISOString();
   }
 
@@ -307,19 +307,9 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const creditGate = await ensureCreditsAvailable(supabase, user.id, 2);
-  if (!creditGate.allowed) {
-    return NextResponse.json(
-      {
-        error: creditGate.reason || 'Monthly AI credit limit reached',
-        planTier: creditGate.tier,
-        creditsRemaining: creditGate.remaining,
-        creditsLimit: creditGate.limit,
-        resetsAt: creditGate.resetAt,
-        unlimitedAiAccess: creditGate.unlimitedAiAccess || false,
-      },
-      { status: 402 }
-    );
+  const entitlement = await checkEntitlement(supabase, user.id, "listen");
+  if (!entitlement.allowed) {
+    return NextResponse.json(format402Payload(entitlement), { status: 402 });
   }
 
   await supabase.from('issue_audio_cache').upsert(
@@ -339,10 +329,10 @@ export async function POST(request: NextRequest) {
     {
       status: 'queued' as AudioStatus,
       audioUrl: null,
-      planTier: creditGate.tier,
-      creditsRemaining: creditGate.remaining,
-      creditsLimit: creditGate.limit,
-      unlimitedAiAccess: creditGate.unlimitedAiAccess || false,
+      planTier: entitlement.tier,
+      tokensRemaining: entitlement.available,
+      tokensLimit: entitlement.limit,
+      unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
     },
     { status: 202 }
   );

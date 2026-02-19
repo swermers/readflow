@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { consumeCreditsAtomic, ensureCreditsAvailable } from '@/utils/aiEntitlements';
+import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
 
 type SummaryResult = {
   summary: string;
@@ -138,19 +138,9 @@ export async function POST(request: NextRequest) {
   const issueId = body?.issueId as string | undefined;
   const provider = body?.provider === 'grok' ? 'grok' : 'anthropic';
 
-  const creditGate = await ensureCreditsAvailable(supabase, user.id, 1);
-  if (!creditGate.allowed) {
-    return NextResponse.json(
-      {
-        error: creditGate.reason || 'Monthly AI credit limit reached',
-        planTier: creditGate.tier,
-        creditsRemaining: creditGate.remaining,
-        creditsLimit: creditGate.limit,
-        resetsAt: creditGate.resetAt,
-        unlimitedAiAccess: creditGate.unlimitedAiAccess || false,
-      },
-      { status: 402 }
-    );
+  const entitlement = await checkEntitlement(supabase, user.id, "tldr");
+  if (!entitlement.allowed) {
+    return NextResponse.json(format402Payload(entitlement), { status: 402 });
   }
 
   if (!issueId) {
@@ -187,12 +177,12 @@ export async function POST(request: NextRequest) {
       ? await summarizeWithGrok(input)
       : await summarizeWithAnthropic(input);
 
-    const consumeResult = await consumeCreditsAtomic(supabase, user.id, 1);
+    const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
     return NextResponse.json({
       provider,
       ...result,
-      creditsRemaining: consumeResult.remaining,
-      creditsLimit: consumeResult.limit,
+      tokensRemaining: consumeResult.available,
+      tokensLimit: consumeResult.limit,
       planTier: consumeResult.tier,
       unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
     });
@@ -203,12 +193,12 @@ export async function POST(request: NextRequest) {
       const fallback = fallbackProvider === 'grok'
         ? await summarizeWithGrok(input)
         : await summarizeWithAnthropic(input);
-      const consumeResult = await consumeCreditsAtomic(supabase, user.id, 1);
+      const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
       return NextResponse.json({
         provider: fallbackProvider,
         ...fallback,
-        creditsRemaining: consumeResult.remaining,
-        creditsLimit: consumeResult.limit,
+        tokensRemaining: consumeResult.available,
+        tokensLimit: consumeResult.limit,
         planTier: consumeResult.tier,
         unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
       });
