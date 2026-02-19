@@ -114,30 +114,37 @@ export async function GET(request: NextRequest) {
     return failureResponse;
   }
 
-  const admin = createAdminClient();
-  const { error: updateError } = await admin
-    .from('profiles')
-    .update({
-      notion_access_token_encrypted: encryptNotionToken(tokenJson.access_token),
-      notion_workspace_id: tokenJson.workspace_id || null,
-      notion_workspace_name: tokenJson.workspace_name || null,
-      notion_connected_at: new Date().toISOString(),
-      notion_sync_status: 'queued',
-      notion_last_error: null,
-      notion_last_sync_at: null,
-    })
-    .eq('id', user.id);
+  try {
+    const admin = createAdminClient();
+    const { error: updateError } = await admin
+      .from('profiles')
+      .update({
+        notion_access_token_encrypted: encryptNotionToken(tokenJson.access_token),
+        notion_workspace_id: tokenJson.workspace_id || null,
+        notion_workspace_name: tokenJson.workspace_name || null,
+        notion_connected_at: new Date().toISOString(),
+        notion_sync_status: 'queued',
+        notion_last_error: null,
+        notion_last_sync_at: null,
+      })
+      .eq('id', user.id);
 
-  if (updateError) {
-    console.error('[notion-oauth/callback] profile update failed', updateError);
-    const dbFailureResponse = redirectWithError(appUrl, 'profile_update_failed');
-    dbFailureResponse.cookies.delete('notion_oauth_state');
-    return dbFailureResponse;
+    if (updateError) {
+      console.error('[notion-oauth/callback] profile update failed', updateError);
+      const dbFailureResponse = redirectWithError(appUrl, 'profile_update_failed');
+      dbFailureResponse.cookies.delete('notion_oauth_state');
+      return dbFailureResponse;
+    }
+
+    await enqueueJob(admin, 'notion.sync', { userId: user.id, reason: 'oauth_connected' }, `notion-sync:${user.id}`);
+
+    const successResponse = NextResponse.redirect(`${appUrl}/settings?notion=connected`);
+    successResponse.cookies.delete('notion_oauth_state');
+    return successResponse;
+  } catch (error) {
+    console.error('[notion-oauth/callback] unexpected callback error', error);
+    const unexpectedFailureResponse = redirectWithError(appUrl, 'unexpected_error');
+    unexpectedFailureResponse.cookies.delete('notion_oauth_state');
+    return unexpectedFailureResponse;
   }
-
-  await enqueueJob(admin, 'notion.sync', { userId: user.id, reason: 'oauth_connected' }, `notion-sync:${user.id}`);
-
-  const successResponse = NextResponse.redirect(`${appUrl}/settings?notion=connected`);
-  successResponse.cookies.delete('notion_oauth_state');
-  return successResponse;
 }
