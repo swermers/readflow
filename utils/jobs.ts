@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type JobType = 'briefing.generate' | 'audio.requested';
+export type JobType = 'briefing.generate' | 'audio.requested' | 'notion.sync';
 
 export async function enqueueJob(
   supabase: SupabaseClient,
