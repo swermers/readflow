@@ -2,7 +2,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
-import { consumeCreditsAtomic, ensureCreditsAvailable } from '@/utils/aiEntitlements';
+import { consumeTokensAtomic, ensureTokensAvailable, format402Payload } from '@/utils/aiEntitlements';
 import { NextResponse } from 'next/server';
 
 const MAX_ISSUES = 15;
@@ -47,18 +47,9 @@ export async function POST() {
 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const gate = await ensureCreditsAvailable(supabase, user.id, SORT_COST);
+  const gate = await ensureTokensAvailable(supabase, user.id, SORT_COST);
   if (!gate.allowed) {
-    return NextResponse.json(
-      {
-        error: gate.reason || 'Monthly AI credit limit reached',
-        creditsRemaining: gate.remaining,
-        creditsLimit: gate.limit,
-        planTier: gate.tier,
-        unlimitedAiAccess: gate.unlimitedAiAccess || false,
-      },
-      { status: 402 }
-    );
+    return NextResponse.json(format402Payload(gate), { status: 402 });
   }
 
   const { data: issues, error } = await supabase
@@ -143,13 +134,13 @@ export async function POST() {
       .eq('user_id', user.id);
   }
 
-  const consume = await consumeCreditsAtomic(supabase, user.id, SORT_COST);
+  const consume = await consumeTokensAtomic(supabase, user.id, SORT_COST);
 
   return NextResponse.json({
     sorted: updates.length,
     updates,
-    creditsRemaining: consume.remaining,
-    creditsLimit: consume.limit,
+    tokensRemaining: consume.remaining,
+    tokensLimit: consume.limit,
     planTier: consume.tier,
     unlimitedAiAccess: consume.unlimitedAiAccess || false,
   });
