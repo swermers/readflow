@@ -1,0 +1,96 @@
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+import { claimQueuedJobs, markJobComplete, markJobFailed } from '@/utils/jobs';
+import { processAudioRequestedJob } from '@/utils/audioJob';
+import { processNotionSyncJob } from '@/utils/notionSyncJob';
+import { createAdminClient } from '@/utils/supabase/admin';
+import { generateWeeklyBriefForUser } from '@/utils/weeklyBrief';
+import { NextResponse } from 'next/server';
+
+function isAuthorized(request: Request) {
+  const auth = request.headers.get('authorization');
+  const expected = process.env.WORKER_SECRET;
+  return Boolean(expected) && auth === `Bearer ${expected}`;
+}
+
+async function processBriefingJobs() {
+  const supabase = createAdminClient();
+  const jobs = await claimQueuedJobs(supabase, 'briefing.generate', 25);
+
+  let processed = 0;
+  for (const job of jobs) {
+    try {
+      const userId = job.payload?.userId as string | undefined;
+      if (!userId) throw new Error('Missing userId payload');
+      await generateWeeklyBriefForUser(supabase, userId, true);
+      await markJobComplete(supabase, job.id);
+      processed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Job failed';
+      await markJobFailed(supabase, job.id, Number(job.attempts || 0), message);
+    }
+  }
+
+  return { claimed: jobs.length, processed };
+}
+
+async function processAudioJobs() {
+  const supabase = createAdminClient();
+  const jobs = await claimQueuedJobs(supabase, 'audio.requested', 25);
+
+  let processed = 0;
+  for (const job of jobs) {
+    try {
+      const userId = job.payload?.userId as string | undefined;
+      const issueId = job.payload?.issueId as string | undefined;
+      if (!userId || !issueId) throw new Error('Missing userId or issueId payload');
+      await processAudioRequestedJob(supabase, userId, issueId);
+      await markJobComplete(supabase, job.id);
+      processed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Job failed';
+      await markJobFailed(supabase, job.id, Number(job.attempts || 0), message);
+    }
+  }
+
+  return { claimed: jobs.length, processed };
+}
+
+async function processNotionJobs() {
+  const supabase = createAdminClient();
+  const jobs = await claimQueuedJobs(supabase, 'notion.sync', 25);
+
+  let processed = 0;
+  for (const job of jobs) {
+    try {
+      const userId = job.payload?.userId as string | undefined;
+      if (!userId) throw new Error('Missing userId payload');
+      await processNotionSyncJob(supabase, userId);
+      await markJobComplete(supabase, job.id);
+      processed += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Job failed';
+      await markJobFailed(supabase, job.id, Number(job.attempts || 0), message);
+    }
+  }
+
+  return { claimed: jobs.length, processed };
+}
+
+export async function POST(request: Request) {
+  if (!isAuthorized(request)) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const [briefing, audio, notion] = await Promise.all([processBriefingJobs(), processAudioJobs(), processNotionJobs()]);
+
+  return NextResponse.json({
+    ok: true,
+    briefing,
+    audio,
+    notion,
+    claimed: briefing.claimed + audio.claimed + notion.claimed,
+    processed: briefing.processed + audio.processed + notion.processed,
+  });
+}
