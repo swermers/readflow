@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Headphones, List, Play, X } from 'lucide-react';
 import { useGlobalAudioPlayer } from '@/components/GlobalAudioPlayer';
+import { triggerToast } from '@/components/Toast';
 
 type Props = {
   issueId: string;
@@ -114,6 +115,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [previewAudioUrl, setPreviewAudioUrl] = useState<string | null>(null);
   const [audioStatus, setAudioStatus] = useState<AudioStatus>('missing');
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioHints, setAudioHints] = useState<string[]>([]);
@@ -127,6 +129,23 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
   const audioChapters = useMemo(() => buildAudioChapters(articleText, articleSubject), [articleText, articleSubject]);
   const estimatedWaitSeconds = useMemo(() => estimateAudioWaitSeconds(articleText), [articleText]);
+  const readyToastShownRef = useRef(false);
+
+  const setGlobalAudioPendingIssue = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('readflow_active_listen_issue', issueId);
+  };
+
+  const clearGlobalAudioPendingIssue = () => {
+    if (typeof window === 'undefined') return;
+    const current = window.localStorage.getItem('readflow_active_listen_issue');
+    if (current === issueId) window.localStorage.removeItem('readflow_active_listen_issue');
+  };
+
+
+  useEffect(() => {
+    readyToastShownRef.current = false;
+  }, [issueId]);
 
   const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
     try {
@@ -156,6 +175,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
           status?: AudioStatus;
           audioAvailable?: boolean;
           audioUrl?: string | null;
+          previewAudioUrl?: string | null;
           updatedAt?: string | null;
         };
 
@@ -167,13 +187,22 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
         if ((nextStatus === 'queued' || nextStatus === 'processing') && payload.updatedAt) {
           setAudioQueuedAt(new Date(payload.updatedAt).getTime());
+          setGlobalAudioPendingIssue();
         }
+
+        if (payload.previewAudioUrl) setPreviewAudioUrl(payload.previewAudioUrl);
 
         if (payload.audioAvailable && payload.audioUrl) {
           setAudioUrl(payload.audioUrl);
+          setPreviewAudioUrl(null);
           if (nextStatus === 'ready') {
             setAudioQueuedAt(null);
+            clearGlobalAudioPendingIssue();
             void trackEvent('listen_completed');
+            if (!readyToastShownRef.current) {
+              triggerToast('Narration is ready — tap play to listen.');
+              readyToastShownRef.current = true;
+            }
           }
         }
       } catch {
@@ -199,6 +228,44 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     const interval = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(interval);
   }, [audioStatus]);
+
+  useEffect(() => {
+    if (audioStatus !== 'queued' && audioStatus !== 'processing') return;
+
+    const source = new EventSource(`/api/ai/listen/stream?issueId=${encodeURIComponent(issueId)}`);
+    source.addEventListener('status', (event) => {
+      try {
+        const payload = JSON.parse((event as MessageEvent).data || '{}') as {
+          status?: AudioStatus;
+          audioUrl?: string | null;
+          previewAudioUrl?: string | null;
+          updatedAt?: string | null;
+        };
+
+        if (payload.status) {
+          setAudioStatus(payload.status);
+          if (payload.status === 'queued' || payload.status === 'processing') setGlobalAudioPendingIssue();
+          if (payload.status === 'ready' || payload.status === 'failed' || payload.status === 'canceled') clearGlobalAudioPendingIssue();
+        }
+        if (payload.updatedAt) setAudioUpdatedAt(payload.updatedAt);
+        if (payload.previewAudioUrl) setPreviewAudioUrl(payload.previewAudioUrl);
+        if (payload.audioUrl) {
+          setAudioUrl(payload.audioUrl);
+          setPreviewAudioUrl(null);
+          if (!readyToastShownRef.current) {
+            triggerToast('Narration is ready — tap play to listen.');
+            readyToastShownRef.current = true;
+          }
+        }
+      } catch {
+        // no-op
+      }
+    });
+
+    return () => {
+      source.close();
+    };
+  }, [audioStatus, issueId]);
 
   const generate = async () => {
     if (data) return;
@@ -259,6 +326,8 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     setAudioError(null);
     setAudioQueuedAt(Date.now());
     setAudioHints([]);
+    readyToastShownRef.current = false;
+    setGlobalAudioPendingIssue();
 
     try {
       void trackEvent('listen_started');
@@ -282,11 +351,14 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
           });
         }
         setAudioStatus('failed');
+        readyToastShownRef.current = false;
+        clearGlobalAudioPendingIssue();
         return;
       }
 
       const body = (await res.json().catch(() => null)) as {
         audioUrl?: string | null;
+        previewAudioUrl?: string | null;
         status?: AudioStatus;
         creditsRemaining?: number;
         creditsLimit?: number;
@@ -295,9 +367,17 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         updatedAt?: string | null;
       } | null;
 
-      if (body?.audioUrl) setAudioUrl(body.audioUrl);
+      if (body?.previewAudioUrl) setPreviewAudioUrl(body.previewAudioUrl);
+      if (body?.audioUrl) {
+        setAudioUrl(body.audioUrl);
+        setPreviewAudioUrl(null);
+      readyToastShownRef.current = false;
+      }
       const nextStatus = body?.status || 'queued';
       setAudioStatus(nextStatus);
+      if (nextStatus === 'queued' || nextStatus === 'processing') setGlobalAudioPendingIssue();
+      if (nextStatus === 'ready' || nextStatus === 'failed' || nextStatus === 'canceled') clearGlobalAudioPendingIssue();
+      if (nextStatus !== 'ready') readyToastShownRef.current = false;
       if (body?.updatedAt) setAudioUpdatedAt(body.updatedAt);
       if (nextStatus === 'queued' || nextStatus === 'processing') {
         setAudioQueuedAt((prev) => prev || Date.now());
@@ -335,6 +415,8 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       const body = (await res.json().catch(() => null)) as { status?: AudioStatus } | null;
       setAudioStatus(body?.status || 'canceled');
       setAudioQueuedAt(null);
+      setPreviewAudioUrl(null);
+      readyToastShownRef.current = false;
     } catch {
       setAudioError('Could not cancel generation right now.');
     } finally {
@@ -345,6 +427,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
   const queueStartMs = audioUpdatedAt ? new Date(audioUpdatedAt).getTime() : audioQueuedAt;
   const elapsedSeconds = queueStartMs ? Math.max(0, Math.floor((nowTick - queueStartMs) / 1000)) : 0;
   const remainingSeconds = Math.max(0, estimatedWaitSeconds - elapsedSeconds);
+  const loadingProgress = Math.min(95, Math.max(6, Math.round((elapsedSeconds / Math.max(estimatedWaitSeconds, 1)) * 100)));
 
   return (
     <section className="mb-8 rounded-2xl border border-line bg-surface-raised p-4">
@@ -389,35 +472,55 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
 
       {(audioStatus === 'queued' || audioStatus === 'processing') && !audioError && (
-        <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2">
-          <p className="text-xs text-ink-faint">
-            Preparing narration… {elapsedSeconds > 0 ? `elapsed ${formatDuration(elapsedSeconds)}` : 'starting now'}
-            {` · est. ${formatDuration(estimatedWaitSeconds)}`}
-            {remainingSeconds > 0 ? ` · about ${formatDuration(remainingSeconds)} left` : ' · almost ready'}
-          </p>
-          <button
-            type="button"
-            onClick={cancelListenAudio}
-            className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
-          >
-            <X className="h-3 w-3" />
-            Cancel
-          </button>
+        <div className="mt-3 rounded-lg border border-line bg-surface px-3 py-2">
+          <div className="mb-2 h-1.5 w-full overflow-hidden rounded-full bg-line">
+            <div className="h-full rounded-full bg-accent transition-all duration-500" style={{ width: `${loadingProgress}%` }} />
+          </div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-ink-faint">
+              Preparing narration… {elapsedSeconds > 0 ? `elapsed ${formatDuration(elapsedSeconds)}` : 'starting now'}
+              {` · est. ${formatDuration(estimatedWaitSeconds)}`}
+              {remainingSeconds > 0 ? ` · about ${formatDuration(remainingSeconds)} left` : ' · almost ready'}
+            </p>
+            <div className="flex items-center gap-2">
+              {previewAudioUrl && (
+                <button
+                  type="button"
+                  onClick={() => void playAudio(previewAudioUrl, {
+                    title: articleSubject ? `${articleSubject} narration (preview)` : 'Newsletter narration (preview)',
+                    chapters: audioChapters,
+                  })}
+                  className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
+                >
+                  <Play className="h-3 w-3" />
+                  Listen now
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={cancelListenAudio}
+                className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
+              >
+                <X className="h-3 w-3" />
+                Cancel
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
-      {audioStatus === 'ready' && !audioError && (
+      {(audioStatus === 'ready' || ((audioStatus === 'queued' || audioStatus === 'processing') && Boolean(previewAudioUrl))) && !audioError && (
         <div className="mt-3 rounded-lg border border-line bg-surface px-3 py-2">
           <button
             type="button"
-            onClick={() => audioUrl && void playAudio(audioUrl, {
+            onClick={() => (audioUrl || previewAudioUrl) && void playAudio((audioUrl || previewAudioUrl) as string, {
               title: data?.summary ? 'TL;DR narration' : (articleSubject ? `${articleSubject} narration` : 'Newsletter narration'),
               chapters: audioChapters,
             })}
             className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:text-accent"
           >
             <Play className="h-3.5 w-3.5" />
-            {isCurrentUrl(audioUrl) ? 'Playing in mini player' : 'Play in mini player'}
+            {isCurrentUrl(audioUrl || previewAudioUrl) ? 'Playing in mini player' : (audioUrl ? 'Play in mini player' : 'Play preview now')}
           </button>
         </div>
       )}

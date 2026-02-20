@@ -135,6 +135,32 @@ async function processAudioJobs(workerId: string): Promise<ProcessResult> {
 }
 
 
+
+async function getRecentAudioMetricSummary() {
+  const supabase = createAdminClient();
+  const sinceIso = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from('audio_generation_metrics')
+    .select('content_type, metric_name, metric_value')
+    .gte('created_at', sinceIso)
+    .limit(5000);
+
+  if (error) return { since: sinceIso, error: error.message };
+
+  const rows = data || [];
+  const byContent = rows.reduce<Record<string, Record<string, number>>>((acc, row) => {
+    const contentType = String((row as { content_type?: string }).content_type || 'unknown');
+    const metricName = String((row as { metric_name?: string }).metric_name || 'unknown');
+    const metricValue = Number((row as { metric_value?: number }).metric_value || 0);
+
+    if (!acc[contentType]) acc[contentType] = {};
+    acc[contentType][metricName] = (acc[contentType][metricName] || 0) + metricValue;
+    return acc;
+  }, {});
+
+  return { since: sinceIso, byContent };
+}
+
 async function processPodcastJobs(workerId: string): Promise<ProcessResult> {
   const supabase = createAdminClient();
   const jobs = await claimQueuedJobs(supabase, 'podcast.weekly', workerId, 25, 240);
@@ -179,11 +205,12 @@ export async function POST(request: Request) {
 
   const workerId = `worker-${Math.random().toString(36).slice(2, 10)}`;
 
-  const [briefing, audio, notion, podcast] = await Promise.all([
+  const [briefing, audio, notion, podcast, audioMetrics] = await Promise.all([
     processBriefingJobs(workerId),
     processAudioJobs(workerId),
     processNotionJobs(workerId),
     processPodcastJobs(workerId),
+    getRecentAudioMetricSummary(),
   ]);
 
   return NextResponse.json({
@@ -193,6 +220,7 @@ export async function POST(request: Request) {
     audio,
     notion,
     podcast,
+    audioMetrics,
     claimed: briefing.claimed + audio.claimed + notion.claimed + podcast.claimed,
     processed: briefing.processed + audio.processed + notion.processed + podcast.processed,
   });

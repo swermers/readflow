@@ -13,28 +13,40 @@ function buildAudioHeaders(mimeType: string, byteLength: number) {
   };
 }
 
-async function getAudio(issueId: string, userId: string, preview: boolean) {
+async function getPodcastAudio(
+  userId: string,
+  opts: { deliveryKey?: string | null; weekStart?: string | null; weekEnd?: string | null; preview?: boolean },
+) {
   const supabase = await createClient();
-  const { data: cachedAudio } = await supabase
-    .from('issue_audio_cache')
-    .select('audio_base64, first_chunk_base64, mime_type, status')
-    .eq('issue_id', issueId)
-    .eq('user_id', userId)
-    .maybeSingle();
 
-  if (!cachedAudio) return null;
-  if (preview) {
+  let query = supabase
+    .from('weekly_podcast_cache')
+    .select('status, mime_type, audio_base64, first_chunk_base64')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1);
+
+  if (opts.deliveryKey) {
+    query = query.eq('delivery_key', opts.deliveryKey);
+  } else if (opts.weekStart && opts.weekEnd) {
+    query = query.eq('week_start', opts.weekStart).eq('week_end', opts.weekEnd);
+  }
+
+  const { data } = await query.maybeSingle();
+  if (!data) return null;
+
+  if (opts.preview) {
     return {
-      audioBase64: cachedAudio.first_chunk_base64,
-      mimeType: cachedAudio.mime_type,
+      audioBase64: data.first_chunk_base64,
+      mimeType: data.mime_type,
     };
   }
 
-  if (cachedAudio.status !== 'ready') return null;
+  if (data.status !== 'ready') return null;
 
   return {
-    audioBase64: cachedAudio.audio_base64,
-    mimeType: cachedAudio.mime_type,
+    audioBase64: data.audio_base64,
+    mimeType: data.mime_type,
   };
 }
 
@@ -44,18 +56,14 @@ export async function GET(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const issueId = request.nextUrl.searchParams.get('issueId');
-  if (!issueId) {
-    return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
-  }
-
+  const deliveryKey = request.nextUrl.searchParams.get('deliveryKey');
+  const weekStart = request.nextUrl.searchParams.get('weekStart');
+  const weekEnd = request.nextUrl.searchParams.get('weekEnd');
   const preview = request.nextUrl.searchParams.get('preview') === '1';
-  const cachedAudio = await getAudio(issueId, user.id, preview);
 
+  const cachedAudio = await getPodcastAudio(user.id, { deliveryKey, weekStart, weekEnd, preview });
   if (!cachedAudio?.audioBase64) {
     return NextResponse.json({ error: preview ? 'Preview audio not ready yet' : 'Audio not ready yet' }, { status: 404 });
   }
@@ -108,27 +116,5 @@ export async function GET(request: NextRequest) {
       'content-length': String(chunk.byteLength),
       'content-range': `bytes ${start}-${end}/${totalLength}`,
     },
-  });
-}
-
-export async function HEAD(request: NextRequest) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) return new NextResponse(null, { status: 401 });
-
-  const issueId = request.nextUrl.searchParams.get('issueId');
-  if (!issueId) return new NextResponse(null, { status: 400 });
-
-  const preview = request.nextUrl.searchParams.get('preview') === '1';
-  const cachedAudio = await getAudio(issueId, user.id, preview);
-  if (!cachedAudio?.audioBase64) return new NextResponse(null, { status: 404 });
-
-  const audioBuffer = Buffer.from(cachedAudio.audioBase64, 'base64');
-  return new NextResponse(null, {
-    status: 200,
-    headers: buildAudioHeaders(cachedAudio.mimeType || 'audio/mpeg', audioBuffer.byteLength),
   });
 }
