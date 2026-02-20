@@ -6,6 +6,7 @@ import { buildAudioScript, extractReadableTextFromHtml, stripHtmlForSpeech } fro
 
 const MAX_CHUNK_CHARS = 2500;
 const FIRST_CHUNK_CHARS = 420;
+const ABBREVIATED_WORD_THRESHOLD = Number(process.env.AUDIO_ABBREVIATED_WORD_THRESHOLD || 1200);
 
 function truncateAtSignoff(text: string) {
   const lines = text
@@ -164,9 +165,13 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     stripHtmlForSpeech(issue.body_html || '')
   ).trim();
   const contentWithoutSignoff = truncateAtSignoff(articleText);
+  const wordCount = (contentWithoutSignoff || articleText).split(/\s+/).filter(Boolean).length;
+  const audioMode: 'full' | 'abbreviated' = wordCount >= ABBREVIATED_WORD_THRESHOLD ? 'abbreviated' : 'full';
+
   const built = buildAudioScript({
     title: issue.subject || 'Newsletter article',
     rawText: contentWithoutSignoff || articleText,
+    mode: audioMode,
   });
 
   const normalizedBody = normalizeAudioText(contentWithoutSignoff || articleText);
@@ -180,6 +185,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     senderName || issue.from_email || '',
     publishDate,
     normalizedBody,
+    audioMode,
   ]);
 
   let globalHit: Awaited<ReturnType<typeof getGlobalAudioCache>> = null;

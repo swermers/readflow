@@ -5,6 +5,7 @@ type BuildAudioScriptInput = {
   rawText: string;
   sections?: string[];
   forceTone?: AudioTone;
+  mode?: 'full' | 'abbreviated';
 };
 
 const CTA_PATTERNS = [
@@ -170,8 +171,33 @@ export function sanitizeForSpeech(rawText: string) {
   return normalizeWhitespace(ctaRewritten);
 }
 
+
+function buildCliffNotesBody(sanitizedBody: string, maxSentences = 8) {
+  const sentences = splitSentences(sanitizedBody);
+  if (sentences.length <= maxSentences) return sentences.join(' ');
+
+  const scored = sentences.map((sentence, index) => {
+    let score = 0;
+    if (index < 4) score += 2;
+    if (/\b(key|important|core|main|critical|focus|result|outcome|takeaway|trend|risk|opportunity)\b/i.test(sentence)) score += 3;
+    if (/\d|%/.test(sentence)) score += 1;
+    if (sentence.length > 70) score += 1;
+    if (sentence.length > 220) score -= 1;
+    return { sentence, index, score };
+  });
+
+  const picked = [...scored]
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .slice(0, maxSentences)
+    .sort((a, b) => a.index - b.index)
+    .map((item) => item.sentence);
+
+  return picked.join(' ');
+}
+
 export function buildAudioScript(input: BuildAudioScriptInput) {
   const tone = input.forceTone || classifyTone(input.rawText);
+  const mode = input.mode || 'full';
   const sanitizedBody = sanitizeForSpeech(input.rawText);
   const bodySentences = splitSentences(sanitizedBody);
   const hookSentences = bodySentences.slice(0, 2);
@@ -190,8 +216,15 @@ export function buildAudioScript(input: BuildAudioScriptInput) {
   const candidateBody = normalizeWhitespace(sectionText || bodyWithoutHookLead || sanitizedBody);
   const preferredBody = removeLeadingHookSentences(candidateBody, hookSentences);
 
+  const cliffNotesBody = buildCliffNotesBody(preferredBody, 8)
+    .split(/(?<=[.!?])\s+/)
+    .join(' [PAUSE] ');
+
+  const disclaimer = "Here is your abbreviated audio briefing for this article.";
+  const bodyForMode = mode === 'abbreviated' ? `${disclaimer} [PAUSE] ${cliffNotesBody}` : preferredBody;
+
   const script = normalizeWhitespace(
-    `${hook} [PAUSE] ${preferredBody}`.replace(/[#*_`>-]/g, ' '),
+    `${hook} [PAUSE] ${bodyForMode}`.replace(/[#*_`>-]/g, ' '),
   );
 
   return {
