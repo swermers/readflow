@@ -1,10 +1,13 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { Headphones, List, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Headphones, List, Play, X } from 'lucide-react';
+import { useGlobalAudioPlayer } from '@/components/GlobalAudioPlayer';
 
 type Props = {
   issueId: string;
+  articleText?: string;
+  articleSubject?: string;
 };
 
 type SummaryResponse = {
@@ -27,7 +30,47 @@ type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'c
 
 const POLL_INTERVAL_MS = 4000;
 
-export default function AISummaryCard({ issueId }: Props) {
+type AudioChapter = {
+  label: string;
+  startRatio: number;
+};
+
+function buildAudioChapters(articleText?: string, articleSubject?: string): AudioChapter[] {
+  if (!articleText?.trim()) {
+    return [{ label: articleSubject || 'Start', startRatio: 0 }];
+  }
+
+  const paragraphs = articleText
+    .split(/\n\s*\n/g)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 40);
+
+  if (paragraphs.length === 0) return [{ label: articleSubject || 'Start', startRatio: 0 }];
+
+  const sectionCount = Math.min(6, Math.max(3, Math.ceil(paragraphs.length / 3)));
+  const chunkSize = Math.ceil(paragraphs.length / sectionCount);
+
+  const chapters: AudioChapter[] = [];
+  for (let index = 0; index < sectionCount; index += 1) {
+    const start = index * chunkSize;
+    const first = paragraphs[start];
+    if (!first) continue;
+
+    const label = first.split(/\s+/).slice(0, 4).join(' ').replace(/[,:;.!?]$/, '');
+    chapters.push({
+      label: index === 0 ? 'Intro' : index === sectionCount - 1 ? 'Wrap-up' : label || `Part ${index + 1}`,
+      startRatio: Math.min(1, start / paragraphs.length),
+    });
+  }
+
+  if (!chapters.some((chapter) => chapter.startRatio === 0)) {
+    chapters.unshift({ label: 'Intro', startRatio: 0 });
+  }
+
+  return chapters;
+}
+
+export default function AISummaryCard({ issueId, articleText, articleSubject }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<SummaryResponse | null>(null);
@@ -40,8 +83,9 @@ export default function AISummaryCard({ issueId }: Props) {
   const [audioLoading, setAudioLoading] = useState(false);
 
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
-  const [autoPlayRequested, setAutoPlayRequested] = useState(false);
+  const { playAudio, isCurrentUrl } = useGlobalAudioPlayer();
+
+  const audioChapters = useMemo(() => buildAudioChapters(articleText, articleSubject), [articleText, articleSubject]);
 
   const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
     try {
@@ -158,7 +202,6 @@ export default function AISummaryCard({ issueId }: Props) {
     setAudioLoading(true);
     setAudioError(null);
     setAudioHints([]);
-    setAutoPlayRequested(true);
 
     try {
       void trackEvent('listen_started');
@@ -234,20 +277,6 @@ export default function AISummaryCard({ issueId }: Props) {
     }
   };
 
-  useEffect(() => {
-    if (!autoPlayRequested || !audioUrl || !audioRef.current) return;
-
-    const audio = audioRef.current;
-    const playPromise = audio.play();
-    if (playPromise && typeof playPromise.catch === 'function') {
-      playPromise.catch(() => {
-        // Some browsers require an additional direct gesture; controls remain visible as fallback.
-      });
-    }
-    setAutoPlayRequested(false);
-  }, [audioUrl, autoPlayRequested]);
-
-
   return (
     <section className="mb-8 rounded-2xl border border-line bg-surface-raised p-4">
       <div className="grid grid-cols-2 gap-2">
@@ -305,7 +334,19 @@ export default function AISummaryCard({ issueId }: Props) {
       )}
 
       {audioStatus === 'ready' && !audioError && (
-        <p className="mt-3 text-xs text-emerald-600">Ready to play.</p>
+        <div className="mt-3 rounded-lg border border-line bg-surface px-3 py-2">
+          <button
+            type="button"
+            onClick={() => audioUrl && void playAudio(audioUrl, {
+              title: data?.summary ? 'TL;DR narration' : (articleSubject ? `${articleSubject} narration` : 'Newsletter narration'),
+              chapters: audioChapters,
+            })}
+            className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:text-accent"
+          >
+            <Play className="h-3.5 w-3.5" />
+            {isCurrentUrl(audioUrl) ? 'Playing in mini player' : 'Play in mini player'}
+          </button>
+        </div>
       )}
 
       {audioStatus === 'canceled' && !audioError && (
@@ -341,13 +382,6 @@ export default function AISummaryCard({ issueId }: Props) {
             ))}
           </ul>
         </div>
-      )}
-
-      {audioUrl && (
-        <audio ref={audioRef} controls autoPlay className="mt-4 w-full border-t border-line pt-4">
-          <source src={audioUrl} type="audio/mpeg" />
-          Your browser does not support audio playback.
-        </audio>
       )}
     </section>
   );

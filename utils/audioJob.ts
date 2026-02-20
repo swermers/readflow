@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { consumeTokensAtomic } from '@/utils/aiEntitlements';
 
-const MAX_INPUT_CHARS = 3500;
+const MAX_INPUT_CHARS = 12000;
 
 function stripHtml(html: string) {
   return html
