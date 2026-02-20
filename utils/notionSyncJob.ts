@@ -235,6 +235,7 @@ export async function processNotionSyncJob(supabase: SupabaseClient, userId: str
   let synced = 0;
   let skipped = 0;
   const failed: string[] = [];
+  let lastErrorMessage: string | null = null;
 
   for (const item of highlights || []) {
     const nextHash = buildSourceHash(item);
@@ -261,6 +262,7 @@ export async function processNotionSyncJob(supabase: SupabaseClient, userId: str
     } catch (syncError) {
       failed.push(item.id);
       const message = syncError instanceof Error ? syncError.message : 'Sync failed';
+      lastErrorMessage = message;
       console.error('[notion-sync] highlight sync failed', { userId, highlightId: item.id, message });
 
       await supabase
@@ -283,6 +285,10 @@ export async function processNotionSyncJob(supabase: SupabaseClient, userId: str
   }
 
   await supabase.from('profiles').update(profileUpdate).eq('id', userId);
+
+  if (failed.length > 0) {
+    throw new Error(lastErrorMessage || `Notion sync failed for ${failed.length} highlights`);
+  }
 
   return {
     total: (highlights || []).length,
