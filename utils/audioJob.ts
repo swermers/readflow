@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { consumeTokensAtomic } from '@/utils/aiEntitlements';
 
-const MAX_INPUT_CHARS = 3500;
+const MAX_CHUNK_CHARS = 2500;
 
 function stripHtml(html: string) {
   return html
@@ -15,10 +15,9 @@ function stripHtml(html: string) {
 function sanitizeForSpeech(text: string) {
   return text
     .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, '$1')
-    .replace(/\bhttps?:\/\/[^\s]+/gi, '[link]')
-    .replace(/\bwww\.[^\s]+/gi, '[link]')
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, '[email]')
-    .replace(/\s+\[[^\]]*link[^\]]*\]\s*/gi, ' [link] ')
+    .replace(/\bhttps?:\/\/[^\s]+/gi, ' ')
+    .replace(/\bwww\.[^\s]+/gi, ' ')
+    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -47,6 +46,43 @@ function truncateAtSignoff(text: string) {
   return text;
 }
 
+function splitIntoSpeechChunks(input: string) {
+  if (input.length <= MAX_CHUNK_CHARS) return [input];
+
+  const sentences = input
+    .split(/(?<=[.!?])\s+/)
+    .map((sentence) => sentence.trim())
+    .filter(Boolean);
+
+  if (!sentences.length) {
+    return input.match(new RegExp(`.{1,${MAX_CHUNK_CHARS}}`, 'g')) || [input];
+  }
+
+  const chunks: string[] = [];
+  let current = '';
+
+  for (const sentence of sentences) {
+    const next = current ? `${current} ${sentence}` : sentence;
+    if (next.length <= MAX_CHUNK_CHARS) {
+      current = next;
+      continue;
+    }
+
+    if (current) {
+      chunks.push(current);
+      current = sentence;
+      continue;
+    }
+
+    const parts = sentence.match(new RegExp(`.{1,${MAX_CHUNK_CHARS}}`, 'g')) || [sentence];
+    chunks.push(...parts);
+    current = '';
+  }
+
+  if (current) chunks.push(current);
+  return chunks;
+}
+
 async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: string, voice: string, preferredModel: string) {
   const models = Array.from(new Set([preferredModel, 'gpt-4o-mini-tts', 'tts-1']));
 
@@ -71,7 +107,6 @@ async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: st
     const errorBody = await res.text().catch(() => '');
     lastError = errorBody.slice(0, 400);
 
-    // If input is still too long even after truncation, don't retry other models.
     if (res.status === 400 && /input|length|too\s+long|maximum/i.test(errorBody)) {
       break;
     }
@@ -79,7 +114,6 @@ async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: st
 
   return { ok: false as const, status: lastStatus, reason: lastError };
 }
-
 
 async function setAudioStatus(supabase: SupabaseClient, userId: string, issueId: string, status: string, model?: string) {
   await supabase.from('issue_audio_cache').upsert(
@@ -117,15 +151,25 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   const articleText = (issue.body_text?.trim() || stripHtml(issue.body_html || '')).trim();
   const contentWithoutSignoff = truncateAtSignoff(articleText);
   const speechText = sanitizeForSpeech(contentWithoutSignoff || articleText);
-  const input = `${issue.subject || 'Newsletter article'}\n\n${speechText.slice(0, MAX_INPUT_CHARS)}`;
+  const fullInput = `${issue.subject || 'Newsletter article'}\n\n${speechText}`;
+
   const preferredModel = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
   const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
   const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
 
-  const tts = await requestTtsAudio(endpoint, openaiApiKey, input, voice, preferredModel);
-  if (!tts.ok) {
-    await setAudioStatus(supabase, userId, issueId, 'failed', preferredModel);
-    throw new Error(`Audio provider failed: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`);
+  const chunks = splitIntoSpeechChunks(fullInput);
+  const audioChunks: Buffer[] = [];
+  let usedModel = preferredModel;
+
+  for (let i = 0; i < chunks.length; i += 1) {
+    const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[i], voice, preferredModel);
+    if (!tts.ok) {
+      await setAudioStatus(supabase, userId, issueId, 'failed', preferredModel);
+      throw new Error(`Audio provider failed on chunk ${i + 1}/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`);
+    }
+
+    usedModel = tts.model;
+    audioChunks.push(Buffer.from(tts.audioBuffer));
   }
 
   const { data: latest } = await supabase
@@ -143,7 +187,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   if (!chargedAt || chargedCredits < 10) {
     const consumeResult = await consumeTokensAtomic(supabase, userId, 10);
     if (!consumeResult.allowed) {
-      await setAudioStatus(supabase, userId, issueId, 'failed', tts.model);
+      await setAudioStatus(supabase, userId, issueId, 'failed', usedModel);
       throw new Error('Insufficient credits');
     }
 
@@ -151,7 +195,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     chargedAt = new Date().toISOString();
   }
 
-  const audioBase64 = Buffer.from(tts.audioBuffer).toString('base64');
+  const audioBase64 = Buffer.concat(audioChunks).toString('base64');
 
   await supabase.from('issue_audio_cache').upsert(
     {
@@ -161,7 +205,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       mime_type: 'audio/mpeg',
       audio_base64: audioBase64,
       provider: 'openai',
-      model: tts.model,
+      model: usedModel,
       credits_charged: chargedCredits,
       credits_charged_at: chargedAt,
       updated_at: new Date().toISOString(),
