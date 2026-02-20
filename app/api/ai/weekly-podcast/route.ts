@@ -85,6 +85,14 @@ export async function GET(request: NextRequest) {
           deliveryKey: row.delivery_key,
           weekStart: row.week_start,
           weekEnd: row.week_end,
+          audioUrl:
+            row.status === 'ready'
+              ? `/api/ai/weekly-podcast/audio?${row.delivery_key ? `deliveryKey=${encodeURIComponent(row.delivery_key)}` : `weekStart=${encodeURIComponent(row.week_start || '')}&weekEnd=${encodeURIComponent(row.week_end || '')}`}`
+              : null,
+          previewAudioUrl:
+            row.status !== 'ready' && row.first_chunk_base64
+              ? `/api/ai/weekly-podcast/audio?preview=1&${row.delivery_key ? `deliveryKey=${encodeURIComponent(row.delivery_key)}` : `weekStart=${encodeURIComponent(row.week_start || '')}&weekEnd=${encodeURIComponent(row.week_end || '')}`}`
+              : null,
         }
       : null,
   });
