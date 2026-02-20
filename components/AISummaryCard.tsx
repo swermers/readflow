@@ -119,7 +119,7 @@ export default function AISummaryCard({ issueId }: Props) {
               .join(' | ')
           : null;
 
-        setError(providerErrorText || body?.error || 'Could not generate TLDR right now.');
+        setError(providerErrorText || body?.error || 'Could not generate TL;DR right now.');
         if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
           setCreditsMeta({
             remaining: body.creditsRemaining,
@@ -144,7 +144,7 @@ export default function AISummaryCard({ issueId }: Props) {
         });
       }
     } catch {
-      setError('Could not generate TLDR right now.');
+      setError('Could not generate TL;DR right now.');
     } finally {
       setLoading(false);
     }
@@ -242,7 +242,7 @@ export default function AISummaryCard({ issueId }: Props) {
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
           >
             <List className="h-3.5 w-3.5" />
-            {loading ? 'Generating...' : 'TLDR'}
+            {loading ? 'Generating...' : 'TL;DR'}
           </button>
         ) : (
           <button
@@ -250,7 +250,7 @@ export default function AISummaryCard({ issueId }: Props) {
             onClick={() => setSummaryCollapsed((prev) => !prev)}
             className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong"
           >
-            {summaryCollapsed ? 'Show TLDR' : 'Hide TLDR'}
+            {summaryCollapsed ? 'Show TL;DR' : 'Hide TL;DR'}
           </button>
         )}
 

@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
+import { ANTHROPIC_MODEL_CANDIDATES, XAI_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
 
 type SummaryResult = {
   summary: string;
@@ -59,36 +60,46 @@ async function summarizeWithAnthropic(input: string) {
 
   const prompt = `You are helping summarize a newsletter article for a reader app.\nDetect the primary language used in the article and write both summary and takeaways in that same language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest',
-      max_tokens: 500,
-      temperature: 0.2,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
-    const details = await res.text();
-    throw new Error(`Anthropic request failed: ${res.status} ${details}`);
+  for (const model of ANTHROPIC_MODEL_CANDIDATES) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 500,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const details = await res.text();
+      lastError = new Error(`Anthropic request failed: ${res.status} ${details}`);
+      if (isModelNotFoundError(details)) {
+        continue;
+      }
+      throw lastError;
+    }
+
+    const data = await res.json();
+    const textBlock = Array.isArray(data?.content)
+      ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
+      : null;
+    const text = textBlock?.text;
+    if (typeof text !== 'string') throw new Error('Anthropic response missing text');
+
+    const parsed = normalizeSummaryPayload(parseJsonFromText(text));
+    if (!parsed) throw new Error('Anthropic summary parsing failed');
+    return parsed;
   }
 
-  const data = await res.json();
-  const textBlock = Array.isArray(data?.content)
-    ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-    : null;
-  const text = textBlock?.text;
-  if (typeof text !== 'string') throw new Error('Anthropic response missing text');
-
-  const parsed = normalizeSummaryPayload(parseJsonFromText(text));
-  if (!parsed) throw new Error('Anthropic summary parsing failed');
-  return parsed;
+  throw lastError || new Error('Anthropic request failed for all configured models');
 }
 
 async function summarizeWithGrok(input: string) {
@@ -97,31 +108,41 @@ async function summarizeWithGrok(input: string) {
 
   const prompt = `Detect the primary language of the article and keep the response in that same language. Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\n\nArticle:\n${input}`;
 
-  const res = await fetch('https://api.x.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: process.env.XAI_MODEL || 'grok-beta',
-      temperature: 0.2,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
-    const details = await res.text();
-    throw new Error(`Grok request failed: ${res.status} ${details}`);
+  for (const model of XAI_MODEL_CANDIDATES) {
+    const res = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const details = await res.text();
+      lastError = new Error(`Grok request failed: ${res.status} ${details}`);
+      if (isModelNotFoundError(details)) {
+        continue;
+      }
+      throw lastError;
+    }
+
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== 'string') throw new Error('Grok response missing text');
+
+    const parsed = normalizeSummaryPayload(parseJsonFromText(text));
+    if (!parsed) throw new Error('Grok summary parsing failed');
+    return parsed;
   }
 
-  const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') throw new Error('Grok response missing text');
-
-  const parsed = normalizeSummaryPayload(parseJsonFromText(text));
-  if (!parsed) throw new Error('Grok summary parsing failed');
-  return parsed;
+  throw lastError || new Error('Grok request failed for all configured models');
 }
 
 export async function POST(request: NextRequest) {
@@ -209,7 +230,7 @@ export async function POST(request: NextRequest) {
       console.error('AI summarize failed:', primaryMessage, fallbackMessage);
       return NextResponse.json(
         {
-          error: 'Failed to generate TLDR with configured providers',
+          error: 'Failed to generate TL;DR with configured providers',
           hints: [
             'Confirm ANTHROPIC_API_KEY and XAI_API_KEY (or GROK_API_KEY) are set for the same Vercel environment',
             'Verify provider model names are valid for your account',
