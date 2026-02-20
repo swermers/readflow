@@ -4,6 +4,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
+import { ANTHROPIC_MODEL_CANDIDATES, XAI_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
 
 type SummaryResult = {
   summary: string;
@@ -268,8 +269,8 @@ export async function POST(request: NextRequest) {
 
     try {
       const fallback = fallbackProvider === 'grok'
-        ? await summarizeWithGrok(input)
-        : await summarizeWithAnthropic(input);
+        ? await summarizeWithGrok(input, expectedLanguageCode)
+        : await summarizeWithAnthropic(input, expectedLanguageCode);
       const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
       return NextResponse.json({
         provider: fallbackProvider,
