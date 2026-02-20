@@ -17,7 +17,7 @@ export default function BriefSignalSection() {
         <h3 className="mt-1 text-heading text-ink">Your Monday Briefing</h3>
         <ul className="mt-4 space-y-2 text-sm text-ink-muted">
           <li>• Start Here: 5 high-signal reads</li>
-          <li>• TLDRs generated for top issues</li>
+          <li>• TL;DRs generated for top issues</li>
           <li>• Listen queue prepared for commute</li>
         </ul>
       </article>

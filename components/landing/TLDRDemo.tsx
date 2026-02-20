@@ -37,7 +37,7 @@ export default function TLDRDemo() {
             showTLDR ? 'bg-accent text-white' : 'border border-line bg-surface text-ink-muted'
           }`}
         >
-          Show TLDR
+          Show TL;DR
           <span className={`h-3 w-6 rounded-full ${showTLDR ? 'bg-white/30' : 'bg-line'}`} />
         </button>
       </div>
@@ -62,7 +62,7 @@ export default function TLDRDemo() {
         className="overflow-hidden"
       >
         <div className="mt-3 rounded-xl border border-line bg-surface p-4 text-sm text-ink-muted">
-          <p className="mb-2 font-semibold text-ink">TLDR</p>
+          <p className="mb-2 font-semibold text-ink">TL;DR</p>
           <ul className="space-y-1">
             <li>• Agents are moving from assistants to workflow infrastructure inside teams.</li>
             <li>• Trust and adoption increase when teams can verify sources and review checkpoints.</li>
