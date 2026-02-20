@@ -47,7 +47,7 @@ async function getUserIssue(supabase: UserSupabase, issueId: string, userId: str
 async function getCachedAudio(supabase: UserSupabase, issueId: string, userId: string) {
   const { data: cachedAudio } = await supabase
     .from('issue_audio_cache')
-    .select('audio_base64, mime_type, status, updated_at')
+    .select('audio_base64, first_chunk_base64, mime_type, status, updated_at')
     .eq('issue_id', issueId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -157,6 +157,7 @@ export async function GET(request: NextRequest) {
   }
 
   const isReady = Boolean(cachedAudio?.audio_base64 && cachedAudio?.status === 'ready');
+  const hasPreviewChunk = Boolean(cachedAudio?.first_chunk_base64 && ['queued', 'processing'].includes(cachedAudio?.status || ''));
 
   if (shouldRequeue(cachedAudio?.status, cachedAudio?.updated_at)) {
     await supabase.from('issue_audio_cache').upsert(
@@ -189,6 +190,7 @@ export async function GET(request: NextRequest) {
       status: (isReady ? 'ready' : cachedAudio?.status || 'missing') as AudioStatus,
       audioAvailable: isReady,
       audioUrl: isReady ? `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}` : null,
+      previewAudioUrl: hasPreviewChunk ? `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}&preview=1` : null,
       updatedAt: cachedAudio?.updated_at || null,
     },
     { status: 200 },

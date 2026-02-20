@@ -13,18 +13,29 @@ function buildAudioHeaders(mimeType: string, byteLength: number) {
   };
 }
 
-
-async function getReadyAudio(issueId: string, userId: string) {
+async function getAudio(issueId: string, userId: string, preview: boolean) {
   const supabase = await createClient();
   const { data: cachedAudio } = await supabase
     .from('issue_audio_cache')
-    .select('audio_base64, mime_type')
+    .select('audio_base64, first_chunk_base64, mime_type, status')
     .eq('issue_id', issueId)
     .eq('user_id', userId)
-    .eq('status', 'ready')
     .maybeSingle();
 
-  return cachedAudio;
+  if (!cachedAudio) return null;
+  if (preview) {
+    return {
+      audioBase64: cachedAudio.first_chunk_base64,
+      mimeType: cachedAudio.mime_type,
+    };
+  }
+
+  if (cachedAudio.status !== 'ready') return null;
+
+  return {
+    audioBase64: cachedAudio.audio_base64,
+    mimeType: cachedAudio.mime_type,
+  };
 }
 
 export async function GET(request: NextRequest) {
@@ -42,18 +53,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
   }
 
-  const cachedAudio = await getReadyAudio(issueId, user.id);
+  const preview = request.nextUrl.searchParams.get('preview') === '1';
+  const cachedAudio = await getAudio(issueId, user.id, preview);
 
-  if (!cachedAudio?.audio_base64) {
-    return NextResponse.json({ error: 'Audio not ready yet' }, { status: 404 });
+  if (!cachedAudio?.audioBase64) {
+    return NextResponse.json({ error: preview ? 'Preview audio not ready yet' : 'Audio not ready yet' }, { status: 404 });
   }
 
-  const audioBuffer = Buffer.from(cachedAudio.audio_base64, 'base64');
-  const mimeType = cachedAudio.mime_type || 'audio/mpeg';
+  const audioBuffer = Buffer.from(cachedAudio.audioBase64, 'base64');
+  const mimeType = cachedAudio.mimeType || 'audio/mpeg';
   const totalLength = audioBuffer.byteLength;
   const rangeHeader = request.headers.get('range');
 
-  if (!rangeHeader) {
+  if (!rangeHeader || preview) {
     return new NextResponse(audioBuffer, {
       status: 200,
       headers: buildAudioHeaders(mimeType, totalLength),
@@ -99,7 +111,6 @@ export async function GET(request: NextRequest) {
   });
 }
 
-
 export async function HEAD(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -111,12 +122,13 @@ export async function HEAD(request: NextRequest) {
   const issueId = request.nextUrl.searchParams.get('issueId');
   if (!issueId) return new NextResponse(null, { status: 400 });
 
-  const cachedAudio = await getReadyAudio(issueId, user.id);
-  if (!cachedAudio?.audio_base64) return new NextResponse(null, { status: 404 });
+  const preview = request.nextUrl.searchParams.get('preview') === '1';
+  const cachedAudio = await getAudio(issueId, user.id, preview);
+  if (!cachedAudio?.audioBase64) return new NextResponse(null, { status: 404 });
 
-  const audioBuffer = Buffer.from(cachedAudio.audio_base64, 'base64');
+  const audioBuffer = Buffer.from(cachedAudio.audioBase64, 'base64');
   return new NextResponse(null, {
     status: 200,
-    headers: buildAudioHeaders(cachedAudio.mime_type || 'audio/mpeg', audioBuffer.byteLength),
+    headers: buildAudioHeaders(cachedAudio.mimeType || 'audio/mpeg', audioBuffer.byteLength),
   });
 }

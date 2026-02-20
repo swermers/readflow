@@ -1,26 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { consumeTokensAtomic } from '@/utils/aiEntitlements';
+import { buildAudioHash, getGlobalAudioCache, normalizeAudioText, upsertGlobalAudioCache } from '@/utils/audioCache';
+import { buildAudioScript, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
 
 const MAX_CHUNK_CHARS = 2500;
-
-function stripHtml(html: string) {
-  return html
-    .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<script[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function sanitizeForSpeech(text: string) {
-  return text
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/gi, '$1')
-    .replace(/\bhttps?:\/\/[^\s]+/gi, ' ')
-    .replace(/\bwww\.[^\s]+/gi, ' ')
-    .replace(/\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/gi, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 function truncateAtSignoff(text: string) {
   const lines = text
@@ -115,7 +98,14 @@ async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: st
   return { ok: false as const, status: lastStatus, reason: lastError };
 }
 
-async function setAudioStatus(supabase: SupabaseClient, userId: string, issueId: string, status: string, model?: string) {
+async function setAudioStatus(
+  supabase: SupabaseClient,
+  userId: string,
+  issueId: string,
+  status: string,
+  model?: string,
+  patch?: Record<string, unknown>,
+) {
   await supabase.from('issue_audio_cache').upsert(
     {
       issue_id: issueId,
@@ -124,6 +114,7 @@ async function setAudioStatus(supabase: SupabaseClient, userId: string, issueId:
       provider: 'openai',
       model,
       updated_at: new Date().toISOString(),
+      ...patch,
     },
     { onConflict: 'issue_id,user_id' },
   );
@@ -132,7 +123,7 @@ async function setAudioStatus(supabase: SupabaseClient, userId: string, issueId:
 export async function processAudioRequestedJob(supabase: SupabaseClient, userId: string, issueId: string) {
   const { data: issue } = await supabase
     .from('issues')
-    .select('id, subject, body_text, body_html')
+    .select('id, subject, body_text, body_html, from_email, received_at, senders(name)')
     .eq('id', issueId)
     .eq('user_id', userId)
     .is('deleted_at', null)
@@ -140,7 +131,49 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
 
   if (!issue) throw new Error('Issue not found');
 
-  await setAudioStatus(supabase, userId, issueId, 'processing');
+  await setAudioStatus(supabase, userId, issueId, 'processing', undefined, {
+    generation_started_at: new Date().toISOString(),
+  });
+
+  const articleText = (issue.body_text?.trim() || stripHtmlForSpeech(issue.body_html || '')).trim();
+  const contentWithoutSignoff = truncateAtSignoff(articleText);
+  const built = buildAudioScript({
+    title: issue.subject || 'Newsletter article',
+    rawText: contentWithoutSignoff || articleText,
+  });
+
+  const normalizedBody = normalizeAudioText(contentWithoutSignoff || articleText);
+  const senderName = Array.isArray(issue.senders)
+    ? String(issue.senders[0]?.name || '')
+    : String((issue.senders as { name?: string } | null)?.name || '');
+  const publishDate = issue.received_at ? new Date(issue.received_at).toISOString().slice(0, 10) : '';
+
+  const audioHash = buildAudioHash([
+    issue.subject || '',
+    senderName || issue.from_email || '',
+    publishDate,
+    normalizedBody,
+  ]);
+
+  const globalHit = await getGlobalAudioCache(supabase, audioHash, 'article');
+  if (globalHit?.audio_base64) {
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: userId,
+        status: 'ready',
+        mime_type: globalHit.mime_type || 'audio/mpeg',
+        audio_base64: globalHit.audio_base64,
+        provider: globalHit.provider || 'openai',
+        model: globalHit.model,
+        audio_hash: audioHash,
+        generation_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' },
+    );
+    return;
+  }
 
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
@@ -148,10 +181,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     throw new Error('OPENAI_API_KEY missing');
   }
 
-  const articleText = (issue.body_text?.trim() || stripHtml(issue.body_html || '')).trim();
-  const contentWithoutSignoff = truncateAtSignoff(articleText);
-  const speechText = sanitizeForSpeech(contentWithoutSignoff || articleText);
-  const fullInput = `${issue.subject || 'Newsletter article'}\n\n${speechText}`;
+  const fullInput = `${issue.subject || 'Newsletter article'}\n\n${built.script}`;
 
   const preferredModel = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
   const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
@@ -169,7 +199,16 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     }
 
     usedModel = tts.model;
-    audioChunks.push(Buffer.from(tts.audioBuffer));
+    const chunkBuffer = Buffer.from(tts.audioBuffer);
+    audioChunks.push(chunkBuffer);
+
+    if (i === 0) {
+      await setAudioStatus(supabase, userId, issueId, 'processing', usedModel, {
+        first_chunk_base64: chunkBuffer.toString('base64'),
+        first_chunk_ready_at: new Date().toISOString(),
+        audio_hash: audioHash,
+      });
+    }
   }
 
   const { data: latest } = await supabase
@@ -197,6 +236,16 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
 
   const audioBase64 = Buffer.concat(audioChunks).toString('base64');
 
+  await upsertGlobalAudioCache(supabase, {
+    audioHash,
+    contentType: 'article',
+    mimeType: 'audio/mpeg',
+    audioBase64,
+    scriptText: built.script,
+    provider: 'openai',
+    model: usedModel,
+  });
+
   await supabase.from('issue_audio_cache').upsert(
     {
       issue_id: issueId,
@@ -208,6 +257,8 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       model: usedModel,
       credits_charged: chargedCredits,
       credits_charged_at: chargedAt,
+      audio_hash: audioHash,
+      generation_completed_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'issue_id,user_id' },

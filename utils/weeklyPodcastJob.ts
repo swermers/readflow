@@ -1,4 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { buildAudioHash, getGlobalAudioCache, upsertGlobalAudioCache } from '@/utils/audioCache';
+import { buildAudioScript } from '@/utils/audioScriptEngine';
 
 type WeeklyPodcastPayload = {
   userId: string;
@@ -13,20 +15,25 @@ type BriefTheme = {
   sourceCount: number;
 };
 
-function sanitizeForSpeech(text: string) {
-  return text.replace(/\s+/g, ' ').trim();
-}
-
 function createPodcastScript(overview: string, themes: BriefTheme[]) {
-  const themeBlocks = themes
+  const sectionBlocks = themes
     .slice(0, 4)
-    .map((theme, idx) => `Topic ${idx + 1}: ${theme.title}. ${theme.consensus} This appeared across about ${theme.sourceCount} sources.`)
-    .join(' ');
+    .map(
+      (theme, idx) =>
+        `Topic ${idx + 1}: ${theme.title}. ${theme.consensus} This appeared across about ${theme.sourceCount} sources.`,
+    );
 
-  return sanitizeForSpeech(
-    `Welcome to your Readflow weekly signal podcast. ${overview} ${themeBlocks} ` +
-      'Now your action plan: skim the highlighted high-signal pieces first, then decide which trends deserve deeper reads. Thanks for listening.',
-  );
+  const built = buildAudioScript({
+    title: 'Readflow weekly signal podcast',
+    rawText: `${overview} ${sectionBlocks.join(' ')}`,
+    sections: [
+      overview,
+      ...sectionBlocks,
+      'Action plan: start with highlighted high-signal pieces, then decide which trends deserve deeper reads.',
+    ],
+  });
+
+  return built.script;
 }
 
 async function upsertStatus(
@@ -65,10 +72,39 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
 
   if (!brief) throw new Error('Weekly brief not found for podcast generation');
 
-  await upsertStatus(supabase, payload, { status: 'processing', provider: 'openai' });
+  await upsertStatus(supabase, payload, {
+    status: 'processing',
+    provider: 'openai',
+    generation_started_at: new Date().toISOString(),
+  });
 
   const themes = (Array.isArray(brief.themes) ? brief.themes : []) as BriefTheme[];
   const script = createPodcastScript(brief.overview || '', themes);
+
+  const audioHash = buildAudioHash([
+    'readflow-weekly-podcast',
+    payload.userId,
+    brief.delivery_key || payload.deliveryKey || '',
+    brief.week_start,
+    brief.week_end,
+    brief.overview || '',
+    JSON.stringify(themes),
+  ]);
+
+  const globalHit = await getGlobalAudioCache(supabase, audioHash, 'weekly_podcast');
+  if (globalHit?.audio_base64) {
+    await upsertStatus(supabase, payload, {
+      status: 'ready',
+      model: globalHit.model,
+      script_text: globalHit.script_text || script,
+      mime_type: globalHit.mime_type || 'audio/mpeg',
+      audio_base64: globalHit.audio_base64,
+      audio_hash: audioHash,
+      generation_completed_at: new Date().toISOString(),
+      last_error: null,
+    });
+    return;
+  }
 
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
@@ -101,12 +137,24 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
   const audioBuffer = await res.arrayBuffer();
   const audioBase64 = Buffer.from(audioBuffer).toString('base64');
 
+  await upsertGlobalAudioCache(supabase, {
+    audioHash,
+    contentType: 'weekly_podcast',
+    mimeType: 'audio/mpeg',
+    audioBase64,
+    scriptText: script,
+    provider: 'openai',
+    model,
+  });
+
   await upsertStatus(supabase, payload, {
     status: 'ready',
     model,
     script_text: script,
     mime_type: 'audio/mpeg',
     audio_base64: audioBase64,
+    audio_hash: audioHash,
+    generation_completed_at: new Date().toISOString(),
     last_error: null,
   });
 }
