@@ -178,7 +178,7 @@ export async function POST(request: NextRequest) {
     {
       issue_id: issueId,
       user_id: user.id,
-      status: 'queued',
+      status: 'processing',
       provider: 'openai',
       updated_at: new Date().toISOString(),
     },

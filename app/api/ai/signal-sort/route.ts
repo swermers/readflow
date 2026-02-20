@@ -2,8 +2,9 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
-import { consumeCreditsAtomic, ensureCreditsAvailable } from '@/utils/aiEntitlements';
+import { consumeTokensAtomic, ensureTokensAvailable, format402Payload } from '@/utils/aiEntitlements';
 import { NextResponse } from 'next/server';
+import { ANTHROPIC_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
 
 const MAX_ISSUES = 15;
 const MAX_BODY_CHARS = 600;
@@ -47,18 +48,9 @@ export async function POST() {
 
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
-  const gate = await ensureCreditsAvailable(supabase, user.id, SORT_COST);
+  const gate = await ensureTokensAvailable(supabase, user.id, SORT_COST);
   if (!gate.allowed) {
-    return NextResponse.json(
-      {
-        error: gate.reason || 'Monthly AI credit limit reached',
-        creditsRemaining: gate.remaining,
-        creditsLimit: gate.limit,
-        planTier: gate.tier,
-        unlimitedAiAccess: gate.unlimitedAiAccess || false,
-      },
-      { status: 402 }
-    );
+    return NextResponse.json(format402Payload(gate), { status: 402 });
   }
 
   const { data: issues, error } = await supabase
@@ -96,26 +88,39 @@ export async function POST() {
 
   const prompt = `Classify each newsletter item into one tier: high_signal, news, or reference.\n- high_signal: likely actionable, strategic, or deeply relevant\n- news: timely updates worth scanning\n- reference: evergreen, optional, archive-worthy\nReturn STRICT JSON array with objects: { id, tier, reason } where reason is <= 12 words.\n\nItems:\n${JSON.stringify(payload)}`;
 
-  const llmRes = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest',
-      max_tokens: 1200,
-      temperature: 0.1,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  let llmPayload: any = null;
 
-  if (!llmRes.ok) {
-    return NextResponse.json({ error: `Signal sort failed: ${llmRes.status}` }, { status: 500 });
+  for (const model of ANTHROPIC_MODEL_CANDIDATES) {
+    const llmRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 1200,
+        temperature: 0.1,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!llmRes.ok) {
+      const details = await llmRes.text();
+      if (isModelNotFoundError(details)) continue;
+      return NextResponse.json({ error: `Signal sort failed: ${llmRes.status}` }, { status: 500 });
+    }
+
+    llmPayload = await llmRes.json();
+    break;
   }
 
-  const data = await llmRes.json();
+  if (!llmPayload) {
+    return NextResponse.json({ error: 'Signal sort failed: no configured models are available' }, { status: 500 });
+  }
+
+  const data = llmPayload;
   const textBlock = Array.isArray(data?.content)
     ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
     : null;
@@ -143,13 +148,13 @@ export async function POST() {
       .eq('user_id', user.id);
   }
 
-  const consume = await consumeCreditsAtomic(supabase, user.id, SORT_COST);
+  const consume = await consumeTokensAtomic(supabase, user.id, SORT_COST);
 
   return NextResponse.json({
     sorted: updates.length,
     updates,
-    creditsRemaining: consume.remaining,
-    creditsLimit: consume.limit,
+    tokensRemaining: consume.remaining,
+    tokensLimit: consume.limit,
     planTier: consume.tier,
     unlimitedAiAccess: consume.unlimitedAiAccess || false,
   });

@@ -12,6 +12,60 @@ type SummaryResult = {
 
 const MAX_INPUT_CHARS = 12000;
 
+const LANGUAGE_STOPWORDS: Record<string, string[]> = {
+  en: ['the', 'and', 'that', 'with', 'for', 'you', 'this', 'from', 'have', 'are'],
+  es: ['el', 'la', 'los', 'las', 'de', 'que', 'en', 'con', 'por', 'para'],
+  fr: ['le', 'la', 'les', 'de', 'des', 'et', 'que', 'dans', 'pour', 'avec'],
+  de: ['der', 'die', 'das', 'und', 'mit', 'für', 'ist', 'den', 'von', 'auf'],
+  pt: ['o', 'a', 'os', 'as', 'de', 'que', 'e', 'com', 'para', 'em'],
+  it: ['il', 'lo', 'la', 'gli', 'le', 'di', 'che', 'con', 'per', 'una'],
+};
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  pt: 'Portuguese',
+  it: 'Italian',
+};
+
+function detectLikelyLanguage(input: string) {
+  const tokens = (input.toLowerCase().match(/[A-Za-zÀ-ÖØ-öø-ÿ']+/g) || []).slice(0, 4000);
+  if (tokens.length === 0) return { code: 'en', confidence: 0 };
+
+  let bestCode = 'en';
+  let bestScore = 0;
+  let secondScore = 0;
+
+  for (const [code, words] of Object.entries(LANGUAGE_STOPWORDS)) {
+    let score = 0;
+    for (const word of words) {
+      const hits = tokens.filter((token) => token === word).length;
+      score += hits;
+    }
+
+    if (score > bestScore) {
+      secondScore = bestScore;
+      bestScore = score;
+      bestCode = code;
+    } else if (score > secondScore) {
+      secondScore = score;
+    }
+  }
+
+  const confidence = bestScore === 0 ? 0 : (bestScore - secondScore) / Math.max(bestScore, 1);
+  return { code: bestCode, confidence };
+}
+
+function assertSummaryLanguage(summary: SummaryResult, expectedCode: string, minConfidence = 0.2) {
+  const combined = `${summary.summary}\n${summary.takeaways.join('\n')}`;
+  const detected = detectLikelyLanguage(combined);
+  if (detected.confidence >= minConfidence && detected.code !== expectedCode) {
+    throw new Error(`Summary language mismatch: expected ${expectedCode}, got ${detected.code}`);
+  }
+}
+
 
 function parseJsonFromText(text: string) {
   const direct = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
@@ -53,75 +107,97 @@ function normalizeSummaryPayload(payload: unknown): SummaryResult | null {
   return { summary, takeaways };
 }
 
-async function summarizeWithAnthropic(input: string) {
+async function summarizeWithAnthropic(input: string, expectedLanguageCode: string) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('Anthropic key is not configured');
 
-  const prompt = `You are helping summarize a newsletter article for a reader app.\nDetect the primary language used in the article and write both summary and takeaways in that same language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
+  const prompt = `You are helping summarize a newsletter article for a reader app.\nThe article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}).\nWrite summary and takeaways ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest',
-      max_tokens: 500,
-      temperature: 0.2,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
-    const details = await res.text();
-    throw new Error(`Anthropic request failed: ${res.status} ${details}`);
+  for (const model of ANTHROPIC_MODEL_CANDIDATES) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 500,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const details = await res.text();
+      lastError = new Error(`Anthropic request failed: ${res.status} ${details}`);
+      if (isModelNotFoundError(details)) {
+        continue;
+      }
+      throw lastError;
+    }
+
+    const data = await res.json();
+    const textBlock = Array.isArray(data?.content)
+      ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
+      : null;
+    const text = textBlock?.text;
+    if (typeof text !== 'string') throw new Error('Anthropic response missing text');
+
+    const parsed = normalizeSummaryPayload(parseJsonFromText(text));
+    if (!parsed) throw new Error('Anthropic summary parsing failed');
+    assertSummaryLanguage(parsed, expectedLanguageCode);
+    return parsed;
   }
 
-  const data = await res.json();
-  const textBlock = Array.isArray(data?.content)
-    ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-    : null;
-  const text = textBlock?.text;
-  if (typeof text !== 'string') throw new Error('Anthropic response missing text');
-
-  const parsed = normalizeSummaryPayload(parseJsonFromText(text));
-  if (!parsed) throw new Error('Anthropic summary parsing failed');
-  return parsed;
+  throw lastError || new Error('Anthropic request failed for all configured models');
 }
 
-async function summarizeWithGrok(input: string) {
+async function summarizeWithGrok(input: string, expectedLanguageCode: string) {
   const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
   if (!apiKey) throw new Error('Grok key is not configured');
 
-  const prompt = `Detect the primary language of the article and keep the response in that same language. Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\n\nArticle:\n${input}`;
+  const prompt = `The article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}). Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\nWrite ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\n\nArticle:\n${input}`;
 
-  const res = await fetch('https://api.x.ai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${apiKey}`,
-    },
-    body: JSON.stringify({
-      model: process.env.XAI_MODEL || 'grok-beta',
-      temperature: 0.2,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) {
-    const details = await res.text();
-    throw new Error(`Grok request failed: ${res.status} ${details}`);
+  for (const model of XAI_MODEL_CANDIDATES) {
+    const res = await fetch('https://api.x.ai/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const details = await res.text();
+      lastError = new Error(`Grok request failed: ${res.status} ${details}`);
+      if (isModelNotFoundError(details)) {
+        continue;
+      }
+      throw lastError;
+    }
+
+    const data = await res.json();
+    const text = data?.choices?.[0]?.message?.content;
+    if (typeof text !== 'string') throw new Error('Grok response missing text');
+
+    const parsed = normalizeSummaryPayload(parseJsonFromText(text));
+    if (!parsed) throw new Error('Grok summary parsing failed');
+    assertSummaryLanguage(parsed, expectedLanguageCode);
+    return parsed;
   }
 
-  const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') throw new Error('Grok response missing text');
-
-  const parsed = normalizeSummaryPayload(parseJsonFromText(text));
-  if (!parsed) throw new Error('Grok summary parsing failed');
-  return parsed;
+  throw lastError || new Error('Grok request failed for all configured models');
 }
 
 export async function POST(request: NextRequest) {
@@ -165,6 +241,7 @@ export async function POST(request: NextRequest) {
   }
 
   const input = `${issue.subject || 'Newsletter article'}\n\n${rawText.slice(0, MAX_INPUT_CHARS)}`;
+  const expectedLanguageCode = detectLikelyLanguage(input).code;
 
   const serializeError = (err: unknown) => {
     if (err instanceof Error) return err.message;
@@ -174,8 +251,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = provider === 'grok'
-      ? await summarizeWithGrok(input)
-      : await summarizeWithAnthropic(input);
+      ? await summarizeWithGrok(input, expectedLanguageCode)
+      : await summarizeWithAnthropic(input, expectedLanguageCode);
 
     const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
     return NextResponse.json({
@@ -209,7 +286,7 @@ export async function POST(request: NextRequest) {
       console.error('AI summarize failed:', primaryMessage, fallbackMessage);
       return NextResponse.json(
         {
-          error: 'Failed to generate TLDR with configured providers',
+          error: 'Failed to generate TL;DR with configured providers',
           hints: [
             'Confirm ANTHROPIC_API_KEY and XAI_API_KEY (or GROK_API_KEY) are set for the same Vercel environment',
             'Verify provider model names are valid for your account',

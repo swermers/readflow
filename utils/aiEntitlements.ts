@@ -23,6 +23,19 @@ type EnsureResult = {
   unlimitedAiAccess?: boolean;
 };
 
+export type PaymentRequiredPayload = {
+  error: string;
+  code: 'PAYMENT_REQUIRED';
+  message: string;
+  reason: string;
+  required: number;
+  available: number;
+  limit: number;
+  planTier: PlanTier;
+  resetAt: string;
+  unlimitedAiAccess: boolean;
+};
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const BILLING_CYCLE_DAYS = 30;
 

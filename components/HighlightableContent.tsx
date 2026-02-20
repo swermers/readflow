@@ -69,6 +69,14 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
   const highlightedById = useMemo(() => new Map(highlights.map((h) => [h.id, h])), [highlights]);
 
+
+  const getDeepLinkHighlightId = () => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('h');
+  };
+
+
   const closeToolbar = () => {
     setToolbarPosition(null);
     setSelectedText('');
@@ -87,7 +95,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   };
 
   const fetchHighlights = async () => {
-    const res = await fetch(`/api/highlights?issue_id=${issueId}`);
+    const res = await fetch(`/api/highlights?issue_id=${issueId}`, { cache: 'no-store' });
     if (!res.ok) return;
 
     const data = await res.json();
@@ -232,6 +240,51 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     if (directRanges.length > 0) return directRanges;
 
     return findMappedRanges(normalizedFull.text.toLowerCase(), normalizedTarget.toLowerCase());
+  };
+
+
+  const scrollToHighlight = (highlight: Highlight) => {
+    const container = containerRef.current;
+    if (!container) return false;
+
+    const mark = container.querySelector(`mark[data-highlight-id="${highlight.id}"]`) as HTMLElement | null;
+    if (mark) {
+      mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      mark.classList.add('ring-2', 'ring-accent/60');
+      window.setTimeout(() => {
+        mark.classList.remove('ring-2', 'ring-accent/60');
+      }, 1800);
+      return true;
+    }
+
+    const { fullText, entries } = getTextNodeEntries();
+    if (!fullText || entries.length === 0) return false;
+
+    if (
+      typeof highlight.selection_start === 'number' &&
+      typeof highlight.selection_end === 'number' &&
+      highlight.selection_end > highlight.selection_start
+    ) {
+      const range = createRangeFromGlobalOffsets(entries, highlight.selection_start, highlight.selection_end);
+      const node = range?.startContainer;
+      if (node) {
+        (node.parentElement || container).scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return true;
+      }
+    }
+
+    const text = highlight.highlighted_text?.trim();
+    if (!text) return false;
+
+    const match = findHighlightRanges(fullText, text)[0];
+    if (!match) return false;
+
+    const range = createRangeFromGlobalOffsets(entries, match.start, match.end);
+    const node = range?.startContainer;
+    if (!node) return false;
+
+    (node.parentElement || container).scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return true;
   };
 
   const applyHighlightToDom = (highlight: Highlight, usedRanges: Array<{ start: number; end: number }>) => {
@@ -399,10 +452,22 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
     if (highlights.length > 0) {
       const usedRanges: Array<{ start: number; end: number }> = [];
+      const deepLinkHighlightId = getDeepLinkHighlightId();
+      const deepLinkTarget = deepLinkHighlightId
+        ? highlights.find((highlight) => highlight.id === deepLinkHighlightId) || null
+        : null;
+
+      if (deepLinkTarget) {
+        applyHighlightToDom(deepLinkTarget, usedRanges);
+      }
+
       highlights
         .slice()
         .reverse()
-        .forEach((highlight) => applyHighlightToDom(highlight, usedRanges));
+        .forEach((highlight) => {
+          if (deepLinkTarget?.id === highlight.id) return;
+          applyHighlightToDom(highlight, usedRanges);
+        });
     }
 
     highlights.forEach((highlight) => {
@@ -415,35 +480,23 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   useEffect(() => {
     if (highlights.length === 0) return;
 
-    const params = new URLSearchParams(window.location.search);
-    const targetHighlightId = params.get('h');
+    const targetHighlightId = getDeepLinkHighlightId();
     if (!targetHighlightId) return;
 
-    const mark = document.querySelector(`mark[data-highlight-id="${targetHighlightId}"]`) as HTMLElement | null;
-    if (!mark) {
-      const fallback = highlights.find((highlight) => highlight.id === targetHighlightId);
-      if (fallback?.highlighted_text?.trim()) {
-        const container = containerRef.current;
-        if (!container) return;
-        const textNodeWalker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
-        while (textNodeWalker.nextNode()) {
-          const node = textNodeWalker.currentNode as Text;
-          if (node.textContent?.includes(fallback.highlighted_text.trim())) {
-            (node.parentElement || container).scrollIntoView({ behavior: 'smooth', block: 'center' });
-            break;
-          }
-        }
-      }
-      return;
-    }
+    const target = highlights.find((highlight) => highlight.id === targetHighlightId);
+    if (!target) return;
 
-    mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    mark.classList.add('ring-2', 'ring-accent/60');
-    const timeout = window.setTimeout(() => {
-      mark.classList.remove('ring-2', 'ring-accent/60');
-    }, 1800);
+    let attempts = 0;
+    const maxAttempts = 6;
 
-    return () => window.clearTimeout(timeout);
+    const tryScroll = () => {
+      if (scrollToHighlight(target)) return;
+      if (attempts >= maxAttempts) return;
+      attempts += 1;
+      window.setTimeout(tryScroll, 80);
+    };
+
+    tryScroll();
   }, [highlights]);
 
   useEffect(() => {
