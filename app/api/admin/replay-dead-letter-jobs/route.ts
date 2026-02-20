@@ -1,10 +1,9 @@
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+import { replayDeadLetterJobs, type JobType } from '@/utils/jobs';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
-
-const ALLOWED_TYPES = new Set(['briefing.generate', 'audio.requested', 'notion.sync']);
 
 function isAuthorized(request: Request) {
   const auth = request.headers.get('authorization');
@@ -17,47 +16,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { type?: string; limit?: number };
-  const type = body.type || 'notion.sync';
-  const limit = Math.min(Math.max(Number(body.limit || 50), 1), 500);
+  const body = await request.json().catch(() => ({}));
+  const type = body?.type as JobType | undefined;
+  const limitRaw = Number(body?.limit || 50);
+  const reason = typeof body?.reason === 'string' ? body.reason.slice(0, 120) : 'manual_replay';
 
-  if (!ALLOWED_TYPES.has(type)) {
-    return NextResponse.json({ error: 'Invalid type' }, { status: 400 });
+  if (!type || !['briefing.generate', 'audio.requested', 'notion.sync'].includes(type)) {
+    return NextResponse.json({ error: 'Invalid or missing job type' }, { status: 400 });
   }
 
+  const limit = Math.max(1, Math.min(Number.isFinite(limitRaw) ? limitRaw : 50, 200));
   const supabase = createAdminClient();
-  const { data: jobs, error } = await supabase
-    .from('background_jobs')
-    .select('id')
-    .eq('type', type)
-    .eq('status', 'dead_letter')
-    .order('dead_lettered_at', { ascending: true })
-    .limit(limit);
+  const result = await replayDeadLetterJobs(supabase, type, limit, reason);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
-  }
-
-  const ids = (jobs || []).map((j) => j.id);
-  if (!ids.length) return NextResponse.json({ ok: true, replayed: 0 });
-
-  const { error: updateError } = await supabase
-    .from('background_jobs')
-    .update({
-      status: 'queued',
-      retry_at: new Date().toISOString(),
-      dead_lettered_at: null,
-      last_error: null,
-      locked_by: null,
-      locked_at: null,
-      lease_expires_at: null,
-      updated_at: new Date().toISOString(),
-    })
-    .in('id', ids);
-
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, replayed: ids.length, type });
+  return NextResponse.json({ ok: true, type, ...result });
 }

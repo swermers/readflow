@@ -1,51 +1,64 @@
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-import { randomBytes } from 'crypto';
-import { checkEntitlement } from '@/utils/aiEntitlements';
+import crypto from 'crypto';
+import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
 import { createClient } from '@/utils/supabase/server';
-import { cookies } from 'next/headers';
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 
-const STATE_COOKIE = 'notion_oauth_state';
+type OAuthStatePayload = {
+  nonce: string;
+  userId: string;
+};
 
-export async function GET() {
+function encodeState(payload: OAuthStatePayload) {
+  return Buffer.from(JSON.stringify(payload)).toString('base64url');
+}
+
+export async function GET(_request: NextRequest) {
+  const clientId = process.env.NOTION_CLIENT_ID;
+  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
+
+  if (!clientId || !appUrl) {
+    console.error('[notion-oauth/start] missing env config');
+    return NextResponse.json({ error: 'Missing Notion OAuth configuration' }, { status: 500 });
+  }
+
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
 
   const entitlement = await checkEntitlement(supabase, user.id, 'notion_sync');
   if (!entitlement.allowed) {
-    return NextResponse.json({ error: 'Notion sync requires elite plan' }, { status: 402 });
+    return NextResponse.json(format402Payload(entitlement), { status: 402 });
   }
 
-  const clientId = process.env.NOTION_CLIENT_ID;
-  const appUrl = process.env.NEXT_PUBLIC_APP_URL;
-  if (!clientId || !appUrl) {
-    return NextResponse.json({ error: 'Missing Notion OAuth configuration' }, { status: 500 });
-  }
+  const statePayload: OAuthStatePayload = {
+    nonce: crypto.randomBytes(24).toString('hex'),
+    userId: user.id,
+  };
 
-  const state = randomBytes(24).toString('hex');
-  const callbackUrl = `${appUrl.replace(/\/$/, '')}/api/notion/oauth/callback`;
-  const authUrl = new URL('https://api.notion.com/v1/oauth/authorize');
-  authUrl.searchParams.set('client_id', clientId);
-  authUrl.searchParams.set('response_type', 'code');
-  authUrl.searchParams.set('owner', 'user');
-  authUrl.searchParams.set('redirect_uri', callbackUrl);
-  authUrl.searchParams.set('state', state);
+  const encodedState = encodeState(statePayload);
+  const redirectUri = `${appUrl}/api/notion/oauth/callback`;
 
-  cookies().set(STATE_COOKIE, state, {
+  const authorizeUrl = new URL('https://api.notion.com/v1/oauth/authorize');
+  authorizeUrl.searchParams.set('client_id', clientId);
+  authorizeUrl.searchParams.set('response_type', 'code');
+  authorizeUrl.searchParams.set('owner', 'user');
+  authorizeUrl.searchParams.set('redirect_uri', redirectUri);
+  authorizeUrl.searchParams.set('state', encodedState);
+
+  const response = NextResponse.redirect(authorizeUrl);
+  response.cookies.set('notion_oauth_state', encodedState, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax',
+    secure: true,
     path: '/',
     maxAge: 60 * 10,
   });
 
-  return NextResponse.redirect(authUrl);
+  return response;
 }

@@ -1,76 +1,74 @@
-import { createCipheriv, createDecipheriv, randomBytes } from 'crypto';
+import crypto from 'crypto';
 
 const ALGO = 'aes-256-gcm';
+const IV_BYTES = 12;
+const KEY_BYTES = 32;
 
-type EncPayload = {
-  iv: string;
-  authTag: string;
-  ciphertext: string;
-};
-
-function parseKey(raw: string): Buffer {
-  const trimmed = raw.trim();
+function decodeKey(secret: string) {
+  const trimmed = secret.trim();
 
   if (/^[a-fA-F0-9]{64}$/.test(trimmed)) {
     return Buffer.from(trimmed, 'hex');
   }
 
-  const normalized = trimmed.replace(/-/g, '+').replace(/_/g, '/');
-  const padding = normalized.length % 4 === 0 ? '' : '='.repeat(4 - (normalized.length % 4));
-  const key = Buffer.from(`${normalized}${padding}`, 'base64');
-
-  if (key.length === 32) {
-    return key;
+  const base64 = trimmed.replace(/-/g, '+').replace(/_/g, '/');
+  const decoded = Buffer.from(base64, 'base64');
+  if (decoded.length === KEY_BYTES) {
+    return decoded;
   }
 
-  throw new Error('NOTION_TOKEN_ENCRYPTION_KEY must be 64-char hex or 32-byte base64/base64url');
+  throw new Error(
+    'NOTION_TOKEN_ENCRYPTION_KEY must be 32 bytes encoded as base64(base64url) or 64-char hex.',
+  );
 }
 
-function getKey(): Buffer {
-  const raw = process.env.NOTION_TOKEN_ENCRYPTION_KEY;
-  if (!raw) {
+function getKey() {
+  const secret = process.env.NOTION_TOKEN_ENCRYPTION_KEY;
+  if (!secret) {
     throw new Error('Missing NOTION_TOKEN_ENCRYPTION_KEY');
   }
 
-  return parseKey(raw);
+  const key = decodeKey(secret);
+  if (key.length !== KEY_BYTES) {
+    throw new Error('Invalid NOTION_TOKEN_ENCRYPTION_KEY length');
+  }
+
+  return key;
 }
 
-export function encryptNotionToken(token: string): string {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv(ALGO, getKey(), iv);
+export function encryptNotionToken(token: string) {
+  if (!token) throw new Error('Cannot encrypt empty Notion access token');
 
-  const ciphertext = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
+  const iv = crypto.randomBytes(IV_BYTES);
+  const key = getKey();
+  const cipher = crypto.createCipheriv(ALGO, key, iv);
+
+  const encrypted = Buffer.concat([cipher.update(token, 'utf8'), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
-  const payload: EncPayload = {
-    iv: iv.toString('base64url'),
-    authTag: authTag.toString('base64url'),
-    ciphertext: ciphertext.toString('base64url'),
-  };
-
-  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  return `${iv.toString('base64url')}:${authTag.toString('base64url')}:${encrypted.toString('base64url')}`;
 }
 
-export function decryptNotionToken(encodedPayload: string): string {
-  let payload: EncPayload;
-
-  try {
-    payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as EncPayload;
-  } catch {
-    throw new Error('Invalid encrypted Notion token payload');
+export function decryptNotionToken(payload: string) {
+  const [ivB64, authTagB64, bodyB64] = payload.split(':');
+  if (!ivB64 || !authTagB64 || !bodyB64) {
+    throw new Error('Invalid encrypted token payload');
   }
 
-  if (!payload?.iv || !payload?.authTag || !payload?.ciphertext) {
-    throw new Error('Invalid encrypted Notion token payload');
+  const iv = Buffer.from(ivB64, 'base64url');
+  if (iv.length !== IV_BYTES) {
+    throw new Error('Invalid encryption iv');
   }
 
-  const decipher = createDecipheriv(ALGO, getKey(), Buffer.from(payload.iv, 'base64url'));
-  decipher.setAuthTag(Buffer.from(payload.authTag, 'base64url'));
+  const authTag = Buffer.from(authTagB64, 'base64url');
+  if (authTag.length !== 16) {
+    throw new Error('Invalid encryption auth tag');
+  }
 
-  const plaintext = Buffer.concat([
-    decipher.update(Buffer.from(payload.ciphertext, 'base64url')),
-    decipher.final(),
-  ]);
+  const key = getKey();
+  const decipher = crypto.createDecipheriv(ALGO, key, iv);
+  decipher.setAuthTag(authTag);
 
-  return plaintext.toString('utf8');
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(bodyB64, 'base64url')), decipher.final()]);
+  return decrypted.toString('utf8');
 }

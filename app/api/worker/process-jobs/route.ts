@@ -3,8 +3,8 @@ export const dynamic = 'force-dynamic';
 
 import { claimQueuedJobs, markJobComplete, markJobFailed } from '@/utils/jobs';
 import { processAudioRequestedJob } from '@/utils/audioJob';
-import { processNotionSyncJob } from '@/utils/notionSyncJob';
 import { createAdminClient } from '@/utils/supabase/admin';
+import { processNotionSyncJob } from '@/utils/notionSyncJob';
 import { generateWeeklyBriefForUser } from '@/utils/weeklyBrief';
 import { NextResponse } from 'next/server';
 
@@ -39,6 +39,7 @@ async function processBriefingJobs(workerId: string): Promise<ProcessResult> {
     try {
       const userId = job.payload?.userId as string | undefined;
       if (!userId) throw new Error('Missing userId payload');
+
       await generateWeeklyBriefForUser(supabase, userId, true);
       await markJobComplete(supabase, job.id, workerId);
       processed += 1;
@@ -46,6 +47,7 @@ async function processBriefingJobs(workerId: string): Promise<ProcessResult> {
       const message = error instanceof Error ? error.message : 'Job failed';
       await markJobFailed(supabase, job, workerId, message);
       failed += 1;
+
       if (Number(job.attempts || 0) >= Number(job.max_attempts || 5)) {
         deadLettered += 1;
       }
@@ -61,7 +63,7 @@ async function processBriefingJobs(workerId: string): Promise<ProcessResult> {
   };
 }
 
-async function processNotionJobs(workerId: string): Promise<ProcessResult> {
+async function processNotionSyncJobs(workerId: string): Promise<ProcessResult> {
   const supabase = createAdminClient();
   const jobs = await claimQueuedJobs(supabase, 'notion.sync', workerId, 25, 240);
 
@@ -73,6 +75,7 @@ async function processNotionJobs(workerId: string): Promise<ProcessResult> {
     try {
       const userId = job.payload?.userId as string | undefined;
       if (!userId) throw new Error('Missing userId payload');
+
       await processNotionSyncJob(supabase, userId);
       await markJobComplete(supabase, job.id, workerId);
       processed += 1;
@@ -80,6 +83,7 @@ async function processNotionJobs(workerId: string): Promise<ProcessResult> {
       const message = error instanceof Error ? error.message : 'Job failed';
       await markJobFailed(supabase, job, workerId, message);
       failed += 1;
+
       if (Number(job.attempts || 0) >= Number(job.max_attempts || 5)) {
         deadLettered += 1;
       }
@@ -94,6 +98,7 @@ async function processNotionJobs(workerId: string): Promise<ProcessResult> {
     avgQueueLatencyMs: average(jobs.map((job) => Number(job.queue_latency_ms || 0))),
   };
 }
+
 
 async function processAudioJobs(workerId: string): Promise<ProcessResult> {
   const supabase = createAdminClient();
@@ -108,6 +113,7 @@ async function processAudioJobs(workerId: string): Promise<ProcessResult> {
       const userId = job.payload?.userId as string | undefined;
       const issueId = job.payload?.issueId as string | undefined;
       if (!userId || !issueId) throw new Error('Missing userId or issueId payload');
+
       await processAudioRequestedJob(supabase, userId, issueId);
       await markJobComplete(supabase, job.id, workerId);
       processed += 1;
@@ -115,6 +121,7 @@ async function processAudioJobs(workerId: string): Promise<ProcessResult> {
       const message = error instanceof Error ? error.message : 'Job failed';
       await markJobFailed(supabase, job, workerId, message);
       failed += 1;
+
       if (Number(job.attempts || 0) >= Number(job.max_attempts || 5)) {
         deadLettered += 1;
       }
@@ -135,12 +142,12 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
-  const workerId = `worker-${Math.random().toString(36).slice(2, 10)}`;
+  const workerId = crypto.randomUUID();
 
   const [briefing, audio, notion] = await Promise.all([
     processBriefingJobs(workerId),
     processAudioJobs(workerId),
-    processNotionJobs(workerId),
+    processNotionSyncJobs(workerId),
   ]);
 
   return NextResponse.json({

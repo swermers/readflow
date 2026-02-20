@@ -2,27 +2,21 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 export type JobType = 'briefing.generate' | 'audio.requested' | 'notion.sync';
 
-export type BackgroundJob = {
+type BackgroundJob = {
   id: string;
-  type: JobType;
-  payload: Record<string, unknown> | null;
   attempts: number | null;
   max_attempts: number | null;
-  queue_latency_ms?: number | null;
-  locked_by?: string | null;
-  lease_expires_at?: string | null;
+  payload: Record<string, unknown> | null;
+  queue_latency_ms: number | null;
+  worker_id: string | null;
+  lease_expires_at: string | null;
 };
 
-type EnqueueOptions = {
-  maxAttempts?: number;
-};
+const RETRY_DELAYS_SECONDS = [30, 120, 600, 1800] as const;
 
-const RETRY_BACKOFF_SECONDS = [30, 120, 600, 1800];
-
-function getBackoffSeconds(attempts: number) {
-  const safeAttempts = Math.max(1, attempts);
-  const idx = Math.min(safeAttempts - 1, RETRY_BACKOFF_SECONDS.length - 1);
-  return RETRY_BACKOFF_SECONDS[idx];
+function getRetryDelaySeconds(attempt: number) {
+  const index = Math.max(0, Math.min(attempt - 1, RETRY_DELAYS_SECONDS.length - 1));
+  return RETRY_DELAYS_SECONDS[index];
 }
 
 export async function enqueueJob(
@@ -30,40 +24,16 @@ export async function enqueueJob(
   type: JobType,
   payload: Record<string, unknown>,
   dedupeKey: string,
-  options: EnqueueOptions = {},
+  maxAttempts = 5,
 ) {
-  const { data, error } = await supabase.rpc('enqueue_background_job', {
+  const { error } = await supabase.rpc('enqueue_background_job', {
     p_type: type,
-    p_dedupe_key: dedupeKey,
     p_payload: payload,
-    p_max_attempts: options.maxAttempts ?? 5,
+    p_dedupe_key: dedupeKey,
+    p_max_attempts: maxAttempts,
   });
 
-  if (!error) return data;
-
-  // Backward-compatible fallback for environments before migration 022 is applied.
-  const { error: upsertError } = await supabase.from('background_jobs').upsert(
-    {
-      type,
-      payload,
-      dedupe_key: dedupeKey,
-      status: 'queued',
-      attempts: 0,
-      max_attempts: options.maxAttempts ?? 5,
-      retry_at: new Date().toISOString(),
-      last_error: null,
-      completed_at: null,
-      dead_lettered_at: null,
-      locked_by: null,
-      locked_at: null,
-      lease_expires_at: null,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'dedupe_key' },
-  );
-
-  if (upsertError) throw upsertError;
-  return null;
+  if (error) throw error;
 }
 
 export async function claimQueuedJobs(
@@ -71,98 +41,111 @@ export async function claimQueuedJobs(
   type: JobType,
   workerId: string,
   limit = 25,
-  leaseSeconds = 240,
+  leaseSeconds = 180,
 ): Promise<BackgroundJob[]> {
   const { data, error } = await supabase.rpc('claim_background_jobs', {
     p_type: type,
-    p_worker_id: workerId,
     p_limit: limit,
+    p_worker_id: workerId,
     p_lease_seconds: leaseSeconds,
   });
 
-  if (!error && Array.isArray(data)) {
-    const now = Date.now();
-    return data.map((job) => ({
-      ...job,
-      queue_latency_ms: now - new Date(job.created_at as string).getTime(),
-    })) as BackgroundJob[];
-  }
-
-  const { data: jobs, error: fallbackError } = await supabase
-    .from('background_jobs')
-    .select('id, type, payload, attempts, max_attempts, created_at')
-    .eq('type', type)
-    .eq('status', 'queued')
-    .order('created_at', { ascending: true })
-    .limit(limit);
-
-  if (fallbackError) throw fallbackError;
-  if (!jobs?.length) return [];
-
-  const ids = jobs.map((job) => job.id);
-  const { error: markError } = await supabase
-    .from('background_jobs')
-    .update({
-      status: 'processing',
-      locked_by: workerId,
-      locked_at: new Date().toISOString(),
-      lease_expires_at: new Date(Date.now() + leaseSeconds * 1000).toISOString(),
-      updated_at: new Date().toISOString(),
-    })
-    .in('id', ids)
-    .eq('status', 'queued');
-
-  if (markError) throw markError;
-
-  const now = Date.now();
-  return jobs.map((job) => ({
-    id: job.id,
-    type: job.type as JobType,
-    payload: (job.payload as Record<string, unknown>) || {},
-    attempts: Number(job.attempts || 0) + 1,
-    max_attempts: Number(job.max_attempts || 5),
-    queue_latency_ms: now - new Date(job.created_at as string).getTime(),
-    locked_by: workerId,
-  }));
+  if (error) throw error;
+  return (data || []) as BackgroundJob[];
 }
 
 export async function markJobComplete(supabase: SupabaseClient, id: string, workerId: string) {
+  const now = new Date().toISOString();
   const { error } = await supabase
     .from('background_jobs')
     .update({
       status: 'completed',
-      completed_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      completed_at: now,
+      worker_id: null,
+      leased_at: null,
       lease_expires_at: null,
+      dead_lettered_at: null,
+      dead_letter_reason: null,
+      updated_at: now,
     })
     .eq('id', id)
-    .eq('locked_by', workerId);
+    .eq('status', 'processing')
+    .eq('worker_id', workerId);
 
   if (error) throw error;
 }
 
-export async function markJobFailed(supabase: SupabaseClient, job: BackgroundJob, workerId: string, errorMessage: string) {
-  const attempts = Number(job.attempts || 1);
+export async function markJobFailed(
+  supabase: SupabaseClient,
+  job: Pick<BackgroundJob, 'id' | 'attempts' | 'max_attempts'>,
+  workerId: string,
+  errorMessage: string,
+) {
+  const attempts = Number(job.attempts || 0);
   const maxAttempts = Number(job.max_attempts || 5);
-  const isDeadLetter = attempts >= maxAttempts;
+  const reachedMaxAttempts = attempts >= maxAttempts;
+  const delaySeconds = reachedMaxAttempts ? 0 : getRetryDelaySeconds(attempts);
+  const now = new Date();
+  const nextAttemptAt = new Date(now.getTime() + delaySeconds * 1000).toISOString();
 
-  const patch = isDeadLetter
-    ? {
-        status: 'dead_letter',
-        dead_lettered_at: new Date().toISOString(),
-        retry_at: null,
-        lease_expires_at: null,
-        last_error: errorMessage.slice(0, 1000),
-        updated_at: new Date().toISOString(),
-      }
-    : {
-        status: 'failed',
-        retry_at: new Date(Date.now() + getBackoffSeconds(attempts) * 1000).toISOString(),
-        lease_expires_at: null,
-        last_error: errorMessage.slice(0, 1000),
-        updated_at: new Date().toISOString(),
-      };
+  const { error } = await supabase
+    .from('background_jobs')
+    .update({
+      status: reachedMaxAttempts ? 'dead_letter' : 'queued',
+      next_attempt_at: reachedMaxAttempts ? now.toISOString() : nextAttemptAt,
+      last_error: errorMessage.slice(0, 1000),
+      last_error_at: now.toISOString(),
+      dead_letter_reason: reachedMaxAttempts ? 'max_attempts_reached' : null,
+      dead_lettered_at: reachedMaxAttempts ? now.toISOString() : null,
+      worker_id: null,
+      leased_at: null,
+      lease_expires_at: null,
+      updated_at: now.toISOString(),
+    })
+    .eq('id', job.id)
+    .eq('status', 'processing')
+    .eq('worker_id', workerId);
 
-  const { error } = await supabase.from('background_jobs').update(patch).eq('id', job.id).eq('locked_by', workerId);
   if (error) throw error;
+}
+
+export async function replayDeadLetterJobs(
+  supabase: SupabaseClient,
+  type: JobType,
+  limit = 50,
+  reason = 'manual_replay',
+) {
+  const { data: candidates, error: selectError } = await supabase
+    .from('background_jobs')
+    .select('id')
+    .eq('type', type)
+    .eq('status', 'dead_letter')
+    .order('updated_at', { ascending: true })
+    .limit(limit);
+
+  if (selectError) throw selectError;
+  const ids = (candidates || []).map((job) => job.id);
+  if (!ids.length) return { replayed: 0, reason };
+
+  const now = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from('background_jobs')
+    .update({
+      status: 'queued',
+      attempts: 0,
+      next_attempt_at: now,
+      dead_letter_reason: null,
+      dead_lettered_at: null,
+      last_error: null,
+      last_error_at: null,
+      worker_id: null,
+      leased_at: null,
+      lease_expires_at: null,
+      updated_at: now,
+    })
+    .in('id', ids)
+    .eq('status', 'dead_letter');
+
+  if (updateError) throw updateError;
+  return { replayed: ids.length, reason };
 }
