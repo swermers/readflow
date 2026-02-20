@@ -13,6 +13,20 @@ function buildAudioHeaders(mimeType: string, byteLength: number) {
   };
 }
 
+
+async function getReadyAudio(issueId: string, userId: string) {
+  const supabase = await createClient();
+  const { data: cachedAudio } = await supabase
+    .from('issue_audio_cache')
+    .select('audio_base64, mime_type')
+    .eq('issue_id', issueId)
+    .eq('user_id', userId)
+    .eq('status', 'ready')
+    .maybeSingle();
+
+  return cachedAudio;
+}
+
 export async function GET(request: NextRequest) {
   const supabase = await createClient();
   const {
@@ -28,13 +42,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
   }
 
-  const { data: cachedAudio } = await supabase
-    .from('issue_audio_cache')
-    .select('audio_base64, mime_type')
-    .eq('issue_id', issueId)
-    .eq('user_id', user.id)
-    .eq('status', 'ready')
-    .maybeSingle();
+  const cachedAudio = await getReadyAudio(issueId, user.id);
 
   if (!cachedAudio?.audio_base64) {
     return NextResponse.json({ error: 'Audio not ready yet' }, { status: 404 });
@@ -88,5 +96,27 @@ export async function GET(request: NextRequest) {
       'content-length': String(chunk.byteLength),
       'content-range': `bytes ${start}-${end}/${totalLength}`,
     },
+  });
+}
+
+
+export async function HEAD(request: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return new NextResponse(null, { status: 401 });
+
+  const issueId = request.nextUrl.searchParams.get('issueId');
+  if (!issueId) return new NextResponse(null, { status: 400 });
+
+  const cachedAudio = await getReadyAudio(issueId, user.id);
+  if (!cachedAudio?.audio_base64) return new NextResponse(null, { status: 404 });
+
+  const audioBuffer = Buffer.from(cachedAudio.audio_base64, 'base64');
+  return new NextResponse(null, {
+    status: 200,
+    headers: buildAudioHeaders(cachedAudio.mime_type || 'audio/mpeg', audioBuffer.byteLength),
   });
 }

@@ -1,6 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Play } from 'lucide-react';
+import { useGlobalAudioPlayer } from '@/components/GlobalAudioPlayer';
 
 type Theme = {
   title: string;
@@ -69,6 +71,20 @@ function formatWeekRange(start?: string | null, end?: string | null) {
   return `${s.toLocaleDateString([], { month: 'short', day: 'numeric' })} – ${endExclusive.toLocaleDateString([], { month: 'short', day: 'numeric' })}`;
 }
 
+
+function buildPodcastChapters(themes: Theme[]) {
+  if (themes.length === 0) return [{ label: 'Intro', startRatio: 0 }];
+
+  const chapterCount = themes.length + 1;
+  return [
+    { label: 'Intro', startRatio: 0 },
+    ...themes.map((theme, index) => ({
+      label: theme.title,
+      startRatio: Math.min(0.95, (index + 1) / chapterCount),
+    })),
+  ];
+}
+
 export default function WeeklyBriefCard() {
   const [loading, setLoading] = useState(false);
   const [initializing, setInitializing] = useState(true);
@@ -86,6 +102,9 @@ export default function WeeklyBriefCard() {
   const [podcastError, setPodcastError] = useState<string | null>(null);
   const [podcastUpdatedAt, setPodcastUpdatedAt] = useState<string | null>(null);
   const [retryingPodcast, setRetryingPodcast] = useState(false);
+  const { playAudio, isCurrentUrl } = useGlobalAudioPlayer();
+
+  const podcastChapters = useMemo(() => buildPodcastChapters(themes), [themes]);
 
   const loadPodcast = useCallback(async (start: string, end: string) => {
     const params = new URLSearchParams({ weekStart: start, weekEnd: end });
@@ -326,7 +345,14 @@ export default function WeeklyBriefCard() {
             </p>
 
             {podcastSrc ? (
-              <audio controls className="mt-2 w-full" src={podcastSrc} />
+              <button
+                type="button"
+                onClick={() => void playAudio(podcastSrc, { title: 'Weekly podcast', chapters: podcastChapters })}
+                className="mt-2 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:text-accent"
+              >
+                <Play className="h-3.5 w-3.5" />
+                {isCurrentUrl(podcastSrc) ? 'Playing in mini player' : 'Play in mini player'}
+              </button>
             ) : (
               <p className="mt-1 text-xs text-ink-faint">
                 {podcastStatus === 'processing'
