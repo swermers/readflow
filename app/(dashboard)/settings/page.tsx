@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, Sparkles } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, Sparkles, CalendarClock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -13,6 +13,16 @@ interface GmailLabel {
   name: string;
   type: 'system' | 'user';
 }
+
+const WEEKDAY_OPTIONS = [
+  { value: 0, label: 'Sun' },
+  { value: 1, label: 'Mon' },
+  { value: 2, label: 'Tue' },
+  { value: 3, label: 'Wed' },
+  { value: 4, label: 'Thu' },
+  { value: 5, label: 'Fri' },
+  { value: 6, label: 'Sat' },
+];
 
 function SettingsContent() {
   const [email, setEmail] = useState('');
@@ -36,6 +46,10 @@ function SettingsContent() {
   const [unlimitedAiAccess, setUnlimitedAiAccess] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [redeemingCode, setRedeemingCode] = useState(false);
+  const [briefDeliveryDays, setBriefDeliveryDays] = useState<number[]>([1]);
+  const [briefDeliveryHour, setBriefDeliveryHour] = useState(9);
+  const [briefDeliveryTz, setBriefDeliveryTz] = useState('UTC');
+  const [savingBriefPrefs, setSavingBriefPrefs] = useState(false);
 
   const supabase = createClient();
   const router = useRouter();
@@ -74,6 +88,26 @@ function SettingsContent() {
         setBillingCycle((gmailProfile.billing_cycle || 'monthly') as 'monthly' | 'annual');
         setAiCreditsUsed(gmailProfile.ai_credits_used || 0);
         setUnlimitedAiAccess(Boolean(gmailProfile.unlimited_ai_access));
+      }
+
+      const { data: briefPrefs } = await supabase
+        .from('profiles')
+        .select('brief_delivery_days, brief_delivery_hour, brief_delivery_tz')
+        .eq('id', user.id)
+        .maybeSingle<{
+          brief_delivery_days: number[] | null;
+          brief_delivery_hour: number | null;
+          brief_delivery_tz: string | null;
+        }>();
+
+      if (briefPrefs) {
+        setBriefDeliveryDays(
+          Array.isArray(briefPrefs.brief_delivery_days) && briefPrefs.brief_delivery_days.length
+            ? briefPrefs.brief_delivery_days.map((day) => Number(day))
+            : [1],
+        );
+        setBriefDeliveryHour(Number.isFinite(Number(briefPrefs.brief_delivery_hour)) ? Number(briefPrefs.brief_delivery_hour) : 9);
+        setBriefDeliveryTz(briefPrefs.brief_delivery_tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
       }
     } else {
       const fullName = user.user_metadata?.full_name || '';
@@ -241,6 +275,50 @@ function SettingsContent() {
       triggerToast('Profile saved');
     }
     setSaving(false);
+  };
+
+  const toggleBriefDay = (day: number) => {
+    setBriefDeliveryDays((prev) => {
+      const next = prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day];
+      return next.length ? next.sort((a, b) => a - b) : [1];
+    });
+  };
+
+  const handleUseLocalTimezone = () => {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz) setBriefDeliveryTz(tz);
+  };
+
+  const handleSaveBriefPreferences = async () => {
+    setSavingBriefPrefs(true);
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      setSavingBriefPrefs(false);
+      return;
+    }
+
+    const hour = Math.max(0, Math.min(23, Math.floor(briefDeliveryHour || 0)));
+    const days = briefDeliveryDays.length ? briefDeliveryDays : [1];
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({
+        brief_delivery_days: days,
+        brief_delivery_hour: hour,
+        brief_delivery_tz: (briefDeliveryTz || 'UTC').trim(),
+      })
+      .eq('id', user.id);
+
+    if (error) {
+      triggerToast('Could not save brief schedule');
+    } else {
+      setBriefDeliveryHour(hour);
+      triggerToast('Brief schedule saved');
+    }
+
+    setSavingBriefPrefs(false);
   };
 
 
@@ -455,6 +533,82 @@ function SettingsContent() {
                 </button>
               </div>
             </div>
+          </div>
+        </section>
+
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
+          <div className="md:col-span-4">
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <CalendarClock className="w-5 h-5 text-ink-faint" />
+              Brief Schedule
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">
+              Choose delivery days and time for your elite weekly brief package (high-signal reads + synthesis).
+            </p>
+          </div>
+          <div className="md:col-span-8 bg-surface-raised border border-line p-6 space-y-6">
+            <div>
+              <p className="text-label uppercase text-ink-faint mb-3">Delivery Days</p>
+              <div className="grid grid-cols-4 md:grid-cols-7 gap-2">
+                {WEEKDAY_OPTIONS.map((day) => {
+                  const active = briefDeliveryDays.includes(day.value);
+                  return (
+                    <button
+                      key={day.value}
+                      onClick={() => toggleBriefDay(day.value)}
+                      className={`px-3 py-2 border text-sm transition-colors ${
+                        active
+                          ? 'bg-ink text-surface border-ink'
+                          : 'bg-surface border-line text-ink hover:border-line-strong'
+                      }`}
+                    >
+                      {day.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-2">
+                <label className="text-label uppercase text-ink-faint">Delivery Hour (0-23)</label>
+                <input
+                  type="number"
+                  min={0}
+                  max={23}
+                  value={briefDeliveryHour}
+                  onChange={(e) => setBriefDeliveryHour(Number(e.target.value))}
+                  className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-label uppercase text-ink-faint">Timezone</label>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={briefDeliveryTz}
+                    onChange={(e) => setBriefDeliveryTz(e.target.value)}
+                    placeholder="e.g., America/New_York"
+                    className="flex-1 border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+                  />
+                  <button
+                    onClick={handleUseLocalTimezone}
+                    className="px-3 py-2 border border-line text-label uppercase text-ink hover:border-line-strong"
+                  >
+                    Use Local
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <button
+              onClick={handleSaveBriefPreferences}
+              disabled={savingBriefPrefs}
+              className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              {savingBriefPrefs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+              Save Brief Schedule
+            </button>
           </div>
         </section>
 

@@ -6,7 +6,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
 import { enqueueJob } from '@/utils/jobs';
 import { createAdminClient } from '@/utils/supabase/admin';
-import { processAudioRequestedJob } from '@/utils/audioJob';
 
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
 
@@ -186,35 +185,19 @@ export async function POST(request: NextRequest) {
     { onConflict: 'issue_id,user_id' },
   );
 
-  try {
-    await processAudioRequestedJob(supabase, user.id, issueId);
+  await enqueueAudioJob(user.id, issueId);
 
-    return NextResponse.json(
-      {
-        status: 'ready' as AudioStatus,
-        audioUrl: `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}`,
-        planTier: entitlement.tier,
-        tokensRemaining: Math.max(0, entitlement.available - entitlement.required),
-        tokensLimit: entitlement.limit,
-        unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
-      },
-      { status: 200 },
-    );
-  } catch (error) {
-    await supabase.from('issue_audio_cache').upsert(
-      {
-        issue_id: issueId,
-        user_id: user.id,
-        status: 'failed',
-        provider: 'openai',
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'issue_id,user_id' },
-    );
-
-    const message = error instanceof Error ? error.message : 'Could not generate audio right now.';
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
+  return NextResponse.json(
+    {
+      status: 'queued' as AudioStatus,
+      audioUrl: null,
+      planTier: entitlement.tier,
+      tokensRemaining: entitlement.available,
+      tokensLimit: entitlement.limit,
+      unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
+    },
+    { status: 202 },
+  );
 }
 
 export async function DELETE(request: NextRequest) {

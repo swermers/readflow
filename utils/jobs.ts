@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export type JobType = 'briefing.generate' | 'audio.requested' | 'notion.sync';
+export type JobType = 'briefing.generate' | 'audio.requested' | 'notion.sync' | 'podcast.weekly';
 
 export type BackgroundJob = {
   id: string;
