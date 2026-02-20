@@ -6,10 +6,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
 import { enqueueJob } from '@/utils/jobs';
 import { createAdminClient } from '@/utils/supabase/admin';
+import { processAudioRequestedJob } from '@/utils/audioJob';
 
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
 
 type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'canceled';
+type UserSupabase = Awaited<ReturnType<typeof createClient>>;
 
 function stripHtml(html: string) {
   return html
@@ -29,7 +31,7 @@ async function requireUser() {
   return { supabase, user };
 }
 
-async function getUserIssue(supabase: Awaited<ReturnType<typeof createClient>>, issueId: string, userId: string) {
+async function getUserIssue(supabase: UserSupabase, issueId: string, userId: string) {
   const { data: issue, error } = await supabase
     .from('issues')
     .select('id, subject, body_text, body_html')
@@ -42,7 +44,7 @@ async function getUserIssue(supabase: Awaited<ReturnType<typeof createClient>>, 
   return issue;
 }
 
-async function getCachedAudio(supabase: Awaited<ReturnType<typeof createClient>>, issueId: string, userId: string) {
+async function getCachedAudio(supabase: UserSupabase, issueId: string, userId: string) {
   const { data: cachedAudio } = await supabase
     .from('issue_audio_cache')
     .select('audio_base64, mime_type, status, updated_at')
@@ -61,9 +63,61 @@ function shouldRequeue(status: string | null | undefined, updatedAt: string | nu
   return Number.isFinite(ageMs) && ageMs > STALE_PROCESSING_MS;
 }
 
-async function enqueueAudioJob(userId: string, issueId: string) {
-  const admin = createAdminClient();
-  await enqueueJob(admin, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`, { maxAttempts: 5 });
+
+type AudioAttempt = { ok: true } | { ok: false; reason: string };
+
+function toErrorReason(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  return 'Unknown audio processing error';
+}
+
+function buildAudioHints(reason: string) {
+  const lower = reason.toLowerCase();
+  const hints: string[] = [];
+
+  if (lower.includes('openai_api_key')) {
+    hints.push('OPENAI_API_KEY is missing in deployment environment variables.');
+  }
+  if (lower.includes('supabase admin env configuration')) {
+    hints.push('NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.');
+  }
+  if (lower.includes('insufficient credits')) {
+    hints.push('Your account ran out of AI credits/tokens for listen generation.');
+  }
+
+  if (!hints.length) {
+    hints.push('Check server logs for /api/ai/listen and worker/audio job errors.');
+  }
+
+  return hints;
+}
+
+function getAdminOrUserClient(userSupabase: UserSupabase) {
+  try {
+    return createAdminClient();
+  } catch {
+    return userSupabase;
+  }
+}
+
+async function processAudioInline(supabase: UserSupabase, userId: string, issueId: string): Promise<AudioAttempt> {
+  try {
+    const client = getAdminOrUserClient(supabase);
+    await processAudioRequestedJob(client, userId, issueId);
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: toErrorReason(error) };
+  }
+}
+
+async function enqueueAudioJob(supabase: UserSupabase, userId: string, issueId: string): Promise<AudioAttempt> {
+  try {
+    const client = getAdminOrUserClient(supabase);
+    await enqueueJob(client, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`, { maxAttempts: 5 });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: toErrorReason(error) };
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -83,7 +137,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
   }
 
-  const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
+  let cachedAudio = await getCachedAudio(supabase, issueId, user.id);
+
+  if (!process.env.WORKER_SECRET && ['queued', 'processing'].includes(cachedAudio?.status || '')) {
+    const processed = await processAudioInline(supabase, user.id, issueId);
+    if (!processed.ok) {
+      await supabase.from('issue_audio_cache').upsert(
+        {
+          issue_id: issueId,
+          user_id: user.id,
+          status: 'failed',
+          provider: 'openai',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'issue_id,user_id' },
+      );
+    }
+    cachedAudio = await getCachedAudio(supabase, issueId, user.id);
+  }
+
   const isReady = Boolean(cachedAudio?.audio_base64 && cachedAudio?.status === 'ready');
 
   if (shouldRequeue(cachedAudio?.status, cachedAudio?.updated_at)) {
@@ -97,7 +169,19 @@ export async function GET(request: NextRequest) {
       },
       { onConflict: 'issue_id,user_id' },
     );
-    await enqueueAudioJob(user.id, issueId);
+    const queued = await enqueueAudioJob(supabase, user.id, issueId);
+    if (!queued.ok) {
+      await supabase.from('issue_audio_cache').upsert(
+        {
+          issue_id: issueId,
+          user_id: user.id,
+          status: 'failed',
+          provider: 'openai',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'issue_id,user_id' },
+      );
+    }
   }
 
   return NextResponse.json(
@@ -185,7 +269,66 @@ export async function POST(request: NextRequest) {
     { onConflict: 'issue_id,user_id' },
   );
 
-  await enqueueAudioJob(user.id, issueId);
+  if (!process.env.WORKER_SECRET) {
+    const processed = await processAudioInline(supabase, user.id, issueId);
+    const latest = await getCachedAudio(supabase, issueId, user.id);
+    if (processed.ok && latest?.audio_base64 && latest.status === 'ready') {
+      return NextResponse.json(
+        {
+          status: 'ready' as AudioStatus,
+          audioUrl: `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}`,
+          planTier: entitlement.tier,
+          tokensRemaining: entitlement.available,
+          tokensLimit: entitlement.limit,
+          unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
+        },
+        { status: 200 },
+      );
+    }
+
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: user.id,
+        status: 'failed',
+        provider: 'openai',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' },
+    );
+
+    return NextResponse.json(
+      {
+        error: `Audio generation failed: ${processed.ok ? 'unknown' : processed.reason}`,
+        hints: buildAudioHints(processed.ok ? 'unknown' : processed.reason),
+        status: 'failed' as AudioStatus,
+      },
+      { status: 503 },
+    );
+  }
+
+  const queued = await enqueueAudioJob(supabase, user.id, issueId);
+  if (!queued.ok) {
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: user.id,
+        status: 'failed',
+        provider: 'openai',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' },
+    );
+
+    return NextResponse.json(
+      {
+        error: `Audio queue unavailable: ${queued.reason}`,
+        hints: buildAudioHints(queued.reason),
+        status: 'failed' as AudioStatus,
+      },
+      { status: 503 },
+    );
+  }
 
   return NextResponse.json(
     {

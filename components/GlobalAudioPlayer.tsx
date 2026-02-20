@@ -99,51 +99,48 @@ export function GlobalAudioPlayerProvider({ children }: { children: React.ReactN
     <GlobalAudioPlayerContext.Provider value={value}>
       {children}
 
-      <div className="fixed bottom-24 left-3 right-3 z-40 md:bottom-4 md:left-auto md:right-4 md:w-[420px]">
-        <div className="rounded-xl border border-line bg-surface-raised p-3 shadow-lg">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">{currentUrl ? title : 'Audio Player'}</p>
-            {currentUrl && (
+      {currentUrl && (
+        <div className="fixed bottom-24 left-3 right-3 z-40 md:bottom-4 md:left-auto md:right-4 md:w-[420px]">
+          <div className="rounded-xl border border-line bg-surface-raised p-3 shadow-lg">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="truncate text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">{title}</p>
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={isPlaying ? pause : () => {
-                    void audioRef.current?.play();
-                  }}
-                  className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
-                >
-                  {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={clear}
-                  className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
-                >
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            )}
-          </div>
-
-          {currentUrl && (
-            <div className="mb-2">
-              <input
-                type="range"
-                min={0}
-                max={duration || 0}
-                step={0.1}
-                value={Math.min(currentTime, duration || 0)}
-                onChange={(event) => seek(Number(event.target.value))}
-                className="w-full"
-              />
-              <div className="mt-1 flex items-center justify-between text-[10px] text-ink-faint">
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
+              <button
+                type="button"
+                onClick={isPlaying ? pause : () => {
+                  void audioRef.current?.play();
+                }}
+                className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
+              >
+                {isPlaying ? <Pause className="h-3.5 w-3.5" /> : <Play className="h-3.5 w-3.5" />}
+              </button>
+              <button
+                type="button"
+                onClick={clear}
+                className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
               </div>
             </div>
-          )}
 
-          {currentUrl && chapters.length > 1 && (
+            <div className="mb-2">
+            <input
+              type="range"
+              min={0}
+              max={duration || 0}
+              step={0.1}
+              value={Math.min(currentTime, duration || 0)}
+              onChange={(event) => seek(Number(event.target.value))}
+              className="w-full"
+            />
+            <div className="mt-1 flex items-center justify-between text-[10px] text-ink-faint">
+              <span>{formatTime(currentTime)}</span>
+              <span>{formatTime(duration)}</span>
+            </div>
+          </div>
+
+          {chapters.length > 1 && (
             <div className="mb-2 flex gap-1 overflow-x-auto pb-1 thin-scrollbar">
               {chapters.map((chapter) => (
                 <button
@@ -157,21 +154,22 @@ export function GlobalAudioPlayerProvider({ children }: { children: React.ReactN
               ))}
             </div>
           )}
-
-          <audio
-            ref={audioRef}
-            controls
-            preload="auto"
-            className="w-full"
-            onPlay={() => setIsPlaying(true)}
-            onPause={() => setIsPlaying(false)}
-            onEnded={() => setIsPlaying(false)}
-            onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
-            onDurationChange={() => setDuration(audioRef.current?.duration || 0)}
-            onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
-          />
         </div>
-      </div>
+        </div>
+      )}
+
+      <audio
+        ref={audioRef}
+        controls
+        preload="auto"
+        className="hidden"
+        onPlay={() => setIsPlaying(true)}
+        onPause={() => setIsPlaying(false)}
+        onEnded={() => setIsPlaying(false)}
+        onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
+        onDurationChange={() => setDuration(audioRef.current?.duration || 0)}
+        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
+      />
     </GlobalAudioPlayerContext.Provider>
   );
 }

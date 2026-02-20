@@ -35,9 +35,46 @@ type AudioChapter = {
   startRatio: number;
 };
 
+function formatDuration(seconds: number) {
+  const safe = Math.max(0, Math.floor(seconds));
+  const mins = Math.floor(safe / 60);
+  const secs = safe % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+function estimateAudioWaitSeconds(articleText?: string) {
+  const words = (articleText || '').trim().split(/\s+/).filter(Boolean).length;
+  const narrationSeconds = words > 0 ? Math.round((words / 165) * 60) : 45;
+  const generationOverhead = 20;
+  return Math.max(25, Math.min(360, Math.round(narrationSeconds * 0.35) + generationOverhead));
+}
+
 function buildAudioChapters(articleText?: string, articleSubject?: string): AudioChapter[] {
   if (!articleText?.trim()) {
     return [{ label: articleSubject || 'Start', startRatio: 0 }];
+  }
+
+  const lines = articleText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  const headingRegex = /^(#{1,6}\s+|\d+\.\s+|[-*]\s+)?([A-Z][^.!?]{3,90})$/;
+  const headingCandidates = lines
+    .map((line, index) => ({ line, index }))
+    .filter(({ line }) => {
+      const normalized = line.replace(/^#{1,6}\s+/, '').trim();
+      const isMarkdownHeader = /^#{1,6}\s+/.test(line);
+      const looksLikeSection = /:\s*$/.test(normalized) || headingRegex.test(normalized);
+      return normalized.length >= 4 && normalized.length <= 90 && (isMarkdownHeader || looksLikeSection);
+    });
+
+  if (headingCandidates.length > 1) {
+    const maxIndex = Math.max(lines.length - 1, 1);
+    return headingCandidates.slice(0, 8).map(({ line, index }, idx) => ({
+      label: line.replace(/^#{1,6}\s+/, '').replace(/:\s*$/, '').trim(),
+      startRatio: idx === 0 ? 0 : Math.min(0.98, index / maxIndex),
+    }));
   }
 
   const paragraphs = articleText
@@ -81,11 +118,15 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
   const [audioError, setAudioError] = useState<string | null>(null);
   const [audioHints, setAudioHints] = useState<string[]>([]);
   const [audioLoading, setAudioLoading] = useState(false);
+  const [audioQueuedAt, setAudioQueuedAt] = useState<number | null>(null);
+  const [audioUpdatedAt, setAudioUpdatedAt] = useState<string | null>(null);
+  const [nowTick, setNowTick] = useState(Date.now());
 
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
   const { playAudio, isCurrentUrl } = useGlobalAudioPlayer();
 
   const audioChapters = useMemo(() => buildAudioChapters(articleText, articleSubject), [articleText, articleSubject]);
+  const estimatedWaitSeconds = useMemo(() => estimateAudioWaitSeconds(articleText), [articleText]);
 
   const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
     try {
@@ -115,14 +156,23 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
           status?: AudioStatus;
           audioAvailable?: boolean;
           audioUrl?: string | null;
+          updatedAt?: string | null;
         };
 
         if (cancelled) return;
 
-        setAudioStatus(payload.status || 'missing');
+        const nextStatus = payload.status || 'missing';
+        setAudioStatus(nextStatus);
+        setAudioUpdatedAt(payload.updatedAt || null);
+
+        if ((nextStatus === 'queued' || nextStatus === 'processing') && payload.updatedAt) {
+          setAudioQueuedAt(new Date(payload.updatedAt).getTime());
+        }
+
         if (payload.audioAvailable && payload.audioUrl) {
           setAudioUrl(payload.audioUrl);
-          if ((payload.status || 'missing') === 'ready') {
+          if (nextStatus === 'ready') {
+            setAudioQueuedAt(null);
             void trackEvent('listen_completed');
           }
         }
@@ -143,6 +193,12 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       clearInterval(interval);
     };
   }, [audioStatus, issueId]);
+
+  useEffect(() => {
+    if (audioStatus !== 'queued' && audioStatus !== 'processing') return;
+    const interval = setInterval(() => setNowTick(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, [audioStatus]);
 
   const generate = async () => {
     if (data) return;
@@ -201,6 +257,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
     setAudioLoading(true);
     setAudioError(null);
+    setAudioQueuedAt(Date.now());
     setAudioHints([]);
 
     try {
@@ -235,10 +292,17 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         creditsLimit?: number;
         planTier?: string;
         unlimitedAiAccess?: boolean;
+        updatedAt?: string | null;
       } | null;
 
       if (body?.audioUrl) setAudioUrl(body.audioUrl);
-      setAudioStatus(body?.status || 'queued');
+      const nextStatus = body?.status || 'queued';
+      setAudioStatus(nextStatus);
+      if (body?.updatedAt) setAudioUpdatedAt(body.updatedAt);
+      if (nextStatus === 'queued' || nextStatus === 'processing') {
+        setAudioQueuedAt((prev) => prev || Date.now());
+      }
+      if (nextStatus === 'ready') setAudioQueuedAt(null);
       if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
         setCreditsMeta({
           remaining: body.creditsRemaining,
@@ -270,12 +334,17 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
       const body = (await res.json().catch(() => null)) as { status?: AudioStatus } | null;
       setAudioStatus(body?.status || 'canceled');
+      setAudioQueuedAt(null);
     } catch {
       setAudioError('Could not cancel generation right now.');
     } finally {
       setAudioLoading(false);
     }
   };
+
+  const queueStartMs = audioUpdatedAt ? new Date(audioUpdatedAt).getTime() : audioQueuedAt;
+  const elapsedSeconds = queueStartMs ? Math.max(0, Math.floor((nowTick - queueStartMs) / 1000)) : 0;
+  const remainingSeconds = Math.max(0, estimatedWaitSeconds - elapsedSeconds);
 
   return (
     <section className="mb-8 rounded-2xl border border-line bg-surface-raised p-4">
@@ -321,7 +390,11 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
       {(audioStatus === 'queued' || audioStatus === 'processing') && !audioError && (
         <div className="mt-3 flex items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2">
-          <p className="text-xs text-ink-faint">Preparing narration… we&apos;ll auto-refresh until it&apos;s ready.</p>
+          <p className="text-xs text-ink-faint">
+            Preparing narration… {elapsedSeconds > 0 ? `elapsed ${formatDuration(elapsedSeconds)}` : 'starting now'}
+            {` · est. ${formatDuration(estimatedWaitSeconds)}`}
+            {remainingSeconds > 0 ? ` · about ${formatDuration(remainingSeconds)} left` : ' · almost ready'}
+          </p>
           <button
             type="button"
             onClick={cancelListenAudio}
