@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Headphones, List, Play, X } from 'lucide-react';
 import { useGlobalAudioPlayer } from '@/components/GlobalAudioPlayer';
+import { triggerToast } from '@/components/Toast';
 
 type Props = {
   issueId: string;
@@ -128,6 +129,12 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
   const audioChapters = useMemo(() => buildAudioChapters(articleText, articleSubject), [articleText, articleSubject]);
   const estimatedWaitSeconds = useMemo(() => estimateAudioWaitSeconds(articleText), [articleText]);
+  const readyToastShownRef = useRef(false);
+
+
+  useEffect(() => {
+    readyToastShownRef.current = false;
+  }, [issueId]);
 
   const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
     try {
@@ -176,9 +183,14 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         if (payload.audioAvailable && payload.audioUrl) {
           setAudioUrl(payload.audioUrl);
           setPreviewAudioUrl(null);
+      readyToastShownRef.current = false;
           if (nextStatus === 'ready') {
             setAudioQueuedAt(null);
             void trackEvent('listen_completed');
+            if (!readyToastShownRef.current) {
+              triggerToast('Narration is ready — tap play to listen.');
+              readyToastShownRef.current = true;
+            }
           }
         }
       } catch {
@@ -224,6 +236,11 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         if (payload.audioUrl) {
           setAudioUrl(payload.audioUrl);
           setPreviewAudioUrl(null);
+      readyToastShownRef.current = false;
+          if (!readyToastShownRef.current) {
+            triggerToast('Narration is ready — tap play to listen.');
+            readyToastShownRef.current = true;
+          }
         }
       } catch {
         // no-op
@@ -294,6 +311,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     setAudioError(null);
     setAudioQueuedAt(Date.now());
     setAudioHints([]);
+    readyToastShownRef.current = false;
 
     try {
       void trackEvent('listen_started');
@@ -317,6 +335,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
           });
         }
         setAudioStatus('failed');
+        readyToastShownRef.current = false;
         return;
       }
 
@@ -335,9 +354,11 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       if (body?.audioUrl) {
         setAudioUrl(body.audioUrl);
         setPreviewAudioUrl(null);
+      readyToastShownRef.current = false;
       }
       const nextStatus = body?.status || 'queued';
       setAudioStatus(nextStatus);
+      if (nextStatus !== 'ready') readyToastShownRef.current = false;
       if (body?.updatedAt) setAudioUpdatedAt(body.updatedAt);
       if (nextStatus === 'queued' || nextStatus === 'processing') {
         setAudioQueuedAt((prev) => prev || Date.now());
@@ -376,6 +397,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       setAudioStatus(body?.status || 'canceled');
       setAudioQueuedAt(null);
       setPreviewAudioUrl(null);
+      readyToastShownRef.current = false;
     } catch {
       setAudioError('Could not cancel generation right now.');
     } finally {
