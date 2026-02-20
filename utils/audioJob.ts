@@ -1,7 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { consumeTokensAtomic } from '@/utils/aiEntitlements';
 
-const MAX_INPUT_CHARS = 12000;
+const MAX_INPUT_CHARS = 3500;
 
 function stripHtml(html: string) {
   return html
@@ -47,6 +47,40 @@ function truncateAtSignoff(text: string) {
   return text;
 }
 
+async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: string, voice: string, preferredModel: string) {
+  const models = Array.from(new Set([preferredModel, 'gpt-4o-mini-tts', 'tts-1']));
+
+  let lastStatus = 0;
+  let lastError = '';
+  for (const model of models) {
+    const res = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${openaiApiKey}`,
+      },
+      body: JSON.stringify({ model, input, voice, response_format: 'mp3' }),
+    });
+
+    if (res.ok) {
+      const audioBuffer = await res.arrayBuffer();
+      return { ok: true as const, model, audioBuffer };
+    }
+
+    lastStatus = res.status;
+    const errorBody = await res.text().catch(() => '');
+    lastError = errorBody.slice(0, 400);
+
+    // If input is still too long even after truncation, don't retry other models.
+    if (res.status === 400 && /input|length|too\s+long|maximum/i.test(errorBody)) {
+      break;
+    }
+  }
+
+  return { ok: false as const, status: lastStatus, reason: lastError };
+}
+
+
 async function setAudioStatus(supabase: SupabaseClient, userId: string, issueId: string, status: string, model?: string) {
   await supabase.from('issue_audio_cache').upsert(
     {
@@ -84,22 +118,14 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   const contentWithoutSignoff = truncateAtSignoff(articleText);
   const speechText = sanitizeForSpeech(contentWithoutSignoff || articleText);
   const input = `${issue.subject || 'Newsletter article'}\n\n${speechText.slice(0, MAX_INPUT_CHARS)}`;
-  const model = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
+  const preferredModel = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
   const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
   const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
 
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${openaiApiKey}`,
-    },
-    body: JSON.stringify({ model, input, voice, response_format: 'mp3' }),
-  });
-
-  if (!res.ok) {
-    await setAudioStatus(supabase, userId, issueId, 'failed', model);
-    throw new Error(`Audio provider failed: ${res.status}`);
+  const tts = await requestTtsAudio(endpoint, openaiApiKey, input, voice, preferredModel);
+  if (!tts.ok) {
+    await setAudioStatus(supabase, userId, issueId, 'failed', preferredModel);
+    throw new Error(`Audio provider failed: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`);
   }
 
   const { data: latest } = await supabase
@@ -117,7 +143,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   if (!chargedAt || chargedCredits < 10) {
     const consumeResult = await consumeTokensAtomic(supabase, userId, 10);
     if (!consumeResult.allowed) {
-      await setAudioStatus(supabase, userId, issueId, 'failed', model);
+      await setAudioStatus(supabase, userId, issueId, 'failed', tts.model);
       throw new Error('Insufficient credits');
     }
 
@@ -125,8 +151,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     chargedAt = new Date().toISOString();
   }
 
-  const audioBuffer = await res.arrayBuffer();
-  const audioBase64 = Buffer.from(audioBuffer).toString('base64');
+  const audioBase64 = Buffer.from(tts.audioBuffer).toString('base64');
 
   await supabase.from('issue_audio_cache').upsert(
     {
@@ -136,7 +161,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       mime_type: 'audio/mpeg',
       audio_base64: audioBase64,
       provider: 'openai',
-      model,
+      model: tts.model,
       credits_charged: chargedCredits,
       credits_charged_at: chargedAt,
       updated_at: new Date().toISOString(),
