@@ -17,8 +17,6 @@ type NotionOauthResponse = {
   access_token?: string;
   workspace_id?: string;
   workspace_name?: string;
-  workspace_icon?: string;
-  bot_id?: string;
   error?: string;
   message?: string;
 };
@@ -33,13 +31,18 @@ function decodeState(value: string): OAuthStatePayload | null {
   }
 }
 
+function redirectWithError(appUrl: string, code: string) {
+  return NextResponse.redirect(`${appUrl}/settings?notion=error&notion_error=${encodeURIComponent(code)}`);
+}
+
 export async function GET(request: NextRequest) {
   const appUrl = process.env.NEXT_PUBLIC_APP_URL;
   const clientId = process.env.NOTION_CLIENT_ID;
   const clientSecret = process.env.NOTION_CLIENT_SECRET;
 
   if (!appUrl || !clientId || !clientSecret) {
-    return NextResponse.redirect(`${appUrl || ''}/settings?notion=error&notion_error=oauth_config_missing`);
+    console.error('[notion-oauth/callback] missing oauth env config');
+    return redirectWithError(appUrl || '', 'oauth_config_missing');
   }
 
   const { searchParams } = new URL(request.url);
@@ -59,7 +62,8 @@ export async function GET(request: NextRequest) {
     !decodedCookie ||
     decodedState.nonce !== decodedCookie.nonce
   ) {
-    const invalidStateResponse = NextResponse.redirect(`${appUrl}/settings?notion=error&notion_error=invalid_state`);
+    console.warn('[notion-oauth/callback] invalid oauth state validation');
+    const invalidStateResponse = redirectWithError(appUrl, 'invalid_state');
     invalidStateResponse.cookies.delete('notion_oauth_state');
     return invalidStateResponse;
   }
@@ -70,14 +74,16 @@ export async function GET(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   if (!user || decodedState.userId !== user.id) {
-    const unauthorizedResponse = NextResponse.redirect(`${appUrl}/settings?notion=error&notion_error=unauthorized`);
+    console.warn('[notion-oauth/callback] user mismatch on callback');
+    const unauthorizedResponse = redirectWithError(appUrl, 'unauthorized');
     unauthorizedResponse.cookies.delete('notion_oauth_state');
     return unauthorizedResponse;
   }
 
   const entitlement = await checkEntitlement(supabase, user.id, 'notion_sync');
   if (!entitlement.allowed) {
-    const blockedResponse = NextResponse.redirect(`${appUrl}/settings?notion=error&notion_error=elite_required`);
+    console.warn('[notion-oauth/callback] entitlement denied', { userId: user.id });
+    const blockedResponse = redirectWithError(appUrl, 'elite_required');
     blockedResponse.cookies.delete('notion_oauth_state');
     return blockedResponse;
   }
@@ -99,35 +105,46 @@ export async function GET(request: NextRequest) {
 
   if (!tokenRes.ok || !tokenJson?.access_token) {
     const message = tokenJson?.message || tokenJson?.error || 'oauth_exchange_failed';
-    const failureResponse = NextResponse.redirect(`${appUrl}/settings?notion=error&notion_error=${encodeURIComponent(message)}`);
+    console.error('[notion-oauth/callback] token exchange failed', {
+      status: tokenRes.status,
+      message,
+    });
+    const failureResponse = redirectWithError(appUrl, message);
     failureResponse.cookies.delete('notion_oauth_state');
     return failureResponse;
   }
 
-  const admin = createAdminClient();
-  const { error: updateError } = await admin
-    .from('profiles')
-    .update({
-      notion_connected: true,
-      notion_workspace_id: tokenJson.workspace_id || null,
-      notion_workspace_name: tokenJson.workspace_name || null,
-      notion_workspace_icon: tokenJson.workspace_icon || null,
-      notion_bot_id: tokenJson.bot_id || null,
-      notion_access_token_encrypted: encryptNotionToken(tokenJson.access_token),
-      notion_sync_status: 'queued',
-      notion_last_sync_error: null,
-    })
-    .eq('id', user.id);
+  try {
+    const admin = createAdminClient();
+    const { error: updateError } = await admin
+      .from('profiles')
+      .update({
+        notion_access_token_encrypted: encryptNotionToken(tokenJson.access_token),
+        notion_workspace_id: tokenJson.workspace_id || null,
+        notion_workspace_name: tokenJson.workspace_name || null,
+        notion_connected_at: new Date().toISOString(),
+        notion_sync_status: 'queued',
+        notion_last_error: null,
+        notion_last_sync_at: null,
+      })
+      .eq('id', user.id);
 
-  if (updateError) {
-    const dbFailureResponse = NextResponse.redirect(`${appUrl}/settings?notion=error&notion_error=profile_update_failed`);
-    dbFailureResponse.cookies.delete('notion_oauth_state');
-    return dbFailureResponse;
+    if (updateError) {
+      console.error('[notion-oauth/callback] profile update failed', updateError);
+      const dbFailureResponse = redirectWithError(appUrl, 'profile_update_failed');
+      dbFailureResponse.cookies.delete('notion_oauth_state');
+      return dbFailureResponse;
+    }
+
+    await enqueueJob(admin, 'notion.sync', { userId: user.id, reason: 'oauth_connected' }, `notion-sync:${user.id}`);
+
+    const successResponse = NextResponse.redirect(`${appUrl}/settings?notion=connected`);
+    successResponse.cookies.delete('notion_oauth_state');
+    return successResponse;
+  } catch (error) {
+    console.error('[notion-oauth/callback] unexpected callback error', error);
+    const unexpectedFailureResponse = redirectWithError(appUrl, 'unexpected_error');
+    unexpectedFailureResponse.cookies.delete('notion_oauth_state');
+    return unexpectedFailureResponse;
   }
-
-  await enqueueJob(admin, 'notion.sync', { userId: user.id, reason: 'oauth_connected' }, `notion-sync:${user.id}`);
-
-  const successResponse = NextResponse.redirect(`${appUrl}/settings?notion=connected`);
-  successResponse.cookies.delete('notion_oauth_state');
-  return successResponse;
 }
