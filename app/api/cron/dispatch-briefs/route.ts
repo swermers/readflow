@@ -97,6 +97,14 @@ export async function GET(request: Request) {
       { maxAttempts: 4 },
     );
 
+    await enqueueJob(
+      supabase,
+      'podcast.weekly',
+      { userId: profile.id, weekStartDate, weekEndDate, deliveryKey },
+      `podcast:${profile.id}:${deliveryKey}`,
+      { maxAttempts: 4 },
+    );
+
     await supabase
       .from('profiles')
       .update({ brief_last_enqueued_for_date: decision.localDate })

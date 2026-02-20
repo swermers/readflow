@@ -44,6 +44,15 @@ type WeeklyGetResponse = {
   unlimitedAiAccess?: boolean;
 };
 
+type PodcastResponse = {
+  podcast?: {
+    status?: string;
+    mimeType?: string | null;
+    audioBase64?: string | null;
+    createdAt?: string;
+  } | null;
+};
+
 function formatWeekRange(start?: string | null, end?: string | null) {
   if (!start || !end) return null;
   const s = new Date(`${start}T00:00:00.000Z`);
@@ -65,6 +74,8 @@ export default function WeeklyBriefCard() {
   const [nextEligibleAt, setNextEligibleAt] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
+  const [podcastStatus, setPodcastStatus] = useState<string | null>(null);
+  const [podcastSrc, setPodcastSrc] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,7 +105,7 @@ export default function WeeklyBriefCard() {
         if (body.creditBlockedReason) {
           setError(body.creditBlockedReason);
         } else if (body.tooFewIssues) {
-          setError('Not enough issues in the previous week yet. We will auto-generate when there is enough content.');
+          setError('Not enough issues in your current schedule window yet. We will auto-generate when there is enough content.');
         }
       } catch {
         // best effort
@@ -108,6 +119,31 @@ export default function WeeklyBriefCard() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!weekStart || !weekEnd) return;
+    let cancelled = false;
+
+    const loadPodcast = async () => {
+      const params = new URLSearchParams({ weekStart, weekEnd });
+      const res = await fetch(`/api/ai/weekly-podcast?${params.toString()}`, { cache: 'no-store' });
+      if (!res.ok || cancelled) return;
+      const body = (await res.json().catch(() => null)) as PodcastResponse | null;
+      const podcast = body?.podcast;
+      if (!podcast || cancelled) return;
+
+      setPodcastStatus(podcast.status || null);
+      if (podcast.status === 'ready' && podcast.audioBase64) {
+        setPodcastSrc(`data:${podcast.mimeType || 'audio/mpeg'};base64,${podcast.audioBase64}`);
+      }
+    };
+
+    void loadPodcast();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [weekStart, weekEnd]);
 
   const generateBrief = async () => {
     if (overview) return;
@@ -163,7 +199,7 @@ export default function WeeklyBriefCard() {
         <div>
           <p className="text-xs uppercase tracking-[0.1em] text-accent">Signal Engine</p>
           <h2 className="text-lg font-semibold text-ink">Weekly Brief</h2>
-          <p className="text-xs text-ink-faint">Auto-generated on Mondays for the previous week.</p>
+          <p className="text-xs text-ink-faint">Generated from your scheduled delivery windows.</p>
           {weekLabel && <p className="mt-1 text-[11px] text-ink-faint">Coverage: {weekLabel}</p>}
           {createdLabel && <p className="mt-1 text-[11px] text-ink-faint">Latest brief: {createdLabel}</p>}
         </div>
@@ -175,7 +211,7 @@ export default function WeeklyBriefCard() {
             disabled={loading || initializing}
             className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
           >
-            {loading ? 'Briefing...' : 'Generate This Week'}
+            {loading ? 'Briefing...' : 'Generate Now'}
           </button>
         ) : (
           <button
@@ -189,7 +225,7 @@ export default function WeeklyBriefCard() {
       </div>
 
       {nextLabel && (
-        <p className="mt-3 text-xs text-ink-faint">New weekly insight unlocks: {nextLabel}</p>
+        <p className="mt-3 text-xs text-ink-faint">Next scheduled insight window: {nextLabel}</p>
       )}
 
       {error && <p className="mt-3 text-xs text-red-500">{error}</p>}
@@ -211,6 +247,17 @@ export default function WeeklyBriefCard() {
               </li>
             ))}
           </ul>
+
+          <div className="mt-4 rounded-lg border border-line bg-surface px-3 py-3">
+            <p className="text-xs uppercase tracking-[0.08em] text-accent">Weekly Podcast</p>
+            {podcastSrc ? (
+              <audio controls className="mt-2 w-full" src={podcastSrc} />
+            ) : (
+              <p className="mt-1 text-xs text-ink-faint">
+                {podcastStatus === 'processing' ? 'Podcast is being generated in the background.' : 'Podcast will appear here once ready.'}
+              </p>
+            )}
+          </div>
         </div>
       )}
     </section>
