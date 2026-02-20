@@ -63,23 +63,51 @@ function shouldRequeue(status: string | null | undefined, updatedAt: string | nu
 }
 
 
-async function processAudioInline(userId: string, issueId: string) {
+type AudioAttempt = { ok: true } | { ok: false; reason: string };
+
+function toErrorReason(error: unknown) {
+  if (error instanceof Error && error.message) return error.message;
+  return 'Unknown audio processing error';
+}
+
+function buildAudioHints(reason: string) {
+  const lower = reason.toLowerCase();
+  const hints: string[] = [];
+
+  if (lower.includes('openai_api_key')) {
+    hints.push('OPENAI_API_KEY is missing in deployment environment variables.');
+  }
+  if (lower.includes('supabase admin env configuration')) {
+    hints.push('NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.');
+  }
+  if (lower.includes('insufficient credits')) {
+    hints.push('Your account ran out of AI credits/tokens for listen generation.');
+  }
+
+  if (!hints.length) {
+    hints.push('Check server logs for /api/ai/listen and worker/audio job errors.');
+  }
+
+  return hints;
+}
+
+async function processAudioInline(userId: string, issueId: string): Promise<AudioAttempt> {
   try {
     const admin = createAdminClient();
     await processAudioRequestedJob(admin, userId, issueId);
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: toErrorReason(error) };
   }
 }
 
-async function enqueueAudioJob(userId: string, issueId: string) {
+async function enqueueAudioJob(userId: string, issueId: string): Promise<AudioAttempt> {
   try {
     const admin = createAdminClient();
     await enqueueJob(admin, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`, { maxAttempts: 5 });
-    return true;
-  } catch {
-    return false;
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, reason: toErrorReason(error) };
   }
 }
 
@@ -104,7 +132,7 @@ export async function GET(request: NextRequest) {
 
   if (!process.env.WORKER_SECRET && ['queued', 'processing'].includes(cachedAudio?.status || '')) {
     const processed = await processAudioInline(user.id, issueId);
-    if (!processed) {
+    if (!processed.ok) {
       await supabase.from('issue_audio_cache').upsert(
         {
           issue_id: issueId,
@@ -133,7 +161,7 @@ export async function GET(request: NextRequest) {
       { onConflict: 'issue_id,user_id' },
     );
     const queued = await enqueueAudioJob(user.id, issueId);
-    if (!queued) {
+    if (!queued.ok) {
       await supabase.from('issue_audio_cache').upsert(
         {
           issue_id: issueId,
@@ -235,7 +263,7 @@ export async function POST(request: NextRequest) {
   if (!process.env.WORKER_SECRET) {
     const processed = await processAudioInline(user.id, issueId);
     const latest = await getCachedAudio(supabase, issueId, user.id);
-    if (processed && latest?.audio_base64 && latest.status === 'ready') {
+    if (processed.ok && latest?.audio_base64 && latest.status === 'ready') {
       return NextResponse.json(
         {
           status: 'ready' as AudioStatus,
@@ -262,7 +290,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        error: 'Audio generation failed. Please retry in a moment.',
+        error: `Audio generation failed: ${processed.ok ? "unknown" : processed.reason}`,
+        hints: buildAudioHints(processed.ok ? "unknown" : processed.reason),
         status: 'failed' as AudioStatus,
       },
       { status: 503 },
@@ -270,7 +299,7 @@ export async function POST(request: NextRequest) {
   }
 
   const queued = await enqueueAudioJob(user.id, issueId);
-  if (!queued) {
+  if (!queued.ok) {
     await supabase.from('issue_audio_cache').upsert(
       {
         issue_id: issueId,
@@ -284,7 +313,8 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        error: 'Audio is temporarily unavailable right now. Please retry in a moment.',
+        error: `Audio queue unavailable: ${queued.reason}`,
+        hints: buildAudioHints(queued.reason),
         status: 'failed' as AudioStatus,
       },
       { status: 503 },
