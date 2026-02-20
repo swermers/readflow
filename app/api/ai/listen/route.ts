@@ -62,8 +62,13 @@ function shouldRequeue(status: string | null | undefined, updatedAt: string | nu
 }
 
 async function enqueueAudioJob(userId: string, issueId: string) {
-  const admin = createAdminClient();
-  await enqueueJob(admin, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`, { maxAttempts: 5 });
+  try {
+    const admin = createAdminClient();
+    await enqueueJob(admin, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`, { maxAttempts: 5 });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function GET(request: NextRequest) {
@@ -97,7 +102,19 @@ export async function GET(request: NextRequest) {
       },
       { onConflict: 'issue_id,user_id' },
     );
-    await enqueueAudioJob(user.id, issueId);
+    const queued = await enqueueAudioJob(user.id, issueId);
+    if (!queued) {
+      await supabase.from('issue_audio_cache').upsert(
+        {
+          issue_id: issueId,
+          user_id: user.id,
+          status: 'failed',
+          provider: 'openai',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'issue_id,user_id' },
+      );
+    }
   }
 
   return NextResponse.json(
@@ -185,7 +202,27 @@ export async function POST(request: NextRequest) {
     { onConflict: 'issue_id,user_id' },
   );
 
-  await enqueueAudioJob(user.id, issueId);
+  const queued = await enqueueAudioJob(user.id, issueId);
+  if (!queued) {
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: user.id,
+        status: 'failed',
+        provider: 'openai',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' },
+    );
+
+    return NextResponse.json(
+      {
+        error: 'Audio is temporarily unavailable right now. Please retry in a moment.',
+        status: 'failed' as AudioStatus,
+      },
+      { status: 503 },
+    );
+  }
 
   return NextResponse.json(
     {
