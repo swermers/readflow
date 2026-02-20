@@ -63,7 +63,7 @@ function shouldRequeue(status: string | null | undefined, updatedAt: string | nu
 
 async function enqueueAudioJob(userId: string, issueId: string) {
   const admin = createAdminClient();
-  await enqueueJob(admin, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`, 5);
+  await enqueueJob(admin, 'audio.requested', { userId, issueId }, `audio:${userId}:${issueId}`, { maxAttempts: 5 });
 }
 
 export async function GET(request: NextRequest) {

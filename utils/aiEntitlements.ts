@@ -235,7 +235,7 @@ export async function checkEntitlement(
       ...gate,
       allowed: false,
       required,
-      reason: 'Insufficient tokens',
+      reason: 'Insufficient credits',
       available: gate.available,
     };
   }
