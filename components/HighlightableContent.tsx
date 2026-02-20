@@ -69,6 +69,14 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
   const highlightedById = useMemo(() => new Map(highlights.map((h) => [h.id, h])), [highlights]);
 
+
+  const getDeepLinkHighlightId = () => {
+    if (typeof window === 'undefined') return null;
+    const params = new URLSearchParams(window.location.search);
+    return params.get('h');
+  };
+
+
   const closeToolbar = () => {
     setToolbarPosition(null);
     setSelectedText('');
@@ -444,10 +452,22 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
     if (highlights.length > 0) {
       const usedRanges: Array<{ start: number; end: number }> = [];
+      const deepLinkHighlightId = getDeepLinkHighlightId();
+      const deepLinkTarget = deepLinkHighlightId
+        ? highlights.find((highlight) => highlight.id === deepLinkHighlightId) || null
+        : null;
+
+      if (deepLinkTarget) {
+        applyHighlightToDom(deepLinkTarget, usedRanges);
+      }
+
       highlights
         .slice()
         .reverse()
-        .forEach((highlight) => applyHighlightToDom(highlight, usedRanges));
+        .forEach((highlight) => {
+          if (deepLinkTarget?.id === highlight.id) return;
+          applyHighlightToDom(highlight, usedRanges);
+        });
     }
 
     highlights.forEach((highlight) => {
@@ -460,8 +480,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
   useEffect(() => {
     if (highlights.length === 0) return;
 
-    const params = new URLSearchParams(window.location.search);
-    const targetHighlightId = params.get('h');
+    const targetHighlightId = getDeepLinkHighlightId();
     if (!targetHighlightId) return;
 
     const target = highlights.find((highlight) => highlight.id === targetHighlightId);
