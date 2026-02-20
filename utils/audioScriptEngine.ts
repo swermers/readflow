@@ -176,23 +176,64 @@ function buildCliffNotesBody(sanitizedBody: string, maxSentences = 8) {
   const sentences = splitSentences(sanitizedBody);
   if (sentences.length <= maxSentences) return sentences.join(' ');
 
+  const minGap = 1;
+  const bucketCount = Math.min(4, Math.max(2, Math.floor(maxSentences / 2)));
+  const bucketSize = Math.ceil(sentences.length / bucketCount);
+
   const scored = sentences.map((sentence, index) => {
     let score = 0;
-    if (index < 4) score += 2;
-    if (/\b(key|important|core|main|critical|focus|result|outcome|takeaway|trend|risk|opportunity)\b/i.test(sentence)) score += 3;
+    if (/\b(key|important|core|main|critical|focus|result|outcome|takeaway|trend|risk|opportunity|because|however|therefore|but)\b/i.test(sentence)) score += 3;
     if (/\d|%/.test(sentence)) score += 1;
-    if (sentence.length > 70) score += 1;
-    if (sentence.length > 220) score -= 1;
-    return { sentence, index, score };
+    if (/[A-Z][a-z]+\s+[A-Z][a-z]+/.test(sentence)) score += 1;
+    if (sentence.length >= 60 && sentence.length <= 220) score += 2;
+    if (sentence.length < 35) score -= 2;
+    if (sentence.length > 280) score -= 1;
+    if (/\b(unsubscribe|privacy|cookie|follow us|view in browser|sponsored|advertisement)\b/i.test(sentence)) score -= 5;
+    return { sentence, index, score, bucket: Math.min(bucketCount - 1, Math.floor(index / bucketSize)) };
   });
 
-  const picked = [...scored]
-    .sort((a, b) => b.score - a.score || a.index - b.index)
-    .slice(0, maxSentences)
-    .sort((a, b) => a.index - b.index)
-    .map((item) => item.sentence);
+  const chosen: typeof scored = [];
 
-  return picked.join(' ');
+  const canPick = (candidate: (typeof scored)[number]) =>
+    !chosen.some((item) => Math.abs(item.index - candidate.index) <= minGap);
+
+  for (let bucket = 0; bucket < bucketCount; bucket += 1) {
+    const topInBucket = scored
+      .filter((item) => item.bucket === bucket)
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .find((item) => item.score > 0 && canPick(item));
+
+    if (topInBucket) chosen.push(topInBucket);
+  }
+
+  const remaining = scored
+    .slice()
+    .sort((a, b) => b.score - a.score || a.index - b.index)
+    .filter((item) => item.score > 0)
+    .filter((item) => !chosen.some((pick) => pick.index === item.index));
+
+  for (const candidate of remaining) {
+    if (chosen.length >= maxSentences) break;
+    if (!canPick(candidate)) continue;
+    chosen.push(candidate);
+  }
+
+  const fallback = scored
+    .slice()
+    .sort((a, b) => a.index - b.index)
+    .filter((item) => !chosen.some((pick) => pick.index === item.index));
+
+  for (const candidate of fallback) {
+    if (chosen.length >= maxSentences) break;
+    if (!canPick(candidate)) continue;
+    chosen.push(candidate);
+  }
+
+  return chosen
+    .sort((a, b) => a.index - b.index)
+    .slice(0, maxSentences)
+    .map((item) => item.sentence)
+    .join(' ');
 }
 
 export function buildAudioScript(input: BuildAudioScriptInput) {
