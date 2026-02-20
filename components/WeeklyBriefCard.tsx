@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 type Theme = {
   title: string;
@@ -44,13 +44,20 @@ type WeeklyGetResponse = {
   unlimitedAiAccess?: boolean;
 };
 
+type PodcastPayload = {
+  status?: string;
+  mimeType?: string | null;
+  audioBase64?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  lastError?: string | null;
+  deliveryKey?: string | null;
+  weekStart?: string | null;
+  weekEnd?: string | null;
+};
+
 type PodcastResponse = {
-  podcast?: {
-    status?: string;
-    mimeType?: string | null;
-    audioBase64?: string | null;
-    createdAt?: string;
-  } | null;
+  podcast?: PodcastPayload | null;
 };
 
 function formatWeekRange(start?: string | null, end?: string | null) {
@@ -76,6 +83,36 @@ export default function WeeklyBriefCard() {
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
   const [podcastStatus, setPodcastStatus] = useState<string | null>(null);
   const [podcastSrc, setPodcastSrc] = useState<string | null>(null);
+  const [podcastError, setPodcastError] = useState<string | null>(null);
+  const [podcastUpdatedAt, setPodcastUpdatedAt] = useState<string | null>(null);
+  const [retryingPodcast, setRetryingPodcast] = useState(false);
+
+  const loadPodcast = useCallback(async (start: string, end: string) => {
+    const params = new URLSearchParams({ weekStart: start, weekEnd: end });
+    const res = await fetch(`/api/ai/weekly-podcast?${params.toString()}`, { cache: 'no-store' });
+    if (!res.ok) return;
+    const body = (await res.json().catch(() => null)) as PodcastResponse | null;
+    const podcast = body?.podcast;
+
+    if (!podcast) {
+      setPodcastStatus('missing');
+      setPodcastSrc(null);
+      setPodcastError(null);
+      setPodcastUpdatedAt(null);
+      return;
+    }
+
+    setPodcastStatus(podcast.status || null);
+    setPodcastUpdatedAt(podcast.updatedAt || null);
+    setPodcastError(podcast.lastError || null);
+
+    if (podcast.status === 'ready' && podcast.audioBase64) {
+      setPodcastSrc(`data:${podcast.mimeType || 'audio/mpeg'};base64,${podcast.audioBase64}`);
+      return;
+    }
+
+    setPodcastSrc(null);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,26 +161,24 @@ export default function WeeklyBriefCard() {
     if (!weekStart || !weekEnd) return;
     let cancelled = false;
 
-    const loadPodcast = async () => {
-      const params = new URLSearchParams({ weekStart, weekEnd });
-      const res = await fetch(`/api/ai/weekly-podcast?${params.toString()}`, { cache: 'no-store' });
-      if (!res.ok || cancelled) return;
-      const body = (await res.json().catch(() => null)) as PodcastResponse | null;
-      const podcast = body?.podcast;
-      if (!podcast || cancelled) return;
-
-      setPodcastStatus(podcast.status || null);
-      if (podcast.status === 'ready' && podcast.audioBase64) {
-        setPodcastSrc(`data:${podcast.mimeType || 'audio/mpeg'};base64,${podcast.audioBase64}`);
-      }
+    const sync = async () => {
+      await loadPodcast(weekStart, weekEnd);
     };
 
-    void loadPodcast();
+    void sync();
+
+    const interval = setInterval(() => {
+      if (cancelled) return;
+      if (podcastStatus === 'queued' || podcastStatus === 'processing' || podcastStatus === 'missing') {
+        void loadPodcast(weekStart, weekEnd);
+      }
+    }, 12000);
 
     return () => {
       cancelled = true;
+      clearInterval(interval);
     };
-  }, [weekStart, weekEnd]);
+  }, [weekStart, weekEnd, podcastStatus, loadPodcast]);
 
   const generateBrief = async () => {
     if (overview) return;
@@ -185,12 +220,34 @@ export default function WeeklyBriefCard() {
     }
   };
 
+  const retryPodcast = async () => {
+    if (!weekStart || !weekEnd) return;
+    setRetryingPodcast(true);
+    try {
+      const res = await fetch('/api/ai/weekly-podcast', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ weekStart, weekEnd }),
+      });
+      if (res.ok) {
+        setPodcastStatus('queued');
+        setPodcastError(null);
+        await loadPodcast(weekStart, weekEnd);
+      }
+    } finally {
+      setRetryingPodcast(false);
+    }
+  };
+
   const createdLabel = createdAt
     ? new Date(createdAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null;
   const weekLabel = formatWeekRange(weekStart, weekEnd);
   const nextLabel = nextEligibleAt
     ? new Date(nextEligibleAt).toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' })
+    : null;
+  const podcastUpdatedLabel = podcastUpdatedAt
+    ? new Date(podcastUpdatedAt).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null;
 
   return (
@@ -249,12 +306,36 @@ export default function WeeklyBriefCard() {
           </ul>
 
           <div className="mt-4 rounded-lg border border-line bg-surface px-3 py-3">
-            <p className="text-xs uppercase tracking-[0.08em] text-accent">Weekly Podcast</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs uppercase tracking-[0.08em] text-accent">Weekly Podcast</p>
+              {(podcastStatus === 'failed' || podcastStatus === 'missing') && (
+                <button
+                  type="button"
+                  onClick={retryPodcast}
+                  disabled={retryingPodcast}
+                  className="rounded-md border border-line px-2 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] text-ink disabled:opacity-60"
+                >
+                  {retryingPodcast ? 'Queueing…' : 'Retry'}
+                </button>
+              )}
+            </div>
+
+            <p className="mt-1 text-xs text-ink-faint">
+              Status: {podcastStatus || 'missing'}
+              {podcastUpdatedLabel ? ` · Updated ${podcastUpdatedLabel}` : ''}
+            </p>
+
             {podcastSrc ? (
               <audio controls className="mt-2 w-full" src={podcastSrc} />
             ) : (
               <p className="mt-1 text-xs text-ink-faint">
-                {podcastStatus === 'processing' ? 'Podcast is being generated in the background.' : 'Podcast will appear here once ready.'}
+                {podcastStatus === 'processing'
+                  ? 'Podcast is being generated in the background.'
+                  : podcastStatus === 'queued'
+                    ? 'Podcast has been queued and should appear shortly.'
+                    : podcastStatus === 'failed'
+                      ? podcastError || 'Podcast generation failed. Retry to requeue this window.'
+                      : 'Podcast will appear here once ready.'}
               </p>
             )}
           </div>
