@@ -6,6 +6,7 @@ type BuildAudioScriptInput = {
   sections?: string[];
   forceTone?: AudioTone;
   mode?: 'full' | 'abbreviated';
+  abbreviatedBodyOverride?: string;
 };
 
 const CTA_PATTERNS = [
@@ -257,7 +258,8 @@ export function buildAudioScript(input: BuildAudioScriptInput) {
   const candidateBody = normalizeWhitespace(sectionText || bodyWithoutHookLead || sanitizedBody);
   const preferredBody = removeLeadingHookSentences(candidateBody, hookSentences);
 
-  const cliffNotesBody = buildCliffNotesBody(preferredBody, 8)
+  const abbreviatedSource = sanitizeForSpeech(input.abbreviatedBodyOverride || '');
+  const cliffNotesBody = (abbreviatedSource || buildCliffNotesBody(preferredBody, 8))
     .split(/(?<=[.!?])\s+/)
     .join(' [PAUSE] ');
 
