@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { ANTHROPIC_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
 
 type WeeklyBrief = {
   overview: string;
@@ -57,31 +58,43 @@ async function summarizeWithAnthropic(input: string) {
 
   const prompt = `You are building a weekly cross-newsletter brief for a busy knowledge worker.\nReturn STRICT JSON with:\n- overview: string (2-4 concise sentences)\n- themes: array of 3-5 objects, each { title: string, consensus: string, sourceCount: number }\n\nFocus on synthesis across sources, not summary per newsletter.\n\nNewsletters:\n${input}`;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest',
-      max_tokens: 800,
-      temperature: 0.2,
-      messages: [{ role: 'user', content: prompt }],
-    }),
-  });
+  let lastError: Error | null = null;
 
-  if (!res.ok) throw new Error(`Anthropic weekly brief failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  const textBlock = Array.isArray(data?.content)
-    ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-    : null;
-  const text = textBlock?.text;
-  if (typeof text !== 'string') throw new Error('Anthropic response missing text');
-  const normalized = normalize(parseJsonFromText(text));
-  if (!normalized) throw new Error('Invalid weekly brief payload');
-  return normalized;
+  for (const model of ANTHROPIC_MODEL_CANDIDATES) {
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      },
+      body: JSON.stringify({
+        model,
+        max_tokens: 800,
+        temperature: 0.2,
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+
+    if (!res.ok) {
+      const details = await res.text();
+      lastError = new Error(`Anthropic weekly brief failed: ${res.status} ${details}`);
+      if (isModelNotFoundError(details)) continue;
+      throw lastError;
+    }
+
+    const data = await res.json();
+    const textBlock = Array.isArray(data?.content)
+      ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
+      : null;
+    const text = textBlock?.text;
+    if (typeof text !== 'string') throw new Error('Anthropic response missing text');
+    const normalized = normalize(parseJsonFromText(text));
+    if (!normalized) throw new Error('Invalid weekly brief payload');
+    return normalized;
+  }
+
+  throw lastError || new Error('Anthropic weekly brief failed for all configured models');
 }
 
 function startOfWeekUTC(input = new Date()) {
