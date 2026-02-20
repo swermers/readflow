@@ -2,9 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { consumeTokensAtomic } from '@/utils/aiEntitlements';
 import { buildAudioHash, getGlobalAudioCache, normalizeAudioText, upsertGlobalAudioCache } from '@/utils/audioCache';
 import { latencyMs, recordAudioMetric } from '@/utils/audioMetrics';
-import { buildAudioScript, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
+import { buildAudioScript, extractReadableTextFromHtml, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
 
 const MAX_CHUNK_CHARS = 2500;
+const FIRST_CHUNK_CHARS = 900;
 
 function truncateAtSignoff(text: string) {
   const lines = text
@@ -31,7 +32,7 @@ function truncateAtSignoff(text: string) {
 }
 
 function splitIntoSpeechChunks(input: string) {
-  if (input.length <= MAX_CHUNK_CHARS) return [input];
+  if (input.length <= FIRST_CHUNK_CHARS) return [input];
 
   const sentences = input
     .split(/(?<=[.!?])\s+/)
@@ -46,8 +47,9 @@ function splitIntoSpeechChunks(input: string) {
   let current = '';
 
   for (const sentence of sentences) {
+    const targetLimit = chunks.length === 0 ? FIRST_CHUNK_CHARS : MAX_CHUNK_CHARS;
     const next = current ? `${current} ${sentence}` : sentence;
-    if (next.length <= MAX_CHUNK_CHARS) {
+    if (next.length <= targetLimit) {
       current = next;
       continue;
     }
@@ -58,9 +60,15 @@ function splitIntoSpeechChunks(input: string) {
       continue;
     }
 
-    const parts = sentence.match(new RegExp(`.{1,${MAX_CHUNK_CHARS}}`, 'g')) || [sentence];
-    chunks.push(...parts);
-    current = '';
+    const hardLimit = chunks.length === 0 ? FIRST_CHUNK_CHARS : MAX_CHUNK_CHARS;
+    const parts = sentence.match(new RegExp(`.{1,${hardLimit}}`, 'g')) || [sentence];
+    chunks.push(parts[0]);
+    if (parts.length > 1) {
+      const rest = parts.slice(1).join(' ');
+      if (rest) current = rest;
+    } else {
+      current = '';
+    }
   }
 
   if (current) chunks.push(current);
@@ -146,7 +154,11 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     generation_started_at: generationStartedAt,
   });
 
-  const articleText = (issue.body_text?.trim() || stripHtmlForSpeech(issue.body_html || '')).trim();
+  const articleText = (
+    issue.body_text?.trim() ||
+    extractReadableTextFromHtml(issue.body_html || '') ||
+    stripHtmlForSpeech(issue.body_html || '')
+  ).trim();
   const contentWithoutSignoff = truncateAtSignoff(articleText);
   const built = buildAudioScript({
     title: issue.subject || 'Newsletter article',

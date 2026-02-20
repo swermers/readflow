@@ -29,6 +29,11 @@ const FOOTER_PATTERNS = [
   /\blinkedin\b/i,
   /\bx\.com\b/i,
   /\btwitter\b/i,
+  /\badvertisement\b/i,
+  /\bsponsored\b/i,
+  /\bterms of service\b/i,
+  /\bcookie policy\b/i,
+  /\bcontact us\b/i,
 ];
 
 const TONE_OPENERS: Record<AudioTone, string> = {
@@ -41,8 +46,21 @@ function normalizeWhitespace(text: string) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function removeBoilerplateBlocks(html: string) {
+  return html
+    .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
+    .replace(/<footer[\s\S]*?<\/footer>/gi, ' ')
+    .replace(/<aside[\s\S]*?<\/aside>/gi, ' ')
+    .replace(/<form[\s\S]*?<\/form>/gi, ' ')
+    .replace(/<button[\s\S]*?<\/button>/gi, ' ')
+    .replace(/<svg[\s\S]*?<\/svg>/gi, ' ')
+    .replace(/<!--([\s\S]*?)-->/g, ' ')
+    .replace(/<(div|section|table)[^>]*(subscribe|footer|social|sharing|promo|advert|sponsor|cookie)[^>]*>[\s\S]*?<\/\1>/gi, ' ');
+}
+
 export function stripHtmlForSpeech(input: string) {
-  const withAltText = input.replace(/<img[^>]*alt=["']([^"']+)["'][^>]*>/gi, ' Image note: $1. ');
+  const withoutBoilerplate = removeBoilerplateBlocks(input || '');
+  const withAltText = withoutBoilerplate.replace(/<img[^>]*alt=["']([^"']+)["'][^>]*>/gi, ' Image note: $1. ');
 
   return normalizeWhitespace(
     withAltText
@@ -50,6 +68,34 @@ export function stripHtmlForSpeech(input: string) {
       .replace(/<script[\s\S]*?<\/script>/gi, ' ')
       .replace(/<[^>]+>/g, ' '),
   );
+}
+
+export function extractReadableTextFromHtml(input: string) {
+  const withoutBoilerplate = removeBoilerplateBlocks(input || '')
+    .replace(/<br\s*\/?\s*>/gi, '\n')
+    .replace(/<\/(p|div|section|article|li|h1|h2|h3|h4|h5|h6)>/gi, '\n');
+
+  const stripped = stripHtmlForSpeech(withoutBoilerplate);
+  const lines = stripped
+    .split(/\n+/)
+    .map((line) => normalizeWhitespace(line))
+    .filter(Boolean)
+    .filter((line) => line.length >= 20)
+    .filter((line) => !FOOTER_PATTERNS.some((pattern) => pattern.test(line)));
+
+  if (!lines.length) return stripped;
+
+  const scored = lines.map((line) => {
+    let score = 0;
+    if (/[.!?]/.test(line)) score += 2;
+    if (line.length > 60) score += 2;
+    if (/\b(analysis|market|product|team|research|customer|revenue|strategy|trend)\b/i.test(line)) score += 1;
+    if (/\b(unsubscribe|privacy|cookie|follow us|view in browser)\b/i.test(line)) score -= 4;
+    return { line, score };
+  });
+
+  const best = scored.filter((entry) => entry.score > 0).map((entry) => entry.line);
+  return normalizeWhitespace((best.length ? best : lines).join(' '));
 }
 
 function rewriteLinksAndEmails(text: string) {

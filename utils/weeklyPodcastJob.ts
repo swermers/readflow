@@ -17,9 +17,10 @@ type BriefTheme = {
 };
 
 const MAX_CHUNK_CHARS = 2500;
+const FIRST_CHUNK_CHARS = 900;
 
 function splitIntoSpeechChunks(input: string) {
-  if (input.length <= MAX_CHUNK_CHARS) return [input];
+  if (input.length <= FIRST_CHUNK_CHARS) return [input];
 
   const sentences = input
     .split(/(?<=[.!?])\s+/)
@@ -34,8 +35,9 @@ function splitIntoSpeechChunks(input: string) {
   let current = '';
 
   for (const sentence of sentences) {
+    const targetLimit = chunks.length === 0 ? FIRST_CHUNK_CHARS : MAX_CHUNK_CHARS;
     const next = current ? `${current} ${sentence}` : sentence;
-    if (next.length <= MAX_CHUNK_CHARS) {
+    if (next.length <= targetLimit) {
       current = next;
       continue;
     }
@@ -46,9 +48,15 @@ function splitIntoSpeechChunks(input: string) {
       continue;
     }
 
-    const parts = sentence.match(new RegExp(`.{1,${MAX_CHUNK_CHARS}}`, 'g')) || [sentence];
-    chunks.push(...parts);
-    current = '';
+    const hardLimit = chunks.length === 0 ? FIRST_CHUNK_CHARS : MAX_CHUNK_CHARS;
+    const parts = sentence.match(new RegExp(`.{1,${hardLimit}}`, 'g')) || [sentence];
+    chunks.push(parts[0]);
+    if (parts.length > 1) {
+      const rest = parts.slice(1).join(' ');
+      if (rest) current = rest;
+    } else {
+      current = '';
+    }
   }
 
   if (current) chunks.push(current);
