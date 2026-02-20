@@ -131,6 +131,17 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
   const estimatedWaitSeconds = useMemo(() => estimateAudioWaitSeconds(articleText), [articleText]);
   const readyToastShownRef = useRef(false);
 
+  const setGlobalAudioPendingIssue = () => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('readflow_active_listen_issue', issueId);
+  };
+
+  const clearGlobalAudioPendingIssue = () => {
+    if (typeof window === 'undefined') return;
+    const current = window.localStorage.getItem('readflow_active_listen_issue');
+    if (current === issueId) window.localStorage.removeItem('readflow_active_listen_issue');
+  };
+
 
   useEffect(() => {
     readyToastShownRef.current = false;
@@ -176,6 +187,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
         if ((nextStatus === 'queued' || nextStatus === 'processing') && payload.updatedAt) {
           setAudioQueuedAt(new Date(payload.updatedAt).getTime());
+          setGlobalAudioPendingIssue();
         }
 
         if (payload.previewAudioUrl) setPreviewAudioUrl(payload.previewAudioUrl);
@@ -186,6 +198,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       readyToastShownRef.current = false;
           if (nextStatus === 'ready') {
             setAudioQueuedAt(null);
+            clearGlobalAudioPendingIssue();
             void trackEvent('listen_completed');
             if (!readyToastShownRef.current) {
               triggerToast('Narration is ready — tap play to listen.');
@@ -230,7 +243,11 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
           updatedAt?: string | null;
         };
 
-        if (payload.status) setAudioStatus(payload.status);
+        if (payload.status) {
+          setAudioStatus(payload.status);
+          if (payload.status === 'queued' || payload.status === 'processing') setGlobalAudioPendingIssue();
+          if (payload.status === 'ready' || payload.status === 'failed' || payload.status === 'canceled') clearGlobalAudioPendingIssue();
+        }
         if (payload.updatedAt) setAudioUpdatedAt(payload.updatedAt);
         if (payload.previewAudioUrl) setPreviewAudioUrl(payload.previewAudioUrl);
         if (payload.audioUrl) {
@@ -312,6 +329,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     setAudioQueuedAt(Date.now());
     setAudioHints([]);
     readyToastShownRef.current = false;
+    setGlobalAudioPendingIssue();
 
     try {
       void trackEvent('listen_started');
@@ -336,6 +354,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         }
         setAudioStatus('failed');
         readyToastShownRef.current = false;
+        clearGlobalAudioPendingIssue();
         return;
       }
 
@@ -358,6 +377,8 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       }
       const nextStatus = body?.status || 'queued';
       setAudioStatus(nextStatus);
+      if (nextStatus === 'queued' || nextStatus === 'processing') setGlobalAudioPendingIssue();
+      if (nextStatus === 'ready' || nextStatus === 'failed' || nextStatus === 'canceled') clearGlobalAudioPendingIssue();
       if (nextStatus !== 'ready') readyToastShownRef.current = false;
       if (body?.updatedAt) setAudioUpdatedAt(body.updatedAt);
       if (nextStatus === 'queued' || nextStatus === 'processing') {
