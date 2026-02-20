@@ -5,7 +5,7 @@ import { latencyMs, recordAudioMetric } from '@/utils/audioMetrics';
 import { buildAudioScript, extractReadableTextFromHtml, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
 
 const MAX_CHUNK_CHARS = 2500;
-const FIRST_CHUNK_CHARS = 900;
+const FIRST_CHUNK_CHARS = 420;
 
 function truncateAtSignoff(text: string) {
   const lines = text

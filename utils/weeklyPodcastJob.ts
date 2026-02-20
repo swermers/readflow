@@ -17,7 +17,7 @@ type BriefTheme = {
 };
 
 const MAX_CHUNK_CHARS = 2500;
-const FIRST_CHUNK_CHARS = 900;
+const FIRST_CHUNK_CHARS = 420;
 
 function splitIntoSpeechChunks(input: string) {
   if (input.length <= FIRST_CHUNK_CHARS) return [input];

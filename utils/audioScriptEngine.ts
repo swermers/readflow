@@ -46,6 +46,24 @@ function normalizeWhitespace(text: string) {
   return text.replace(/\s+/g, ' ').trim();
 }
 
+function splitSentences(text: string) {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => normalizeWhitespace(part))
+    .filter(Boolean);
+}
+
+function removeLeadingHookSentences(body: string, hookSentences: string[]) {
+  let next = normalizeWhitespace(body);
+  for (const sentence of hookSentences) {
+    if (!sentence) continue;
+    const escaped = sentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    next = next.replace(new RegExp(`^${escaped}\\s*`, 'i'), '').trim();
+  }
+  return normalizeWhitespace(next);
+}
+
+
 function removeBoilerplateBlocks(html: string) {
   return html
     .replace(/<nav[\s\S]*?<\/nav>/gi, ' ')
@@ -155,19 +173,25 @@ export function sanitizeForSpeech(rawText: string) {
 export function buildAudioScript(input: BuildAudioScriptInput) {
   const tone = input.forceTone || classifyTone(input.rawText);
   const sanitizedBody = sanitizeForSpeech(input.rawText);
+  const bodySentences = splitSentences(sanitizedBody);
+  const hookSentences = bodySentences.slice(0, 2);
 
   const sectionText = (input.sections || [])
     .map((section) => sanitizeForSpeech(section))
     .filter(Boolean)
     .join(' [PAUSE] ');
 
-  const hook = createHook(input.title, sanitizedBody, tone)
+  const hook = createHook(input.title, hookSentences.join(' ') || sanitizedBody, tone)
     .split(/(?<=[.!?])\s+/)
     .slice(0, 2)
     .join(' ');
 
+  const bodyWithoutHookLead = bodySentences.slice(hookSentences.length).join(' ');
+  const candidateBody = normalizeWhitespace(sectionText || bodyWithoutHookLead || sanitizedBody);
+  const preferredBody = removeLeadingHookSentences(candidateBody, hookSentences);
+
   const script = normalizeWhitespace(
-    `${hook} [PAUSE] ${sectionText || sanitizedBody}`.replace(/[#*_`>-]/g, ' '),
+    `${hook} [PAUSE] ${preferredBody}`.replace(/[#*_`>-]/g, ' '),
   );
 
   return {
