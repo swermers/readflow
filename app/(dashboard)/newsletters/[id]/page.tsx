@@ -21,14 +21,6 @@ export default async function NewsletterPage({ params }: { params: { id: string 
     return notFound();
   }
 
-  // Auto-mark as read
-  if (email.status === 'unread') {
-    await supabase
-      .from('issues')
-      .update({ status: 'read', read_at: new Date().toISOString() })
-      .eq('id', params.id)
-      .is('deleted_at', null);
-  }
 
   return (
     <div className="min-h-screen">
@@ -77,7 +69,7 @@ export default async function NewsletterPage({ params }: { params: { id: string 
         {/* Divider */}
         <div className="w-16 h-px bg-accent mb-8" />
 
-        <AISummaryCard issueId={email.id} />
+        <AISummaryCard issueId={email.id} articleText={email.body_text || ""} articleSubject={email.subject || "Newsletter"} />
 
         {/* Newsletter Content */}
         <HighlightableContent issueId={email.id} bodyHtml={email.body_html || ''} />
