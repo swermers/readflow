@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Headphones, List, X } from 'lucide-react';
 
 type Props = {
@@ -40,6 +40,8 @@ export default function AISummaryCard({ issueId }: Props) {
   const [audioLoading, setAudioLoading] = useState(false);
 
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [autoPlayRequested, setAutoPlayRequested] = useState(false);
 
   const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
     try {
@@ -156,6 +158,7 @@ export default function AISummaryCard({ issueId }: Props) {
     setAudioLoading(true);
     setAudioError(null);
     setAudioHints([]);
+    setAutoPlayRequested(true);
 
     try {
       void trackEvent('listen_started');
@@ -230,6 +233,20 @@ export default function AISummaryCard({ issueId }: Props) {
       setAudioLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (!autoPlayRequested || !audioUrl || !audioRef.current) return;
+
+    const audio = audioRef.current;
+    const playPromise = audio.play();
+    if (playPromise && typeof playPromise.catch === 'function') {
+      playPromise.catch(() => {
+        // Some browsers require an additional direct gesture; controls remain visible as fallback.
+      });
+    }
+    setAutoPlayRequested(false);
+  }, [audioUrl, autoPlayRequested]);
+
 
   return (
     <section className="mb-8 rounded-2xl border border-line bg-surface-raised p-4">
@@ -327,7 +344,7 @@ export default function AISummaryCard({ issueId }: Props) {
       )}
 
       {audioUrl && (
-        <audio controls className="mt-4 w-full border-t border-line pt-4">
+        <audio ref={audioRef} controls autoPlay className="mt-4 w-full border-t border-line pt-4">
           <source src={audioUrl} type="audio/mpeg" />
           Your browser does not support audio playback.
         </audio>

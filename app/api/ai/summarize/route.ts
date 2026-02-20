@@ -13,6 +13,60 @@ type SummaryResult = {
 
 const MAX_INPUT_CHARS = 12000;
 
+const LANGUAGE_STOPWORDS: Record<string, string[]> = {
+  en: ['the', 'and', 'that', 'with', 'for', 'you', 'this', 'from', 'have', 'are'],
+  es: ['el', 'la', 'los', 'las', 'de', 'que', 'en', 'con', 'por', 'para'],
+  fr: ['le', 'la', 'les', 'de', 'des', 'et', 'que', 'dans', 'pour', 'avec'],
+  de: ['der', 'die', 'das', 'und', 'mit', 'für', 'ist', 'den', 'von', 'auf'],
+  pt: ['o', 'a', 'os', 'as', 'de', 'que', 'e', 'com', 'para', 'em'],
+  it: ['il', 'lo', 'la', 'gli', 'le', 'di', 'che', 'con', 'per', 'una'],
+};
+
+const LANGUAGE_LABELS: Record<string, string> = {
+  en: 'English',
+  es: 'Spanish',
+  fr: 'French',
+  de: 'German',
+  pt: 'Portuguese',
+  it: 'Italian',
+};
+
+function detectLikelyLanguage(input: string) {
+  const tokens = (input.toLowerCase().match(/[A-Za-zÀ-ÖØ-öø-ÿ']+/g) || []).slice(0, 4000);
+  if (tokens.length === 0) return { code: 'en', confidence: 0 };
+
+  let bestCode = 'en';
+  let bestScore = 0;
+  let secondScore = 0;
+
+  for (const [code, words] of Object.entries(LANGUAGE_STOPWORDS)) {
+    let score = 0;
+    for (const word of words) {
+      const hits = tokens.filter((token) => token === word).length;
+      score += hits;
+    }
+
+    if (score > bestScore) {
+      secondScore = bestScore;
+      bestScore = score;
+      bestCode = code;
+    } else if (score > secondScore) {
+      secondScore = score;
+    }
+  }
+
+  const confidence = bestScore === 0 ? 0 : (bestScore - secondScore) / Math.max(bestScore, 1);
+  return { code: bestCode, confidence };
+}
+
+function assertSummaryLanguage(summary: SummaryResult, expectedCode: string, minConfidence = 0.2) {
+  const combined = `${summary.summary}\n${summary.takeaways.join('\n')}`;
+  const detected = detectLikelyLanguage(combined);
+  if (detected.confidence >= minConfidence && detected.code !== expectedCode) {
+    throw new Error(`Summary language mismatch: expected ${expectedCode}, got ${detected.code}`);
+  }
+}
+
 
 function parseJsonFromText(text: string) {
   const direct = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
@@ -54,11 +108,11 @@ function normalizeSummaryPayload(payload: unknown): SummaryResult | null {
   return { summary, takeaways };
 }
 
-async function summarizeWithAnthropic(input: string) {
+async function summarizeWithAnthropic(input: string, expectedLanguageCode: string) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('Anthropic key is not configured');
 
-  const prompt = `You are helping summarize a newsletter article for a reader app.\nDetect the primary language used in the article and write both summary and takeaways in that same language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
+  const prompt = `You are helping summarize a newsletter article for a reader app.\nThe article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}).\nWrite summary and takeaways ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
 
   let lastError: Error | null = null;
 
@@ -96,17 +150,18 @@ async function summarizeWithAnthropic(input: string) {
 
     const parsed = normalizeSummaryPayload(parseJsonFromText(text));
     if (!parsed) throw new Error('Anthropic summary parsing failed');
+    assertSummaryLanguage(parsed, expectedLanguageCode);
     return parsed;
   }
 
   throw lastError || new Error('Anthropic request failed for all configured models');
 }
 
-async function summarizeWithGrok(input: string) {
+async function summarizeWithGrok(input: string, expectedLanguageCode: string) {
   const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
   if (!apiKey) throw new Error('Grok key is not configured');
 
-  const prompt = `Detect the primary language of the article and keep the response in that same language. Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\n\nArticle:\n${input}`;
+  const prompt = `The article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}). Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\nWrite ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\n\nArticle:\n${input}`;
 
   let lastError: Error | null = null;
 
@@ -139,6 +194,7 @@ async function summarizeWithGrok(input: string) {
 
     const parsed = normalizeSummaryPayload(parseJsonFromText(text));
     if (!parsed) throw new Error('Grok summary parsing failed');
+    assertSummaryLanguage(parsed, expectedLanguageCode);
     return parsed;
   }
 
@@ -186,6 +242,7 @@ export async function POST(request: NextRequest) {
   }
 
   const input = `${issue.subject || 'Newsletter article'}\n\n${rawText.slice(0, MAX_INPUT_CHARS)}`;
+  const expectedLanguageCode = detectLikelyLanguage(input).code;
 
   const serializeError = (err: unknown) => {
     if (err instanceof Error) return err.message;
@@ -195,8 +252,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = provider === 'grok'
-      ? await summarizeWithGrok(input)
-      : await summarizeWithAnthropic(input);
+      ? await summarizeWithGrok(input, expectedLanguageCode)
+      : await summarizeWithAnthropic(input, expectedLanguageCode);
 
     const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
     return NextResponse.json({
@@ -212,8 +269,8 @@ export async function POST(request: NextRequest) {
 
     try {
       const fallback = fallbackProvider === 'grok'
-        ? await summarizeWithGrok(input)
-        : await summarizeWithAnthropic(input);
+        ? await summarizeWithGrok(input, expectedLanguageCode)
+        : await summarizeWithAnthropic(input, expectedLanguageCode);
       const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
       return NextResponse.json({
         provider: fallbackProvider,
