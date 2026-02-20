@@ -24,6 +24,8 @@ const WEEKDAY_OPTIONS = [
   { value: 6, label: 'Sat' },
 ];
 
+const FREE_TIER_SOURCE_LIMIT = 5;
+
 function SettingsContent() {
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -50,8 +52,10 @@ function SettingsContent() {
   const [briefDeliveryHour, setBriefDeliveryHour] = useState(9);
   const [briefDeliveryTz, setBriefDeliveryTz] = useState('UTC');
   const [savingBriefPrefs, setSavingBriefPrefs] = useState(false);
+  const [hasPromptedTopFive, setHasPromptedTopFive] = useState(false);
 
   const supabase = createClient();
+  const isFreeTierSourceLimited = planTier === 'free' && !unlimitedAiAccess;
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -188,6 +192,28 @@ function SettingsContent() {
     }
   }, [gmailConnected]);
 
+  useEffect(() => {
+    if (!gmailConnected || labelsLoading || labels.length === 0 || !isFreeTierSourceLimited) return;
+
+    if (selectedLabels.length > FREE_TIER_SOURCE_LIMIT) {
+      setSelectedLabels((prev) => prev.slice(0, FREE_TIER_SOURCE_LIMIT));
+      triggerToast('Free tier supports up to 5 labels. Keep your top 5 active sources or upgrade for unlimited.');
+      return;
+    }
+
+    if (!hasPromptedTopFive) {
+      window.alert('Free tier includes up to 5 active sources. Please choose your top 5 labels to sync.');
+      setHasPromptedTopFive(true);
+    }
+  }, [
+    gmailConnected,
+    hasPromptedTopFive,
+    isFreeTierSourceLimited,
+    labels.length,
+    labelsLoading,
+    selectedLabels.length,
+  ]);
+
   const handleGmailCallbackResult = () => {
     const gmailResult = searchParams.get('gmail');
     if (!gmailResult) return;
@@ -233,14 +259,26 @@ function SettingsContent() {
   };
 
   const toggleLabel = (labelId: string) => {
-    setSelectedLabels(prev =>
-      prev.includes(labelId)
-        ? prev.filter(id => id !== labelId)
-        : [...prev, labelId]
-    );
+    setSelectedLabels((prev) => {
+      if (prev.includes(labelId)) {
+        return prev.filter((id) => id !== labelId);
+      }
+
+      if (isFreeTierSourceLimited && prev.length >= FREE_TIER_SOURCE_LIMIT) {
+        window.alert('Free tier supports up to 5 active sources. Upgrade to unlimited to sync more labels.');
+        return prev;
+      }
+
+      return [...prev, labelId];
+    });
   };
 
   const handleSaveLabels = async () => {
+    if (isFreeTierSourceLimited && selectedLabels.length > FREE_TIER_SOURCE_LIMIT) {
+      window.alert('Please keep only 5 labels on free tier, or upgrade to unlimited.');
+      return;
+    }
+
     setLabelsSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLabelsSaving(false); return; }
@@ -514,6 +552,21 @@ function SettingsContent() {
                 : 'Need more credits? Upgrade to Pro or Elite for higher monthly allowances.'}
             </p>
 
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <Link
+                href="/landing#pricing"
+                className="inline-flex items-center justify-center border border-line px-4 py-2 text-label uppercase text-ink hover:border-line-strong"
+              >
+                View Plans
+              </Link>
+              <a
+                href="mailto:trail.notes.co@gmail.com?subject=Readflow%20Upgrade%20Request"
+                className="inline-flex items-center justify-center border border-line px-4 py-2 text-label uppercase text-ink hover:border-line-strong"
+              >
+                Upgrade via Support
+              </a>
+            </div>
+
             <div className="mt-4 border-t border-line pt-4">
               <label className="text-label uppercase text-ink-faint">Invite / Premium Code</label>
               <div className="mt-2 flex gap-2">
@@ -661,6 +714,12 @@ function SettingsContent() {
                         </button>
                       )}
                     </div>
+
+                    {isFreeTierSourceLimited && (
+                      <p className="text-xs text-ink-faint">
+                        Free tier: choose up to {FREE_TIER_SOURCE_LIMIT} labels ({selectedLabels.length}/{FREE_TIER_SOURCE_LIMIT} selected).
+                      </p>
+                    )}
 
                     {labelsLoading && labels.length === 0 ? (
                       <div className="flex items-center gap-2 text-sm text-ink-muted py-4">

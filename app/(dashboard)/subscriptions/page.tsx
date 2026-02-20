@@ -10,13 +10,30 @@ export default function SourcesPage() {
   const [senders, setSenders] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [planTier, setPlanTier] = useState<'free' | 'pro' | 'elite'>('free');
+  const [unlimitedAiAccess, setUnlimitedAiAccess] = useState(false);
   const supabase = createClient();
+  const FREE_TIER_ACTIVE_SOURCE_LIMIT = 5;
 
   useEffect(() => {
     fetchSenders();
   }, []);
 
   const fetchSenders = async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('plan_tier, unlimited_ai_access')
+        .eq('id', user.id)
+        .single();
+
+      if (profile) {
+        setPlanTier((profile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
+        setUnlimitedAiAccess(Boolean(profile.unlimited_ai_access));
+      }
+    }
+
     const { data, error: fetchError } = await supabase
       .from('senders')
       .select('*')
@@ -33,6 +50,13 @@ export default function SourcesPage() {
 
   const toggleStatus = async (id: string, currentStatus: string, name: string) => {
     const newStatus = currentStatus === 'approved' ? 'blocked' : 'approved';
+    const activeCount = senders.filter((s) => s.status === 'approved').length;
+    const enforceFreeLimit = planTier === 'free' && !unlimitedAiAccess;
+
+    if (newStatus === 'approved' && enforceFreeLimit && activeCount >= FREE_TIER_ACTIVE_SOURCE_LIMIT) {
+      window.alert('Free tier supports up to 5 active sources. Pause one source or upgrade to unlimited to activate more.');
+      return;
+    }
 
     setSenders((prev) =>
       prev.map((s) => (s.id === id ? { ...s, status: newStatus } : s))
@@ -102,6 +126,7 @@ export default function SourcesPage() {
   }
 
   const activeCount = senders.filter((s) => s.status === 'approved').length;
+  const freeTierLimitReached = planTier === 'free' && !unlimitedAiAccess && activeCount >= FREE_TIER_ACTIVE_SOURCE_LIMIT;
 
   return (
     <div className="px-6 py-8 md:p-12 min-h-screen">
@@ -113,6 +138,11 @@ export default function SourcesPage() {
           <p className="text-sm text-ink-muted mt-1">
             {activeCount} active, {senders.length - activeCount} paused.
           </p>
+          {freeTierLimitReached && (
+            <p className="text-xs text-accent mt-2">
+              Free tier limit reached: 5 active sources max. Upgrade to unlimited for more.
+            </p>
+          )}
         </div>
       </header>
 
