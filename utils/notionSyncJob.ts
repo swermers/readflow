@@ -1,299 +1,217 @@
-import crypto from 'crypto';
+import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { checkEntitlement } from '@/utils/aiEntitlements';
 import { decryptNotionToken } from '@/utils/notionCrypto';
 
-type HighlightForSync = {
+type ProfileRow = {
+  id: string;
+  plan_tier: string | null;
+  notion_access_token_enc: string | null;
+};
+
+type HighlightRow = {
   id: string;
   highlighted_text: string;
   note: string | null;
   auto_tags: string[] | null;
-  created_at: string;
   notion_page_id: string | null;
   notion_source_hash: string | null;
-  notion_last_synced_at: string | null;
-  notion_sync_status: 'pending' | 'synced' | 'failed';
-  issues?: {
-    subject?: string;
-    senders?: {
-      name?: string;
-      email?: string;
-    };
-  };
+  created_at: string;
+  issues?: Array<{
+    subject: string | null;
+    from_email: string | null;
+  }> | null;
 };
 
-type NotionProfile = {
-  notion_access_token_encrypted: string | null;
-};
+function hashSource(input: { text: string; note: string | null; tags: string[]; subject: string | null }) {
+  const canonical = JSON.stringify({
+    text: input.text,
+    note: input.note || '',
+    tags: [...input.tags].sort(),
+    subject: input.subject || '',
+  });
 
-type NotionPageResponse = {
-  id?: string;
-  message?: string;
-};
-
-type NotionBlockListResponse = {
-  results?: Array<{ id: string }>;
-  message?: string;
-};
-
-const NOTION_VERSION = '2022-06-28';
-
-function buildSourceHash(item: HighlightForSync) {
-  const sender = item.issues?.senders?.name || item.issues?.senders?.email || '';
-  const subject = item.issues?.subject || '';
-  const note = item.note || '';
-  const tags = (item.auto_tags || []).join(',');
-  const payload = [item.highlighted_text, note, tags, subject, sender].join('||');
-  return crypto.createHash('sha256').update(payload).digest('hex');
+  return createHash('sha256').update(canonical).digest('hex');
 }
 
-function notionHeaders(accessToken: string) {
-  return {
-    Authorization: `Bearer ${accessToken}`,
-    'Notion-Version': NOTION_VERSION,
-    'Content-Type': 'application/json',
-  };
-}
+async function upsertNotionPage(token: string, highlight: HighlightRow) {
+  const issueMeta = highlight.issues?.[0];
+  const subject = issueMeta?.subject || 'Newsletter Highlight';
+  const tags = highlight.auto_tags || [];
 
-function compactText(input: string, max = 1900) {
-  return input.replace(/\s+/g, ' ').trim().slice(0, max);
-}
-
-function buildPageTitle(item: HighlightForSync) {
-  const sender = item.issues?.senders?.name || item.issues?.senders?.email || 'Unknown sender';
-  const subject = item.issues?.subject || 'Readflow highlight';
-  return compactText(`${subject} — ${sender}`, 1800);
-}
-
-function buildChildren(item: HighlightForSync) {
-  const sender = item.issues?.senders?.name || item.issues?.senders?.email || 'Unknown sender';
-  const subject = item.issues?.subject || 'Readflow highlight';
-  const tags = (item.auto_tags || []).map((tag) => `#${tag}`).join(' ') || '(none)';
-
-  return [
-    {
-      object: 'block',
-      type: 'quote',
-      quote: {
-        rich_text: [{ type: 'text', text: { content: compactText(item.highlighted_text) } }],
-      },
-    },
-    ...(item.note?.trim()
-      ? [
-          {
-            object: 'block',
-            type: 'paragraph',
-            paragraph: {
-              rich_text: [{ type: 'text', text: { content: compactText(`Note: ${item.note.trim()}`) } }],
-            },
-          },
-        ]
-      : []),
-    {
-      object: 'block',
-      type: 'paragraph',
-      paragraph: {
-        rich_text: [{ type: 'text', text: { content: compactText(`Tags: ${tags}`) } }],
-      },
-    },
-    {
-      object: 'block',
-      type: 'paragraph',
-      paragraph: {
-        rich_text: [
+  const baseBody = {
+    properties: {
+      title: {
+        title: [
           {
             type: 'text',
-            text: {
-              content: compactText(`Saved from ${subject} (${sender}) on ${new Date(item.created_at).toISOString()}`),
-            },
+            text: { content: subject.slice(0, 200) },
           },
         ],
       },
     },
-  ];
-}
-
-async function notionRequest<T>(accessToken: string, url: string, init: RequestInit): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      ...notionHeaders(accessToken),
-      ...(init.headers || {}),
-    },
-  });
-
-  const json = (await response.json().catch(() => null)) as { message?: string } | null;
-  if (!response.ok) {
-    throw new Error(json?.message || `Notion request failed (${response.status})`);
-  }
-
-  return (json || {}) as T;
-}
-
-async function createNotionPage(accessToken: string, item: HighlightForSync) {
-  const body = {
-    parent: { type: 'workspace', workspace: true },
-    properties: {
-      title: {
-        title: [{ type: 'text', text: { content: buildPageTitle(item) } }],
-      },
-    },
-    children: buildChildren(item),
-  };
-
-  const created = await notionRequest<NotionPageResponse>(accessToken, 'https://api.notion.com/v1/pages', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-
-  if (!created.id) {
-    throw new Error(created.message || 'Failed to create Notion page');
-  }
-
-  return created.id;
-}
-
-async function replaceExistingPage(accessToken: string, pageId: string, item: HighlightForSync) {
-  await notionRequest(accessToken, `https://api.notion.com/v1/pages/${pageId}`, {
-    method: 'PATCH',
-    body: JSON.stringify({
-      properties: {
-        title: {
-          title: [{ type: 'text', text: { content: buildPageTitle(item) } }],
+    children: [
+      {
+        object: 'block',
+        type: 'quote',
+        quote: {
+          rich_text: [
+            {
+              type: 'text',
+              text: { content: highlight.highlighted_text.slice(0, 1900) },
+            },
+          ],
         },
       },
+      ...(highlight.note
+        ? [
+            {
+              object: 'block',
+              type: 'paragraph',
+              paragraph: {
+                rich_text: [
+                  {
+                    type: 'text',
+                    text: { content: `Note: ${highlight.note.slice(0, 1800)}` },
+                  },
+                ],
+              },
+            },
+          ]
+        : []),
+      ...(tags.length
+        ? [
+            {
+              object: 'block',
+              type: 'paragraph',
+              paragraph: {
+                rich_text: [
+                  {
+                    type: 'text',
+                    text: { content: `Tags: ${tags.join(', ').slice(0, 1800)}` },
+                  },
+                ],
+              },
+            },
+          ]
+        : []),
+    ],
+  };
+
+  if (highlight.notion_page_id) {
+    const response = await fetch(`https://api.notion.com/v1/pages/${highlight.notion_page_id}`, {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Notion-Version': '2022-06-28',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ properties: baseBody.properties }),
+    });
+
+    if (!response.ok) {
+      const message = await response.text();
+      throw new Error(`Notion update failed: ${response.status} ${message.slice(0, 200)}`);
+    }
+
+    return highlight.notion_page_id;
+  }
+
+  const response = await fetch('https://api.notion.com/v1/pages', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Notion-Version': '2022-06-28',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      parent: { workspace: true },
+      ...baseBody,
     }),
   });
 
-  const children = await notionRequest<NotionBlockListResponse>(
-    accessToken,
-    `https://api.notion.com/v1/blocks/${pageId}/children?page_size=100`,
-    { method: 'GET' },
-  );
-
-  for (const block of children.results || []) {
-    await notionRequest(accessToken, `https://api.notion.com/v1/blocks/${block.id}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ archived: true }),
-    });
+  if (!response.ok) {
+    const message = await response.text();
+    throw new Error(`Notion create failed: ${response.status} ${message.slice(0, 200)}`);
   }
 
-  await notionRequest(accessToken, `https://api.notion.com/v1/blocks/${pageId}/children`, {
-    method: 'PATCH',
-    body: JSON.stringify({ children: buildChildren(item) }),
-  });
-}
-
-async function upsertNotionPage(accessToken: string, item: HighlightForSync) {
-  if (item.notion_page_id) {
-    try {
-      await replaceExistingPage(accessToken, item.notion_page_id, item);
-      return item.notion_page_id;
-    } catch {
-      // fall through to create new page when existing page is gone or inaccessible
-    }
-  }
-
-  return createNotionPage(accessToken, item);
+  const created = (await response.json()) as { id?: string };
+  if (!created.id) throw new Error('Notion create failed: missing page id');
+  return created.id;
 }
 
 export async function processNotionSyncJob(supabase: SupabaseClient, userId: string) {
-  const entitlement = await checkEntitlement(supabase, userId, 'notion_sync');
-  if (!entitlement.allowed) {
-    await supabase
-      .from('profiles')
-      .update({ notion_sync_status: 'failed', notion_last_error: 'Notion sync requires elite plan' })
-      .eq('id', userId);
-    return { total: 0, synced: 0, failed: 0, skipped: 0 };
-  }
-
-  await supabase.from('profiles').update({ notion_sync_status: 'syncing', notion_last_error: null }).eq('id', userId);
-
-  const { data: profile } = await supabase
+  const { data: profile, error: profileError } = await supabase
     .from('profiles')
-    .select('notion_access_token_encrypted')
+    .select('id, plan_tier, notion_access_token_enc')
     .eq('id', userId)
-    .maybeSingle<NotionProfile>();
+    .maybeSingle<ProfileRow>();
 
-  if (!profile?.notion_access_token_encrypted) {
-    throw new Error('Notion is not connected');
-  }
+  if (profileError) throw profileError;
+  if (!profile) throw new Error('Profile not found');
+  if (profile.plan_tier !== 'elite') throw new Error('Notion sync requires elite tier');
+  if (!profile.notion_access_token_enc) throw new Error('Notion is not connected');
 
-  const accessToken = decryptNotionToken(profile.notion_access_token_encrypted);
+  const notionToken = decryptNotionToken(profile.notion_access_token_enc);
 
-  const { data: highlights, error } = await supabase
+  await supabase
+    .from('profiles')
+    .update({ notion_sync_status: 'syncing', notion_last_error: null })
+    .eq('id', userId);
+
+  const { data: highlights, error: highlightsError } = await supabase
     .from('highlights')
-    .select(
-      'id, highlighted_text, note, auto_tags, created_at, notion_page_id, notion_source_hash, notion_last_synced_at, notion_sync_status, issues(subject, senders(name, email))',
-    )
+    .select('id, highlighted_text, note, auto_tags, notion_page_id, notion_source_hash, created_at, issues(subject, from_email)')
     .eq('user_id', userId)
-    .order('created_at', { ascending: true })
-    .returns<HighlightForSync[]>();
+    .order('created_at', { ascending: false })
+    .limit(100);
 
-  if (error) throw error;
+  if (highlightsError) throw highlightsError;
 
-  let synced = 0;
-  let skipped = 0;
-  const failed: string[] = [];
-  let lastErrorMessage: string | null = null;
+  let syncedCount = 0;
+  for (const highlight of (highlights || []) as HighlightRow[]) {
+    const sourceHash = hashSource({
+      text: highlight.highlighted_text,
+      note: highlight.note,
+      tags: highlight.auto_tags || [],
+      subject: highlight.issues?.[0]?.subject || null,
+    });
 
-  for (const item of highlights || []) {
-    const nextHash = buildSourceHash(item);
-
-    if (item.notion_page_id && item.notion_source_hash === nextHash && item.notion_sync_status === 'synced') {
-      skipped += 1;
+    if (highlight.notion_source_hash && highlight.notion_source_hash === sourceHash) {
       continue;
     }
 
     try {
-      const notionPageId = await upsertNotionPage(accessToken, item);
+      const pageId = await upsertNotionPage(notionToken, highlight);
       await supabase
         .from('highlights')
         .update({
-          notion_page_id: notionPageId,
-          notion_source_hash: nextHash,
-          notion_sync_status: 'synced',
+          notion_page_id: pageId,
+          notion_source_hash: sourceHash,
           notion_last_synced_at: new Date().toISOString(),
+          notion_sync_status: 'synced',
         })
-        .eq('id', item.id)
+        .eq('id', highlight.id)
         .eq('user_id', userId);
-
-      synced += 1;
-    } catch (syncError) {
-      failed.push(item.id);
-      const message = syncError instanceof Error ? syncError.message : 'Sync failed';
-      lastErrorMessage = message;
-      console.error('[notion-sync] highlight sync failed', { userId, highlightId: item.id, message });
-
+      syncedCount += 1;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Notion sync failed';
       await supabase
         .from('highlights')
-        .update({ notion_sync_status: 'failed' })
-        .eq('id', item.id)
+        .update({ notion_sync_status: 'error' })
+        .eq('id', highlight.id)
         .eq('user_id', userId);
-
-      await supabase.from('profiles').update({ notion_last_error: message.slice(0, 1000) }).eq('id', userId);
+      throw new Error(`Highlight ${highlight.id} sync failed: ${message}`);
     }
   }
 
-  const profileUpdate: { notion_sync_status: 'failed' | 'idle'; notion_last_sync_at: string; notion_last_error?: string | null } = {
-    notion_sync_status: failed.length > 0 ? 'failed' : 'idle',
-    notion_last_sync_at: new Date().toISOString(),
-  };
+  await supabase
+    .from('profiles')
+    .update({
+      notion_sync_status: 'ok',
+      notion_last_synced_at: new Date().toISOString(),
+      notion_last_error: null,
+    })
+    .eq('id', userId);
 
-  if (failed.length === 0) {
-    profileUpdate.notion_last_error = null;
-  }
-
-  await supabase.from('profiles').update(profileUpdate).eq('id', userId);
-
-  if (failed.length > 0) {
-    throw new Error(lastErrorMessage || `Notion sync failed for ${failed.length} highlights`);
-  }
-
-  return {
-    total: (highlights || []).length,
-    synced,
-    failed: failed.length,
-    skipped,
-  };
+  return { syncedCount };
 }

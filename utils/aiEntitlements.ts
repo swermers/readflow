@@ -70,16 +70,9 @@ function isCycleExpired(startAt: string | null | undefined) {
 
 export function format402Payload(result: EnsureResult) {
   return {
-    error: result.reason || 'Insufficient tokens',
-    code: 'PAYMENT_REQUIRED',
-    message: result.reason || 'Insufficient tokens',
-    reason: result.reason || 'Insufficient tokens',
+    error: 'Insufficient credits',
     required: result.required,
     available: result.available,
-    limit: result.limit,
-    planTier: result.tier,
-    resetAt: result.resetAt,
-    unlimitedAiAccess: Boolean(result.unlimitedAiAccess),
   };
 }
 
@@ -135,7 +128,7 @@ export async function ensureTokensAvailable(
       limit,
       tier,
       resetAt,
-      reason: 'Insufficient tokens',
+      reason: 'Insufficient credits',
     };
   }
 
@@ -244,5 +237,7 @@ export async function checkEntitlement(
 }
 
 
-// Backward-compatible alias during credits->tokens migration.
+// Backward-compatible aliases during credits->tokens migration.
 export const getMonthlyCreditLimit = getMonthlyTokenLimit;
+export const ensureCreditsAvailable = ensureTokensAvailable;
+export const consumeCreditsAtomic = consumeTokensAtomic;
