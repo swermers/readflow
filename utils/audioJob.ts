@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { consumeTokensAtomic } from '@/utils/aiEntitlements';
 import { buildAudioHash, getGlobalAudioCache, normalizeAudioText, upsertGlobalAudioCache } from '@/utils/audioCache';
+import { latencyMs, recordAudioMetric } from '@/utils/audioMetrics';
 import { buildAudioScript, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
 
 const MAX_CHUNK_CHARS = 2500;
@@ -118,6 +119,14 @@ async function setAudioStatus(
     },
     { onConflict: 'issue_id,user_id' },
   );
+
+}
+
+
+async function safeRecordMetric(supabase: SupabaseClient, metricName: Parameters<typeof recordAudioMetric>[2], metricValue = 1, reason?: string) {
+  try {
+    await recordAudioMetric(supabase, 'article', metricName, metricValue, reason);
+  } catch {}
 }
 
 export async function processAudioRequestedJob(supabase: SupabaseClient, userId: string, issueId: string) {
@@ -131,8 +140,10 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
 
   if (!issue) throw new Error('Issue not found');
 
+  const generationStartedAt = new Date().toISOString();
+
   await setAudioStatus(supabase, userId, issueId, 'processing', undefined, {
-    generation_started_at: new Date().toISOString(),
+    generation_started_at: generationStartedAt,
   });
 
   const articleText = (issue.body_text?.trim() || stripHtmlForSpeech(issue.body_html || '')).trim();
@@ -155,8 +166,13 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     normalizedBody,
   ]);
 
-  const globalHit = await getGlobalAudioCache(supabase, audioHash, 'article');
+  let globalHit: Awaited<ReturnType<typeof getGlobalAudioCache>> = null;
+  try {
+    globalHit = await getGlobalAudioCache(supabase, audioHash, 'article');
+  } catch {}
+
   if (globalHit?.audio_base64) {
+    await safeRecordMetric(supabase, 'audio_cache_hit');
     await supabase.from('issue_audio_cache').upsert(
       {
         issue_id: issueId,
@@ -172,8 +188,11 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       },
       { onConflict: 'issue_id,user_id' },
     );
+    await safeRecordMetric(supabase, 'audio_generation_succeeded');
     return;
   }
+
+  await safeRecordMetric(supabase, 'audio_cache_miss');
 
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
@@ -194,8 +213,10 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   for (let i = 0; i < chunks.length; i += 1) {
     const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[i], voice, preferredModel);
     if (!tts.ok) {
+      const failReason = `Audio provider failed on chunk ${i + 1}/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`;
       await setAudioStatus(supabase, userId, issueId, 'failed', preferredModel);
-      throw new Error(`Audio provider failed on chunk ${i + 1}/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`);
+      await safeRecordMetric(supabase, 'audio_generation_failed', 1, failReason);
+      throw new Error(failReason);
     }
 
     usedModel = tts.model;
@@ -203,11 +224,15 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     audioChunks.push(chunkBuffer);
 
     if (i === 0) {
+      const firstChunkReadyAt = new Date();
       await setAudioStatus(supabase, userId, issueId, 'processing', usedModel, {
         first_chunk_base64: chunkBuffer.toString('base64'),
-        first_chunk_ready_at: new Date().toISOString(),
+        first_chunk_ready_at: firstChunkReadyAt.toISOString(),
         audio_hash: audioHash,
       });
+
+      const firstChunkLatency = latencyMs(generationStartedAt, firstChunkReadyAt);
+      if (firstChunkLatency !== null) await safeRecordMetric(supabase, 'audio_first_chunk_latency_ms', firstChunkLatency);
     }
   }
 
@@ -227,6 +252,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     const consumeResult = await consumeTokensAtomic(supabase, userId, 10);
     if (!consumeResult.allowed) {
       await setAudioStatus(supabase, userId, issueId, 'failed', usedModel);
+      await safeRecordMetric(supabase, 'audio_generation_failed', 1, 'Insufficient credits');
       throw new Error('Insufficient credits');
     }
 
@@ -236,15 +262,17 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
 
   const audioBase64 = Buffer.concat(audioChunks).toString('base64');
 
-  await upsertGlobalAudioCache(supabase, {
-    audioHash,
-    contentType: 'article',
-    mimeType: 'audio/mpeg',
-    audioBase64,
-    scriptText: built.script,
-    provider: 'openai',
-    model: usedModel,
-  });
+  try {
+    await upsertGlobalAudioCache(supabase, {
+      audioHash,
+      contentType: 'article',
+      mimeType: 'audio/mpeg',
+      audioBase64,
+      scriptText: built.script,
+      provider: 'openai',
+      model: usedModel,
+    });
+  } catch {}
 
   await supabase.from('issue_audio_cache').upsert(
     {
@@ -263,4 +291,8 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     },
     { onConflict: 'issue_id,user_id' },
   );
+
+  const totalLatency = latencyMs(generationStartedAt);
+  if (totalLatency !== null) await safeRecordMetric(supabase, 'audio_total_generation_latency_ms', totalLatency);
+  await safeRecordMetric(supabase, 'audio_generation_succeeded');
 }
