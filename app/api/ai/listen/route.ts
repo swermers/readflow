@@ -84,6 +84,9 @@ function buildAudioHints(reason: string) {
   if (lower.includes('insufficient credits')) {
     hints.push('Your account ran out of AI credits/tokens for listen generation.');
   }
+  if (lower.includes('insufficient_quota') || lower.includes('exceeded your current quota') || lower.includes('429')) {
+    hints.push('OpenAI quota was exceeded. Update provider billing/quota limits or switch TTS provider/model.');
+  }
 
   if (!hints.length) {
     hints.push('Check server logs for /api/ai/listen and worker/audio job errors.');
@@ -108,6 +111,27 @@ async function processAudioInline(supabase: UserSupabase, userId: string, issueI
   } catch (error) {
     return { ok: false, reason: toErrorReason(error) };
   }
+}
+
+async function triggerInlineProcessingDetached(supabase: UserSupabase, userId: string, issueId: string) {
+  const client = getAdminOrUserClient(supabase);
+
+  setTimeout(() => {
+    void processAudioRequestedJob(client, userId, issueId).catch(async (error) => {
+      const reason = toErrorReason(error);
+      await client.from('issue_audio_cache').upsert(
+        {
+          issue_id: issueId,
+          user_id: userId,
+          status: 'failed',
+          provider: 'openai',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'issue_id,user_id' },
+      );
+
+    });
+  }, 0);
 }
 
 async function enqueueAudioJob(supabase: UserSupabase, userId: string, issueId: string): Promise<AudioAttempt> {
@@ -137,24 +161,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
   }
 
-  let cachedAudio = await getCachedAudio(supabase, issueId, user.id);
-
-  if (!process.env.WORKER_SECRET && ['queued', 'processing'].includes(cachedAudio?.status || '')) {
-    const processed = await processAudioInline(supabase, user.id, issueId);
-    if (!processed.ok) {
-      await supabase.from('issue_audio_cache').upsert(
-        {
-          issue_id: issueId,
-          user_id: user.id,
-          status: 'failed',
-          provider: 'openai',
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'issue_id,user_id' },
-      );
-    }
-    cachedAudio = await getCachedAudio(supabase, issueId, user.id);
-  }
+  const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
 
   const isReady = Boolean(cachedAudio?.audio_base64 && cachedAudio?.status === 'ready');
   const hasPreviewChunk = Boolean(cachedAudio?.first_chunk_base64 && ['queued', 'processing'].includes(cachedAudio?.status || ''));
@@ -264,7 +271,7 @@ export async function POST(request: NextRequest) {
     {
       issue_id: issueId,
       user_id: user.id,
-      status: 'processing',
+      status: 'queued',
       provider: 'openai',
       updated_at: new Date().toISOString(),
     },
@@ -272,40 +279,19 @@ export async function POST(request: NextRequest) {
   );
 
   if (!process.env.WORKER_SECRET) {
-    const processed = await processAudioInline(supabase, user.id, issueId);
-    const latest = await getCachedAudio(supabase, issueId, user.id);
-    if (processed.ok && latest?.audio_base64 && latest.status === 'ready') {
-      return NextResponse.json(
-        {
-          status: 'ready' as AudioStatus,
-          audioUrl: `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}`,
-          planTier: entitlement.tier,
-          tokensRemaining: entitlement.available,
-          tokensLimit: entitlement.limit,
-          unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
-        },
-        { status: 200 },
-      );
-    }
-
-    await supabase.from('issue_audio_cache').upsert(
-      {
-        issue_id: issueId,
-        user_id: user.id,
-        status: 'failed',
-        provider: 'openai',
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'issue_id,user_id' },
-    );
+    await triggerInlineProcessingDetached(supabase, user.id, issueId);
 
     return NextResponse.json(
       {
-        error: `Audio generation failed: ${processed.ok ? 'unknown' : processed.reason}`,
-        hints: buildAudioHints(processed.ok ? 'unknown' : processed.reason),
-        status: 'failed' as AudioStatus,
+        status: 'queued' as AudioStatus,
+        audioUrl: null,
+        previewAudioUrl: null,
+        planTier: entitlement.tier,
+        tokensRemaining: entitlement.available,
+        tokensLimit: entitlement.limit,
+        unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
       },
-      { status: 503 },
+      { status: 202 },
     );
   }
 

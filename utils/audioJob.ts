@@ -102,6 +102,10 @@ async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: st
     if (res.status === 400 && /input|length|too\s+long|maximum/i.test(errorBody)) {
       break;
     }
+
+    if (res.status === 429 && /insufficient_quota|exceeded\s+your\s+current\s+quota/i.test(errorBody)) {
+      break;
+    }
   }
 
   return { ok: false as const, status: lastStatus, reason: lastError };

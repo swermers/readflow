@@ -195,7 +195,6 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         if (payload.audioAvailable && payload.audioUrl) {
           setAudioUrl(payload.audioUrl);
           setPreviewAudioUrl(null);
-      readyToastShownRef.current = false;
           if (nextStatus === 'ready') {
             setAudioQueuedAt(null);
             clearGlobalAudioPendingIssue();
@@ -253,7 +252,6 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         if (payload.audioUrl) {
           setAudioUrl(payload.audioUrl);
           setPreviewAudioUrl(null);
-      readyToastShownRef.current = false;
           if (!readyToastShownRef.current) {
             triggerToast('Narration is ready — tap play to listen.');
             readyToastShownRef.current = true;
