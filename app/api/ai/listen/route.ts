@@ -6,6 +6,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
 import { enqueueJob } from '@/utils/jobs';
 import { createAdminClient } from '@/utils/supabase/admin';
+import { processAudioRequestedJob } from '@/utils/audioJob';
 
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
 
@@ -61,6 +62,17 @@ function shouldRequeue(status: string | null | undefined, updatedAt: string | nu
   return Number.isFinite(ageMs) && ageMs > STALE_PROCESSING_MS;
 }
 
+
+async function processAudioInline(userId: string, issueId: string) {
+  try {
+    const admin = createAdminClient();
+    await processAudioRequestedJob(admin, userId, issueId);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function enqueueAudioJob(userId: string, issueId: string) {
   try {
     const admin = createAdminClient();
@@ -88,7 +100,25 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Issue not found' }, { status: 404 });
   }
 
-  const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
+  let cachedAudio = await getCachedAudio(supabase, issueId, user.id);
+
+  if (!process.env.WORKER_SECRET && ['queued', 'processing'].includes(cachedAudio?.status || '')) {
+    const processed = await processAudioInline(user.id, issueId);
+    if (!processed) {
+      await supabase.from('issue_audio_cache').upsert(
+        {
+          issue_id: issueId,
+          user_id: user.id,
+          status: 'failed',
+          provider: 'openai',
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'issue_id,user_id' },
+      );
+    }
+    cachedAudio = await getCachedAudio(supabase, issueId, user.id);
+  }
+
   const isReady = Boolean(cachedAudio?.audio_base64 && cachedAudio?.status === 'ready');
 
   if (shouldRequeue(cachedAudio?.status, cachedAudio?.updated_at)) {
@@ -201,6 +231,43 @@ export async function POST(request: NextRequest) {
     },
     { onConflict: 'issue_id,user_id' },
   );
+
+  if (!process.env.WORKER_SECRET) {
+    const processed = await processAudioInline(user.id, issueId);
+    const latest = await getCachedAudio(supabase, issueId, user.id);
+    if (processed && latest?.audio_base64 && latest.status === 'ready') {
+      return NextResponse.json(
+        {
+          status: 'ready' as AudioStatus,
+          audioUrl: `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}`,
+          planTier: entitlement.tier,
+          tokensRemaining: entitlement.available,
+          tokensLimit: entitlement.limit,
+          unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
+        },
+        { status: 200 },
+      );
+    }
+
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: user.id,
+        status: 'failed',
+        provider: 'openai',
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' },
+    );
+
+    return NextResponse.json(
+      {
+        error: 'Audio generation failed. Please retry in a moment.',
+        status: 'failed' as AudioStatus,
+      },
+      { status: 503 },
+    );
+  }
 
   const queued = await enqueueAudioJob(user.id, issueId);
   if (!queued) {
