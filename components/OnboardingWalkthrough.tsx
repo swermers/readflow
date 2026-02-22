@@ -49,28 +49,12 @@ const steps = [
 
 export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughProps) {
   const [isOpen, setIsOpen] = useState(open);
-  const [isSaving, setIsSaving] = useState(false);
 
   if (!isOpen) return null;
 
-  const completeWalkthrough = async () => {
-    if (isSaving) return;
-    setIsSaving(true);
-
-    try {
-      const res = await fetch('/api/profile/onboarding', { method: 'PATCH' });
-      if (!res.ok) {
-        triggerToast('Could not save walkthrough status.');
-        return;
-      }
-
-      setIsOpen(false);
-      triggerToast('Walkthrough complete. You can reopen setup help anytime in Settings.');
-    } catch {
-      triggerToast('Could not save walkthrough status.');
-    } finally {
-      setIsSaving(false);
-    }
+  const completeWalkthrough = () => {
+    setIsOpen(false);
+    triggerToast('Walkthrough complete. Connect Gmail in Settings to get started.');
   };
 
   return (
@@ -111,10 +95,9 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
           </button>
           <button
             onClick={completeWalkthrough}
-            disabled={isSaving}
-            className="rounded-lg bg-ink px-4 py-2 text-xs uppercase tracking-[0.08em] text-surface hover:bg-accent disabled:opacity-60"
+            className="rounded-lg bg-ink px-4 py-2 text-xs uppercase tracking-[0.08em] text-surface hover:bg-accent"
           >
-            {isSaving ? 'Saving...' : 'Got it'}
+            Got it
           </button>
         </div>
       </div>

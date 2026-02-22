@@ -6,7 +6,6 @@ import SyncButton from '@/components/SyncButton';
 import AutoSync from '@/components/AutoSync';
 import RackIssueActions from '@/components/RackIssueActions';
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough';
-import NewsletterDetectOnboarding from '@/components/NewsletterDetectOnboarding';
 import SignalSortButton from '@/components/SignalSortButton';
 
 const ZEN_QUOTES = [
@@ -85,18 +84,16 @@ export default async function Home() {
 
   let gmailConnected = false;
   let lastSyncAt: string | null = null;
-  let onboardingCompleted = false;
 
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('gmail_connected, gmail_last_sync_at, onboarding_completed')
+      .select('gmail_connected, gmail_last_sync_at')
       .eq('id', user.id)
       .single();
 
     gmailConnected = profile?.gmail_connected || false;
     lastSyncAt = profile?.gmail_last_sync_at || null;
-    onboardingCompleted = profile?.onboarding_completed || false;
   }
 
   if (error) {
@@ -120,11 +117,7 @@ export default async function Home() {
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
-      {!onboardingCompleted && (
-        gmailConnected
-          ? <NewsletterDetectOnboarding />
-          : <OnboardingWalkthrough open />
-      )}
+      {!gmailConnected && <OnboardingWalkthrough open />}
       {gmailConnected && <AutoSync lastSyncAt={lastSyncAt} />}
 
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">

@@ -1,7 +1,6 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { encryptToken } from '@/utils/tokenCrypto';
 
 function generateAlias(length = 8): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -95,11 +94,11 @@ export async function GET(request: Request) {
         };
 
         if (providerToken) {
-          updates.gmail_access_token = encryptToken(providerToken);
+          updates.gmail_access_token = providerToken;
           updates.gmail_token_expires_at = new Date(Date.now() + 3600 * 1000).toISOString();
         }
         if (providerRefreshToken) {
-          updates.gmail_refresh_token = encryptToken(providerRefreshToken);
+          updates.gmail_refresh_token = providerRefreshToken;
         }
 
         const { error: updateErr } = await supabase

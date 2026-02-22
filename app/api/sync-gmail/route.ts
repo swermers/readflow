@@ -3,7 +3,6 @@ import { NextResponse } from 'next/server';
 import { refreshAccessToken, listMessageIdsByLabel, getMessage } from '@/utils/gmailClient';
 import { parseGmailMessage } from '@/utils/emailParser';
 import { classifyIssueSignal } from '@/utils/signalSortHeuristics';
-import { encryptToken, decryptToken, isEncryptedPayload } from '@/utils/tokenCrypto';
 import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
 export async function POST() {
@@ -44,21 +43,16 @@ export async function POST() {
   }
 
   try {
-    // Decrypt refresh token (supports both encrypted and legacy plaintext tokens)
-    const rawRefreshToken = profile.gmail_refresh_token;
-    const refreshToken = isEncryptedPayload(rawRefreshToken)
-      ? decryptToken(rawRefreshToken)
-      : rawRefreshToken;
+    const refreshToken = profile.gmail_refresh_token;
 
     // Refresh the access token (always refresh to ensure it's valid)
     const { accessToken, expiresAt } = await refreshAccessToken(refreshToken);
 
-    // Store tokens encrypted at rest
+    // Store the refreshed access token
     await supabase
       .from('profiles')
       .update({
-        gmail_access_token: encryptToken(accessToken),
-        gmail_refresh_token: isEncryptedPayload(rawRefreshToken) ? rawRefreshToken : encryptToken(refreshToken),
+        gmail_access_token: accessToken,
         gmail_token_expires_at: expiresAt.toISOString(),
       })
       .eq('id', user.id);
