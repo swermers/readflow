@@ -6,6 +6,7 @@ import SyncButton from '@/components/SyncButton';
 import AutoSync from '@/components/AutoSync';
 import RackIssueActions from '@/components/RackIssueActions';
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough';
+import NewsletterDetectOnboarding from '@/components/NewsletterDetectOnboarding';
 import SignalSortButton from '@/components/SignalSortButton';
 
 const ZEN_QUOTES = [
@@ -119,7 +120,11 @@ export default async function Home() {
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
-      {!onboardingCompleted && <OnboardingWalkthrough open />}
+      {!onboardingCompleted && (
+        gmailConnected
+          ? <NewsletterDetectOnboarding />
+          : <OnboardingWalkthrough open />
+      )}
       {gmailConnected && <AutoSync lastSyncAt={lastSyncAt} />}
 
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">

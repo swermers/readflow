@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import {
-  Newspaper, Archive, Settings, LogOut, Sun, Moon, StickyNote, BookMarked, Compass, X,
+  Newspaper, Archive, Settings, LogOut, Sun, Moon, StickyNote, BookMarked, Compass, Search, X,
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 
@@ -39,6 +39,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose:
     { href: '/library', label: 'Library', icon: <BookMarked className="w-[18px] h-[18px]" /> },
     { href: '/archive', label: 'Archive', icon: <Archive className="w-[18px] h-[18px]" /> },
     { href: '/notes', label: 'Notes', icon: <StickyNote className="w-[18px] h-[18px]" /> },
+    { href: '/search', label: 'Search', icon: <Search className="w-[18px] h-[18px]" /> },
   ];
 
   return (
