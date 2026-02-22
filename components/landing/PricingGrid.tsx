@@ -7,22 +7,46 @@ const tiers = [
     name: 'Free',
     price: '$0',
     label: 'The Quiet Inbox',
-    features: ['5 Sources', '3 Readflow Credits'],
+    features: [
+      'Unlimited Sources',
+      'Highlights & Notes',
+      '5 AI Summaries / month',
+      '2 Audio Listens / month',
+      '7-day Rack retention',
+    ],
   },
   {
     name: 'Pro',
-    price: '$9',
+    price: '$7',
+    annual: '$59/yr',
     label: 'The Organized Reader',
-    features: ['Unlimited Sources', '50 Readflow Credits', 'Highlights & Notes'],
-    badge: 'Most Purchased',
+    features: [
+      'Everything in Free',
+      '50 AI Summaries / month',
+      '20 Audio Listens / month',
+      'Signal Sorting',
+      'Highlight Export',
+      '30-day Rack retention',
+    ],
+    badge: 'Most Popular',
   },
   {
     name: 'Elite',
-    price: '$25',
+    price: '$19',
+    annual: '$149/yr',
     label: 'The Executive Intelligence',
-    features: ['Weekly Auto-Brief', 'Semantic Search', 'Hightlights & Notes', 'Export Notes and highlights', 'Priority Neural Voice', 'Link Multiple Accounts', '300 Readflow Credits', 'coming soon, X Integration for Bookmarks'],
+    features: [
+      'Everything in Pro',
+      'Unlimited AI Summaries',
+      'Unlimited Audio',
+      'Weekly Brief & Podcast',
+      'Notion Sync',
+      'Semantic Search',
+      'Multiple Gmail Accounts',
+      'Priority Neural Voice',
+    ],
     highlight: true,
-    badge: 'Most Popular for Founders',
+    badge: 'Best for Founders',
   },
 ];
 
@@ -51,6 +75,9 @@ export default function PricingGrid() {
           ) : null}
           <h3 className="text-heading text-ink">{tier.name}</h3>
           <p className="mt-2 text-3xl font-bold text-ink">{tier.price}<span className="text-base text-ink-muted">/mo</span></p>
+          {'annual' in tier && tier.annual && (
+            <p className="text-xs text-accent font-medium mt-0.5">{tier.annual} — save 30%</p>
+          )}
           <p className="mt-1 text-sm text-ink-muted">{tier.label}</p>
           <ul className="mt-4 space-y-2 text-sm text-ink-muted">
             {tier.features.map((feature) => (

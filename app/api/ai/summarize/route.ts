@@ -5,6 +5,7 @@ import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
 import { ANTHROPIC_MODEL_CANDIDATES, XAI_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
+import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
 type SummaryResult = {
   summary: string;
@@ -211,6 +212,10 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Rate limit: 10 AI summary requests per minute per user
+  const rl = checkRateLimit(`summarize:${user.id}`, 10, 60_000);
+  if (!rl.allowed) return rateLimitResponse(rl.resetMs);
+
   const body = await request.json();
   const issueId = body?.issueId as string | undefined;
   const provider = body?.provider === 'grok' ? 'grok' : 'anthropic';
@@ -222,6 +227,25 @@ export async function POST(request: NextRequest) {
 
   if (!issueId) {
     return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
+  }
+
+  // Check for cached summary first (returns without consuming credits)
+  const { data: cached } = await supabase
+    .from('issue_summaries')
+    .select('summary, takeaways, provider')
+    .eq('issue_id', issueId)
+    .maybeSingle();
+
+  if (cached?.summary && Array.isArray(cached.takeaways)) {
+    return NextResponse.json({
+      provider: cached.provider || 'cached',
+      summary: cached.summary,
+      takeaways: cached.takeaways,
+      cached: true,
+      tokensRemaining: entitlement.available,
+      tokensLimit: entitlement.limit,
+      planTier: entitlement.tier,
+    });
   }
 
   const { data: issue, error } = await supabase
@@ -255,6 +279,18 @@ export async function POST(request: NextRequest) {
       ? await summarizeWithGrok(input, expectedLanguageCode)
       : await summarizeWithAnthropic(input, expectedLanguageCode);
 
+    // Cache the summary for future requests (fire-and-forget)
+    supabase
+      .from('issue_summaries')
+      .upsert({
+        issue_id: issueId,
+        user_id: user.id,
+        summary: result.summary,
+        takeaways: result.takeaways,
+        provider,
+      }, { onConflict: 'issue_id' })
+      .then(() => {});
+
     const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
     return NextResponse.json({
       provider,
@@ -281,23 +317,9 @@ export async function POST(request: NextRequest) {
         unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
       });
     } catch (fallbackError) {
-      const primaryMessage = serializeError(primaryError);
-      const fallbackMessage = serializeError(fallbackError);
-
-      console.error('AI summarize failed:', primaryMessage, fallbackMessage);
+      console.error('AI summarize failed:', serializeError(primaryError), serializeError(fallbackError));
       return NextResponse.json(
-        {
-          error: 'Failed to generate TL;DR with configured providers',
-          hints: [
-            'Confirm ANTHROPIC_API_KEY and XAI_API_KEY (or GROK_API_KEY) are set for the same Vercel environment',
-            'Verify provider model names are valid for your account',
-            'After updating env vars, trigger a fresh redeploy of that environment',
-          ],
-          providerErrors: {
-            [provider]: primaryMessage,
-            [fallbackProvider]: fallbackMessage,
-          },
-        },
+        { error: 'Failed to generate summary. Please try again later.' },
         { status: 500 }
       );
     }

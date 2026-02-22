@@ -7,6 +7,7 @@ import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
 import { enqueueJob } from '@/utils/jobs';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { processAudioRequestedJob } from '@/utils/audioJob';
+import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
 
@@ -232,6 +233,10 @@ export async function POST(request: NextRequest) {
   if (!user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Rate limit: 5 audio generation requests per minute per user
+  const rl = checkRateLimit(`listen:${user.id}`, 5, 60_000);
+  if (!rl.allowed) return rateLimitResponse(rl.resetMs);
 
   const body = await request.json();
   const issueId = body?.issueId as string | undefined;

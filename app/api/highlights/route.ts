@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server';
 import { deriveAutoTags } from '@/utils/noteTags';
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
 function isMissingSelectionColumnError(error: { code?: string; message?: string } | null) {
   if (!error) return false;
@@ -45,7 +46,11 @@ export async function GET(request: NextRequest) {
     }
 
     if (search) {
-      query = query.or(`highlighted_text.ilike.%${search}%,note.ilike.%${search}%`);
+      // Sanitize search input: escape characters meaningful to PostgREST filter syntax
+      const sanitized = search.replace(/[,%().*\\]/g, '');
+      if (sanitized) {
+        query = query.or(`highlighted_text.ilike.%${sanitized}%,note.ilike.%${sanitized}%`);
+      }
     }
 
     return query;
@@ -74,6 +79,10 @@ export async function POST(request: NextRequest) {
   if (authError || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
+
+  // Rate limit: 30 highlight creations per minute per user
+  const rl = checkRateLimit(`highlights:${user.id}`, 30, 60_000);
+  if (!rl.allowed) return rateLimitResponse(rl.resetMs);
 
   const body = await request.json();
   const issueId = body.issue_id as string | undefined;

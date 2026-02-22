@@ -7,7 +7,7 @@ export default function ROICalculator() {
   const [hoursReading, setHoursReading] = useState(4);
   const [hourlyRate, setHourlyRate] = useState(150);
 
-  const saved = useMemo(() => (hoursReading * 52) * 0.5 * hourlyRate, [hoursReading, hourlyRate]);
+  const saved = useMemo(() => (hoursReading * 52) * 0.3 * hourlyRate, [hoursReading, hourlyRate]);
   const monthlySaved = Math.round(saved / 12);
   const weeklySaved = Math.round(saved / 52);
 
@@ -20,7 +20,7 @@ export default function ROICalculator() {
       className="rounded-2xl border border-line bg-surface-raised p-6 shadow-sm"
     >
       <h3 className="mb-2 text-display text-ink">ROI Calculator</h3>
-      <p className="mb-5 text-sm text-ink-muted">Assumes Readflow recovers 50% of your newsletter reading time.</p>
+      <p className="mb-5 text-sm text-ink-muted">Assumes Readflow recovers 30% of your newsletter reading time.</p>
 
       <div className="grid gap-6 md:grid-cols-2">
         <label className="text-sm text-ink-muted">

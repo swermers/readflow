@@ -1,6 +1,7 @@
 'use client';
 
 import { type MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from 'react';
+import DOMPurify from 'dompurify';
 import HighlightToolbar from './HighlightToolbar';
 import HighlightPopover from './HighlightPopover';
 
@@ -448,7 +449,12 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
 
     // Always rehydrate from clean HTML so marks stay in sync after refreshes,
     // edits, migrations, and "jump to paragraph" deep-links.
-    container.innerHTML = bodyHtml || '';
+    // Client-side DOMPurify as defense-in-depth (server already sanitizes on ingest).
+    container.innerHTML = DOMPurify.sanitize(bodyHtml || '', {
+      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'applet', 'form', 'input', 'button', 'select', 'textarea'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+      ALLOW_DATA_ATTR: false,
+    });
 
     if (highlights.length > 0) {
       const usedRanges: Array<{ start: number; end: number }> = [];

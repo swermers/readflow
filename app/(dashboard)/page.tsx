@@ -6,6 +6,7 @@ import SyncButton from '@/components/SyncButton';
 import AutoSync from '@/components/AutoSync';
 import RackIssueActions from '@/components/RackIssueActions';
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough';
+import NewsletterDetectOnboarding from '@/components/NewsletterDetectOnboarding';
 import SignalSortButton from '@/components/SignalSortButton';
 
 const ZEN_QUOTES = [
@@ -66,6 +67,8 @@ export default async function Home() {
   const supabase = await createClient();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
+  const PAGE_SIZE = 30;
+
   const { data: emails, error } = await supabase
     .from('issues')
     .select('*, senders!inner(name, status), signal_tier, signal_reason')
@@ -73,7 +76,8 @@ export default async function Home() {
     .eq('status', 'unread')
     .is('deleted_at', null)
     .gte('received_at', sevenDaysAgo)
-    .order('received_at', { ascending: false });
+    .order('received_at', { ascending: false })
+    .limit(PAGE_SIZE);
 
   const {
     data: { user },
@@ -116,7 +120,11 @@ export default async function Home() {
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
-      {!onboardingCompleted && <OnboardingWalkthrough open />}
+      {!onboardingCompleted && (
+        gmailConnected
+          ? <NewsletterDetectOnboarding />
+          : <OnboardingWalkthrough open />
+      )}
       {gmailConnected && <AutoSync lastSyncAt={lastSyncAt} />}
 
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
