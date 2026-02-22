@@ -66,6 +66,8 @@ export default async function Home() {
   const supabase = await createClient();
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
 
+  const PAGE_SIZE = 30;
+
   const { data: emails, error } = await supabase
     .from('issues')
     .select('*, senders!inner(name, status), signal_tier, signal_reason')
@@ -73,7 +75,8 @@ export default async function Home() {
     .eq('status', 'unread')
     .is('deleted_at', null)
     .gte('received_at', sevenDaysAgo)
-    .order('received_at', { ascending: false });
+    .order('received_at', { ascending: false })
+    .limit(PAGE_SIZE);
 
   const {
     data: { user },

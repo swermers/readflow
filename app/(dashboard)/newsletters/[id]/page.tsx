@@ -10,10 +10,16 @@ import BackNavButton from '@/components/BackNavButton';
 export default async function NewsletterPage({ params }: { params: { id: string } }) {
   const supabase = await createClient();
 
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) {
+    return notFound();
+  }
+
   const { data: email, error } = await supabase
     .from('issues')
     .select('*, senders(*)')
     .eq('id', params.id)
+    .eq('user_id', user.id)
     .is('deleted_at', null)
     .single();
 

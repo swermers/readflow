@@ -282,13 +282,8 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
       if (!res.ok) {
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
-        const providerErrorText = body?.providerErrors
-          ? Object.entries(body.providerErrors)
-              .map(([name, message]) => `${name}: ${message}`)
-              .join(' | ')
-          : null;
 
-        setError(providerErrorText || body?.error || 'Could not generate TL;DR right now.');
+        setError(body?.error || 'Could not generate TL;DR right now.');
         if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
           setCreditsMeta({
             remaining: body.creditsRemaining,
@@ -543,9 +538,29 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       )}
 
       {creditsMeta && (
-        <p className="mt-3 text-xs text-ink-faint">
-          AI credits: {creditsMeta.unlimited ? 'Unlimited' : `${creditsMeta.remaining}/${creditsMeta.limit} remaining`} on {creditsMeta.tier.toUpperCase()}.
-        </p>
+        <div className="mt-3">
+          <p className="text-xs text-ink-faint">
+            AI credits: {creditsMeta.unlimited ? 'Unlimited' : `${creditsMeta.remaining}/${creditsMeta.limit} remaining`} on {creditsMeta.tier.toUpperCase()}.
+          </p>
+          {!creditsMeta.unlimited && creditsMeta.remaining <= 0 && (
+            <div className="mt-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
+              <p className="text-xs font-medium text-ink">
+                You&apos;ve used all your credits this cycle.{' '}
+                <a href="/settings" className="text-accent underline hover:opacity-80">
+                  Upgrade your plan
+                </a>{' '}
+                for more AI summaries and audio.
+              </p>
+            </div>
+          )}
+          {!creditsMeta.unlimited && creditsMeta.remaining > 0 && creditsMeta.remaining <= Math.ceil(creditsMeta.limit * 0.2) && (
+            <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+              Running low on credits.{' '}
+              <a href="/settings" className="underline hover:opacity-80">Upgrade</a>{' '}
+              for more.
+            </p>
+          )}
+        </div>
       )}
 
       {data && !summaryCollapsed && (

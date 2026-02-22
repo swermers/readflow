@@ -1,35 +1,22 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
+import { createClient } from '@/utils/supabase/server';
 import { NextResponse } from 'next/server';
 import { refreshAccessToken, listMessageIdsByLabel, getMessage } from '@/utils/gmailClient';
 import { parseGmailMessage } from '@/utils/emailParser';
 import { classifyIssueSignal } from '@/utils/signalSortHeuristics';
+import { encryptToken, decryptToken, isEncryptedPayload } from '@/utils/tokenCrypto';
+import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
 export async function POST() {
-  const cookieStore = cookies();
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll();
-        },
-        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            );
-          } catch {
-            // Server Component context — safe to ignore
-          }
-        },
-      },
-    }
-  );
+  const supabase = await createClient();
 
   // Authenticate the user
   const { data: { user }, error: authError } = await supabase.auth.getUser();
+
+  if (!authError && user) {
+    // Rate limit: 3 sync requests per minute per user
+    const rl = checkRateLimit(`sync:${user.id}`, 3, 60_000);
+    if (!rl.allowed) return rateLimitResponse(rl.resetMs);
+  }
   if (authError || !user) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
@@ -57,14 +44,21 @@ export async function POST() {
   }
 
   try {
-    // Refresh the access token (always refresh to ensure it's valid)
-    const { accessToken, expiresAt } = await refreshAccessToken(profile.gmail_refresh_token);
+    // Decrypt refresh token (supports both encrypted and legacy plaintext tokens)
+    const rawRefreshToken = profile.gmail_refresh_token;
+    const refreshToken = isEncryptedPayload(rawRefreshToken)
+      ? decryptToken(rawRefreshToken)
+      : rawRefreshToken;
 
-    // Update the stored access token
+    // Refresh the access token (always refresh to ensure it's valid)
+    const { accessToken, expiresAt } = await refreshAccessToken(refreshToken);
+
+    // Store tokens encrypted at rest
     await supabase
       .from('profiles')
       .update({
-        gmail_access_token: accessToken,
+        gmail_access_token: encryptToken(accessToken),
+        gmail_refresh_token: isEncryptedPayload(rawRefreshToken) ? rawRefreshToken : encryptToken(refreshToken),
         gmail_token_expires_at: expiresAt.toISOString(),
       })
       .eq('id', user.id);
@@ -116,81 +110,84 @@ export async function POST() {
     }
 
     let imported = 0;
+    let sourceLimitReached = false;
 
-    // Fetch and import each new message
-    for (const msgId of newMessageIds) {
-      try {
-        const gmailMessage = await getMessage(accessToken, msgId);
-        const parsed = parseGmailMessage(gmailMessage);
+    // Fetch Gmail messages in parallel batches of 10 to avoid timeouts
+    const BATCH_SIZE = 10;
+    for (let i = 0; i < newMessageIds.length; i += BATCH_SIZE) {
+      const batch = newMessageIds.slice(i, i + BATCH_SIZE);
+      const fetchedMessages = await Promise.allSettled(
+        batch.map((msgId) => getMessage(accessToken, msgId).then((msg) => ({ msgId, msg })))
+      );
 
-        // Find or create sender
-        let { data: sender } = await supabase
-          .from('senders')
-          .select('id, status')
-          .eq('user_id', user.id)
-          .eq('email', parsed.from_email)
-          .single();
+      for (const result of fetchedMessages) {
+        if (result.status !== 'fulfilled') continue;
+        const { msg: gmailMessage } = result.value;
 
-        if (!sender) {
-          const { data: newSender, error: senderInsertError } = await supabase
+        try {
+          const parsed = parseGmailMessage(gmailMessage);
+
+          // Find or create sender
+          let { data: sender } = await supabase
             .from('senders')
-            .insert({
-              user_id: user.id,
-              email: parsed.from_email,
-              name: parsed.from_name,
-              status: 'approved',
-            })
             .select('id, status')
+            .eq('user_id', user.id)
+            .eq('email', parsed.from_email)
             .single();
 
-          if (senderInsertError) {
-            if (senderInsertError.message?.includes('Free plan supports up to 5 active sources.')) {
-              return NextResponse.json(
-                {
-                  error: 'Free plan supports up to 5 active sources.',
-                  code: 'SOURCE_LIMIT_REACHED',
-                  limit: 5,
-                  planTier: 'free',
-                },
-                { status: 402 },
-              );
+          if (!sender) {
+            const { data: newSender, error: senderInsertError } = await supabase
+              .from('senders')
+              .insert({
+                user_id: user.id,
+                email: parsed.from_email,
+                name: parsed.from_name,
+                status: 'approved',
+              })
+              .select('id, status')
+              .single();
+
+            if (senderInsertError) {
+              if (senderInsertError.message?.includes('Free plan supports up to 5 active sources.')) {
+                sourceLimitReached = true;
+                continue;
+              }
+              throw senderInsertError;
             }
-            throw senderInsertError;
+
+            sender = newSender;
           }
 
-          sender = newSender;
+          if (!sender) continue;
+
+          const signal = classifyIssueSignal({
+            subject: parsed.subject,
+            snippet: parsed.snippet,
+            bodyText: parsed.body_text,
+          });
+
+          // Insert the issue
+          const { error: insertError } = await supabase.from('issues').insert({
+            user_id: user.id,
+            sender_id: sender.id,
+            subject: parsed.subject,
+            snippet: parsed.snippet,
+            body_html: parsed.body_html,
+            body_text: parsed.body_text,
+            from_email: parsed.from_email,
+            message_id: parsed.message_id,
+            received_at: parsed.received_at,
+            status: 'unread',
+            signal_tier: signal.tier,
+            signal_reason: signal.reason,
+          });
+
+          if (!insertError) {
+            imported++;
+          }
+        } catch (msgError) {
+          console.error(`Failed to import message:`, msgError);
         }
-
-        if (!sender) continue;
-
-        const signal = classifyIssueSignal({
-          subject: parsed.subject,
-          snippet: parsed.snippet,
-          bodyText: parsed.body_text,
-        });
-
-        // Insert the issue
-        const { error: insertError } = await supabase.from('issues').insert({
-          user_id: user.id,
-          sender_id: sender.id,
-          subject: parsed.subject,
-          snippet: parsed.snippet,
-          body_html: parsed.body_html,
-          body_text: parsed.body_text,
-          from_email: parsed.from_email,
-          message_id: parsed.message_id,
-          received_at: parsed.received_at,
-          status: 'unread',
-          signal_tier: signal.tier,
-          signal_reason: signal.reason,
-        });
-
-        if (!insertError) {
-          imported++;
-        }
-      } catch (msgError) {
-        console.error(`Failed to import message ${msgId}:`, msgError);
-        // Continue with other messages
       }
     }
 
@@ -200,18 +197,26 @@ export async function POST() {
       .update({ gmail_last_sync_at: new Date().toISOString() })
       .eq('id', user.id);
 
-    return NextResponse.json({
+    const responsePayload: Record<string, unknown> = {
       imported,
       message: imported > 0
         ? `Imported ${imported} new newsletter${imported === 1 ? '' : 's'}`
         : 'No new newsletters to import',
-    });
+    };
 
-  } catch (err: any) {
-    console.error('Gmail sync error:', err);
+    if (sourceLimitReached) {
+      responsePayload.warning = 'Some sources were skipped due to plan limits.';
+      responsePayload.code = 'SOURCE_LIMIT_REACHED';
+    }
+
+    return NextResponse.json(responsePayload);
+
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    console.error('Gmail sync error:', message);
 
     // If token refresh failed, mark Gmail as disconnected
-    if (err.message?.includes('Token refresh failed')) {
+    if (message.includes('Token refresh failed')) {
       await supabase
         .from('profiles')
         .update({
@@ -228,7 +233,7 @@ export async function POST() {
     }
 
     return NextResponse.json(
-      { error: err.message || 'Sync failed' },
+      { error: 'Sync failed. Please try again or reconnect your Gmail account.' },
       { status: 500 }
     );
   }

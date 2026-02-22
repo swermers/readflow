@@ -1,6 +1,9 @@
 // Parse Gmail API message format into our Issue/Sender format
 
+import createDOMPurify from 'isomorphic-dompurify';
 import type { GmailMessage, GmailMessagePart } from './gmailClient';
+
+const purify = createDOMPurify;
 
 export interface ParsedEmail {
   from_email: string;
@@ -76,15 +79,40 @@ function stripHtml(html: string): string {
 }
 
 /**
- * Basic HTML sanitization for reader view.
+ * Sanitize newsletter HTML using DOMPurify.
+ * Strips dangerous elements (script, iframe, object, embed, form) and attributes
+ * while preserving newsletter formatting (tables, images, links, styles).
  */
 function sanitizeHtml(html: string): string {
-  let clean = html;
-  clean = clean.replace(/<script[\s\S]*?<\/script>/gi, '');
+  let clean = purify.sanitize(html, {
+    ALLOWED_TAGS: [
+      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+      'p', 'br', 'hr', 'blockquote', 'pre', 'code',
+      'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+      'a', 'img', 'figure', 'figcaption',
+      'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+      'strong', 'em', 'b', 'i', 'u', 's', 'sub', 'sup', 'mark', 'small',
+      'span', 'div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav',
+      'details', 'summary',
+    ],
+    ALLOWED_ATTR: [
+      'href', 'src', 'alt', 'title', 'width', 'height',
+      'class', 'id', 'style',
+      'target', 'rel',
+      'colspan', 'rowspan', 'align', 'valign',
+      'border', 'cellpadding', 'cellspacing',
+      'dir', 'lang',
+    ],
+    ALLOW_DATA_ATTR: false,
+    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'applet', 'form', 'input', 'button', 'select', 'textarea'],
+    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+  });
+
+  // Strip tracking pixels (1x1 images)
   clean = clean.replace(/<img[^>]*(?:width|height)\s*=\s*["']?1["']?[^>]*>/gi, '');
-  clean = clean.replace(/<style[\s\S]*?<\/style>/gi, '');
+  // Strip tracking parameters from URLs
   clean = clean.replace(/(\?|&)(utm_[a-z]+|mc_[a-z]+|ref)=[^&"']*/gi, '');
-  clean = clean.replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
+
   return clean;
 }
 
