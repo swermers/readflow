@@ -4,6 +4,17 @@ import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { refreshSidebar } from '@/components/Sidebar';
 
+type SyncPayload = { imported?: number };
+
+function parseJson<T>(raw: string): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 interface AutoSyncProps {
   lastSyncAt: string | null;
   /** Minimum minutes between auto-syncs (default: 15) */
@@ -30,12 +41,13 @@ export default function AutoSync({ lastSyncAt, intervalMinutes = 15 }: AutoSyncP
 
     fetch('/api/sync-gmail', { method: 'POST' })
       .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json();
-          if (data.imported > 0) {
-            refreshSidebar();
-            router.refresh();
-          }
+        if (!res.ok) return;
+
+        const raw = await res.text();
+        const data = parseJson<SyncPayload>(raw);
+        if ((data?.imported ?? 0) > 0) {
+          refreshSidebar();
+          router.refresh();
         }
       })
       .catch(() => {
