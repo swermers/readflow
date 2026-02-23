@@ -11,6 +11,15 @@ interface SyncButtonProps {
   onDisconnected?: () => void;
 }
 
+function parseJson<T>(raw: string): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 export default function SyncButton({ variant = 'primary', onDisconnected }: SyncButtonProps) {
   const [syncing, setSyncing] = useState(false);
   const router = useRouter();
@@ -20,15 +29,16 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
 
     try {
       const res = await fetch('/api/sync-gmail', { method: 'POST' });
-      const data = await res.json();
+      const raw = await res.text();
+      const data = parseJson<{ error?: string; message?: string; imported?: number }>(raw);
 
       if (!res.ok) {
-        triggerToast(data.error || 'Sync failed');
-        if (res.status === 401 && data.error?.includes('expired')) {
+        triggerToast(data?.error || 'Sync failed');
+        if (res.status === 401 && data?.error?.includes('expired')) {
           onDisconnected?.();
         }
       } else {
-        triggerToast(data.message || `Imported ${data.imported} newsletters`);
+        triggerToast(data?.message || `Imported ${data?.imported ?? 0} newsletters`);
         refreshSidebar();
         router.refresh();
       }
