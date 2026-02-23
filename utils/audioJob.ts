@@ -324,7 +324,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   let chargedAt = latest?.credits_charged_at || null;
 
   if (!chargedAt || chargedCredits < 10) {
-    const consumeResult = await consumeTokensAtomic(supabase, userId, 10);
+    const consumeResult = await consumeTokensAtomic(supabase, userId, 10, 'Audio listen');
     if (!consumeResult.allowed) {
       await setAudioStatus(supabase, userId, issueId, 'failed', usedModel);
       await safeRecordMetric(supabase, 'audio_generation_failed', 1, 'Insufficient credits');

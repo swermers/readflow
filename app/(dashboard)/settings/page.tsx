@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, Sparkles, CalendarClock } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, Sparkles, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -42,12 +42,15 @@ function SettingsContent() {
   const [labelsLoading, setLabelsLoading] = useState(false);
   const [labelsSaving, setLabelsSaving] = useState(false);
   const [planTier, setPlanTier] = useState<'free' | 'pro' | 'elite'>('free');
-  const [billingCycle, setBillingCycle] = useState<'monthly' | 'annual'>('monthly');
-  const [aiCreditsUsed, setAiCreditsUsed] = useState(0);
-  const [creditsLimit, setCreditsLimit] = useState<number>(3);
+  const [tokenBalance, setTokenBalance] = useState(0);
   const [unlimitedAiAccess, setUnlimitedAiAccess] = useState(false);
   const [inviteCode, setInviteCode] = useState('');
   const [redeemingCode, setRedeemingCode] = useState(false);
+  const [purchasingPack, setPurchasingPack] = useState<string | null>(null);
+  const [transactions, setTransactions] = useState<Array<{
+    id: string; amount: number; type: string; description: string | null;
+    balance_after: number; created_at: string;
+  }>>([]);
   const [briefDeliveryDays, setBriefDeliveryDays] = useState<number[]>([1]);
   const [briefDeliveryHour, setBriefDeliveryHour] = useState(9);
   const [briefDeliveryTz, setBriefDeliveryTz] = useState('UTC');
@@ -55,7 +58,7 @@ function SettingsContent() {
   const [hasPromptedTopFive, setHasPromptedTopFive] = useState(false);
 
   const supabase = createClient();
-  const isFreeTierSourceLimited = planTier === 'free' && !unlimitedAiAccess;
+  const isFreeTierSourceLimited = false; // Pay-per-use: no source limit
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -78,7 +81,7 @@ function SettingsContent() {
       // Gmail and plan columns may not exist if later migrations haven't been run
       const { data: gmailProfile } = await supabase
         .from('profiles')
-        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, billing_cycle, ai_credits_used, unlimited_ai_access')
+        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, token_balance, unlimited_ai_access')
         .eq('id', user.id)
         .single();
 
@@ -89,8 +92,7 @@ function SettingsContent() {
           setLastSync(new Date(gmailProfile.gmail_last_sync_at));
         }
         setPlanTier((gmailProfile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
-        setBillingCycle((gmailProfile.billing_cycle || 'monthly') as 'monthly' | 'annual');
-        setAiCreditsUsed(gmailProfile.ai_credits_used || 0);
+        setTokenBalance(gmailProfile.token_balance ?? 0);
         setUnlimitedAiAccess(Boolean(gmailProfile.unlimited_ai_access));
       }
 
@@ -128,14 +130,45 @@ function SettingsContent() {
       if (!res.ok) return;
       const payload = await res.json();
       setPlanTier((payload.planTier || 'free') as 'free' | 'pro' | 'elite');
-      setBillingCycle((payload.billingCycle || 'monthly') as 'monthly' | 'annual');
-      setAiCreditsUsed(payload.creditsUsed || 0);
-      setCreditsLimit(typeof payload.creditsLimit === 'number' ? payload.creditsLimit : 3);
+      setTokenBalance(payload.tokenBalance ?? 0);
       setUnlimitedAiAccess(Boolean(payload.unlimitedAiAccess));
     } catch {
       // best effort
     }
   }, []);
+
+  const refreshTransactions = useCallback(async () => {
+    try {
+      const res = await fetch('/api/billing/transactions?limit=10', { cache: 'no-store' });
+      if (!res.ok) return;
+      const payload = await res.json();
+      setTransactions(payload.transactions || []);
+      if (typeof payload.balance === 'number') setTokenBalance(payload.balance);
+    } catch {
+      // best effort
+    }
+  }, []);
+
+  const handleBuyTokens = async (packId: string) => {
+    setPurchasingPack(packId);
+    try {
+      const res = await fetch('/api/billing/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ packId }),
+      });
+      const data = await res.json();
+      if (data.url) {
+        window.location.href = data.url;
+      } else {
+        triggerToast(data.error || 'Could not start checkout');
+      }
+    } catch {
+      triggerToast('Could not start checkout');
+    } finally {
+      setPurchasingPack(null);
+    }
+  };
 
   const redeemInviteCode = async () => {
     if (!inviteCode.trim()) return;
@@ -166,8 +199,29 @@ function SettingsContent() {
   useEffect(() => {
     loadProfile();
     handleGmailCallbackResult();
+    handlePurchaseResult();
     void refreshAiUsage();
+    void refreshTransactions();
   }, []);
+
+  const handlePurchaseResult = () => {
+    const purchaseResult = searchParams.get('purchase');
+    const tokensAdded = searchParams.get('tokens');
+    if (!purchaseResult) return;
+
+    const url = new URL(window.location.href);
+    url.searchParams.delete('purchase');
+    url.searchParams.delete('tokens');
+    window.history.replaceState({}, '', url.pathname);
+
+    if (purchaseResult === 'success') {
+      triggerToast(`${tokensAdded || ''} tokens added to your wallet!`);
+      void refreshAiUsage();
+      void refreshTransactions();
+    } else if (purchaseResult === 'canceled') {
+      triggerToast('Purchase canceled');
+    }
+  };
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -522,53 +576,95 @@ function SettingsContent() {
         </section>
 
 
-        {/* ─── AI Plan & Credits ─── */}
+        {/* ─── Token Wallet ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
           <div className="md:col-span-4">
             <h3 className="font-bold text-lg text-ink flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-ink-faint" />
-              AI Plan
+              <Wallet className="w-5 h-5 text-ink-faint" />
+              Token Wallet
             </h3>
-            <p className="text-sm text-ink-faint mt-1">Credits reset every 30 days.</p>
+            <p className="text-sm text-ink-faint mt-1">Pay per use. Buy tokens, use them anytime.</p>
           </div>
-          <div className="md:col-span-8 bg-surface-raised border border-line p-6">
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="border border-line p-4">
-                <p className="text-label uppercase text-ink-faint">Tier</p>
-                <p className="mt-2 text-xl font-bold uppercase text-ink">{planTier}</p>
-              </div>
-              <div className="border border-line p-4">
-                <p className="text-label uppercase text-ink-faint">Billing</p>
-                <p className="mt-2 text-xl font-bold uppercase text-ink">{billingCycle}</p>
-              </div>
-              <div className="border border-line p-4">
-                <p className="text-label uppercase text-ink-faint">Credits Used</p>
-                <p className="mt-2 text-xl font-bold text-ink">{unlimitedAiAccess ? 'Unlimited' : `${aiCreditsUsed}/${creditsLimit}`}</p>
-              </div>
-            </div>
-            <p className="mt-4 text-xs text-ink-faint">
-              {unlimitedAiAccess
-                ? 'Unlimited access is active for this account.'
-                : 'Need more credits? Upgrade to Pro or Elite for higher monthly allowances.'}
-            </p>
+          <div className="md:col-span-8 bg-surface-raised border border-line p-6 space-y-6">
 
-            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-              <Link
-                href="/landing#pricing"
-                className="inline-flex items-center justify-center border border-line px-4 py-2 text-label uppercase text-ink hover:border-line-strong"
-              >
-                View Plans
-              </Link>
-              <a
-                href="mailto:trail.notes.co@gmail.com?subject=Readflow%20Upgrade%20Request"
-                className="inline-flex items-center justify-center border border-line px-4 py-2 text-label uppercase text-ink hover:border-line-strong"
-              >
-                Upgrade via Support
-              </a>
+            {/* Balance display */}
+            <div className="border border-line p-6 text-center">
+              <p className="text-label uppercase text-ink-faint">Token Balance</p>
+              <p className="mt-2 text-4xl font-bold text-ink">
+                {unlimitedAiAccess ? 'Unlimited' : tokenBalance.toLocaleString()}
+              </p>
+              <p className="mt-1 text-xs text-ink-faint">
+                {unlimitedAiAccess
+                  ? 'Unlimited access is active for this account.'
+                  : 'TL;DR = 5 tokens, Listen = 10 tokens'}
+              </p>
             </div>
 
-            <div className="mt-4 border-t border-line pt-4">
-              <label className="text-label uppercase text-ink-faint">Invite / Premium Code</label>
+            {/* Token packs */}
+            {!unlimitedAiAccess && (
+              <div>
+                <p className="text-label uppercase text-ink-faint mb-3">Buy Tokens</p>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { id: 'starter', name: 'Starter', tokens: 100, price: '$3', per: '$0.03/token' },
+                    { id: 'standard', name: 'Standard', tokens: 500, price: '$10', per: '$0.02/token', badge: 'Best Value' },
+                    { id: 'power', name: 'Power', tokens: 1500, price: '$25', per: '$0.017/token' },
+                  ].map((pack) => (
+                    <button
+                      key={pack.id}
+                      onClick={() => handleBuyTokens(pack.id)}
+                      disabled={purchasingPack !== null}
+                      className={`relative border p-4 text-left transition-all hover:border-accent hover:shadow-sm disabled:opacity-60 ${
+                        pack.badge ? 'border-accent bg-accent/5' : 'border-line'
+                      }`}
+                    >
+                      {pack.badge && (
+                        <span className="absolute -top-2.5 right-3 rounded-full border border-accent/30 bg-surface px-2 py-0.5 text-[10px] text-accent">
+                          {pack.badge}
+                        </span>
+                      )}
+                      <p className="text-sm font-bold text-ink">{pack.name}</p>
+                      <p className="text-2xl font-bold text-ink mt-1">{pack.price}</p>
+                      <p className="text-xs text-ink-faint">{pack.tokens} tokens</p>
+                      <p className="text-[10px] text-ink-faint mt-0.5">{pack.per}</p>
+                      {purchasingPack === pack.id && (
+                        <Loader2 className="w-4 h-4 animate-spin absolute top-3 right-3 text-ink-faint" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Recent transactions */}
+            {transactions.length > 0 && (
+              <div>
+                <p className="text-label uppercase text-ink-faint mb-3">Recent Activity</p>
+                <div className="space-y-1 max-h-48 overflow-y-auto">
+                  {transactions.slice(0, 8).map((txn) => (
+                    <div key={txn.id} className="flex items-center justify-between py-2 px-2 text-sm border-b border-line last:border-0">
+                      <div className="flex items-center gap-2">
+                        {txn.amount > 0 ? (
+                          <ArrowDownRight className="w-3.5 h-3.5 text-green-500" />
+                        ) : (
+                          <ArrowUpRight className="w-3.5 h-3.5 text-ink-faint" />
+                        )}
+                        <span className="text-ink-muted truncate max-w-[200px]">
+                          {txn.description || txn.type}
+                        </span>
+                      </div>
+                      <span className={`font-mono text-xs ${txn.amount > 0 ? 'text-green-600 dark:text-green-400' : 'text-ink-faint'}`}>
+                        {txn.amount > 0 ? '+' : ''}{txn.amount}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Redeem code */}
+            <div className="border-t border-line pt-4">
+              <label className="text-label uppercase text-ink-faint">Redeem Code</label>
               <div className="mt-2 flex gap-2">
                 <input
                   type="text"

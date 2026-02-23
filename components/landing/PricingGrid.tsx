@@ -2,51 +2,58 @@
 
 import { motion } from 'framer-motion';
 
-const tiers = [
+const tokenPacks = [
   {
     name: 'Free',
     price: '$0',
-    label: 'The Quiet Inbox',
+    label: 'Get Started',
+    tokens: '30 tokens',
     features: [
+      '30 free tokens on signup',
       'Unlimited Sources',
       'Highlights & Notes',
-      '5 AI Summaries / month',
-      '2 Audio Listens / month',
+      '~6 AI Summaries or ~3 Listens',
       '7-day Rack retention',
     ],
   },
   {
-    name: 'Pro',
-    price: '$7',
-    annual: '$59/yr',
-    label: 'The Organized Reader',
+    name: 'Starter',
+    price: '$3',
+    label: '100 tokens',
     features: [
-      'Everything in Free',
-      '50 AI Summaries / month',
-      '20 Audio Listens / month',
+      '100 tokens — use anytime',
+      '~20 AI Summaries',
+      '~10 Audio Listens',
       'Signal Sorting',
       'Highlight Export',
-      '30-day Rack retention',
     ],
-    badge: 'Most Popular',
   },
   {
-    name: 'Elite',
-    price: '$19',
-    annual: '$149/yr',
-    label: 'The Executive Intelligence',
+    name: 'Standard',
+    price: '$10',
+    label: '500 tokens',
     features: [
-      'Everything in Pro',
-      'Unlimited AI Summaries',
-      'Unlimited Audio',
+      '500 tokens — best value',
+      '~100 AI Summaries',
+      '~50 Audio Listens',
       'Weekly Brief & Podcast',
       'Notion Sync',
-      'Semantic Search',
-      'Multiple Gmail Accounts',
-      'Priority Neural Voice',
     ],
+    badge: 'Best Value',
     highlight: true,
-    badge: 'Best for Founders',
+  },
+  {
+    name: 'Power',
+    price: '$25',
+    label: '1,500 tokens',
+    features: [
+      '1,500 tokens',
+      '~300 AI Summaries',
+      '~150 Audio Listens',
+      'Everything included',
+      'Lowest per-token cost',
+    ],
+    badge: 'Power User',
   },
 ];
 
@@ -57,35 +64,39 @@ export default function PricingGrid() {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ duration: 0.55 }}
-      className="grid gap-4 md:grid-cols-3"
     >
-      {tiers.map((tier) => (
-        <article
-          key={tier.name}
-          className={`relative rounded-2xl border p-6 shadow-sm ${
-            tier.highlight
-              ? 'border-accent bg-accent/5 shadow-[0_12px_35px_rgba(230,57,45,0.16)]'
-              : 'border-line bg-surface-raised'
-          }`}
-        >
-          {tier.badge ? (
-            <span className="absolute -top-3 right-4 rounded-full border border-accent/30 bg-surface px-3 py-1 text-xs text-accent">
-              {tier.badge}
-            </span>
-          ) : null}
-          <h3 className="text-heading text-ink">{tier.name}</h3>
-          <p className="mt-2 text-3xl font-bold text-ink">{tier.price}<span className="text-base text-ink-muted">/mo</span></p>
-          {'annual' in tier && tier.annual && (
-            <p className="text-xs text-accent font-medium mt-0.5">{tier.annual} — save 30%</p>
-          )}
-          <p className="mt-1 text-sm text-ink-muted">{tier.label}</p>
-          <ul className="mt-4 space-y-2 text-sm text-ink-muted">
-            {tier.features.map((feature) => (
-              <li key={feature}>• {feature}</li>
-            ))}
-          </ul>
-        </article>
-      ))}
+      <p className="text-center text-sm text-ink-muted mb-6">
+        Pay per use. No subscriptions. Tokens never expire.
+      </p>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {tokenPacks.map((pack) => (
+          <article
+            key={pack.name}
+            className={`relative rounded-2xl border p-6 shadow-sm ${
+              pack.highlight
+                ? 'border-accent bg-accent/5 shadow-[0_12px_35px_rgba(230,57,45,0.16)]'
+                : 'border-line bg-surface-raised'
+            }`}
+          >
+            {pack.badge ? (
+              <span className="absolute -top-3 right-4 rounded-full border border-accent/30 bg-surface px-3 py-1 text-xs text-accent">
+                {pack.badge}
+              </span>
+            ) : null}
+            <h3 className="text-heading text-ink">{pack.name}</h3>
+            <p className="mt-2 text-3xl font-bold text-ink">{pack.price}</p>
+            <p className="mt-1 text-sm text-ink-muted">{pack.label}</p>
+            <ul className="mt-4 space-y-2 text-sm text-ink-muted">
+              {pack.features.map((feature) => (
+                <li key={feature}>&#8226; {feature}</li>
+              ))}
+            </ul>
+          </article>
+        ))}
+      </div>
+      <p className="text-center text-xs text-ink-faint mt-4">
+        TL;DR = 5 tokens &middot; Listen = 10 tokens &middot; All features unlocked for everyone.
+      </p>
     </motion.div>
   );
 }

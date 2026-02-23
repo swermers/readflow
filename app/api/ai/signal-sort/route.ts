@@ -148,7 +148,7 @@ export async function POST() {
       .eq('user_id', user.id);
   }
 
-  const consume = await consumeTokensAtomic(supabase, user.id, SORT_COST);
+  const consume = await consumeTokensAtomic(supabase, user.id, SORT_COST, 'Signal sort');
 
   return NextResponse.json({
     sorted: updates.length,
