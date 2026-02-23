@@ -38,12 +38,12 @@ export default function AudioWidget() {
                 : 'bg-accent text-white'
           }`}
         >
-          {status === 'idle' && <><Radio className="h-4 w-4" /> Listen</>}
+          {status === 'idle' && <><Radio className="h-4 w-4" /> Audio Digest</>}
           {status === 'processing' && <><Loader2 className="h-4 w-4 animate-spin" /> Processing...</>}
-          {status === 'ready' && <><Play className="h-4 w-4" /> Play Narration</>}
+          {status === 'ready' && <><Play className="h-4 w-4" /> Play Digest</>}
           {status === 'playing' && <><Play className="h-4 w-4" /> Playing</>}
         </button>
-        <p className="text-label uppercase text-ink-faint">Durable listen queue</p>
+        <p className="text-label uppercase text-ink-faint">2-3 min audio digest</p>
       </div>
 
       <motion.div animate={{ height: status === 'playing' ? 56 : 0, opacity: status === 'playing' ? 1 : 0 }} className="overflow-hidden">

@@ -2,7 +2,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
-import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
+import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
 import { generateWeeklyBriefForUser, getRollingWindowRange } from '@/utils/weeklyBrief';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -113,6 +113,8 @@ export async function POST(_request: NextRequest) {
     const created = await getExistingForWindow(supabase, user.id, weekStartDate, weekEndDate);
     if (!created) return NextResponse.json({ error: 'Failed to generate weekly brief' }, { status: 500 });
 
+    const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required, 'Weekly brief');
+
     return NextResponse.json({
       overview: created.overview,
       themes: created.themes,
@@ -120,6 +122,8 @@ export async function POST(_request: NextRequest) {
       weekStart: weekStartDate,
       weekEnd: weekEndDate,
       nextEligibleAt,
+      tokensRemaining: consumeResult.available,
+      tokenBalance: consumeResult.available,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : 'Failed to generate weekly brief';

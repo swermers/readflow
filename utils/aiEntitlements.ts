@@ -33,6 +33,7 @@ export const TOKENS_PER_CREDIT = 10;
 export function getActionTokenCost(action: EntitlementAction) {
   if (action === 'tldr') return 5;
   if (action === 'listen') return 10;
+  if (action === 'weekly_brief') return 10;
   return 0;
 }
 

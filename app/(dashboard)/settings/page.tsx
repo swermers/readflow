@@ -596,7 +596,7 @@ function SettingsContent() {
               <p className="mt-1 text-xs text-ink-faint">
                 {unlimitedAiAccess
                   ? 'Unlimited access is active for this account.'
-                  : 'TL;DR = 5 tokens, Audio Digest = 10 tokens'}
+                  : 'TL;DR = 5, Audio Digest = 10, Brief = 10, Podcast = 15 tokens'}
               </p>
             </div>
 

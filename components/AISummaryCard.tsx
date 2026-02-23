@@ -202,7 +202,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
             clearGlobalAudioPendingIssue();
             void trackEvent('listen_completed');
             if (!readyToastShownRef.current) {
-              triggerToast('Narration is ready — tap play to listen.');
+              triggerToast('Audio digest is ready — tap play to listen.');
               readyToastShownRef.current = true;
             }
           }
@@ -255,7 +255,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
           setAudioUrl(payload.audioUrl);
           setPreviewAudioUrl(null);
           if (!readyToastShownRef.current) {
-            triggerToast('Narration is ready — tap play to listen.');
+            triggerToast('Audio digest is ready — tap play to listen.');
             readyToastShownRef.current = true;
           }
         }
@@ -446,7 +446,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
           </button>
         ) : (
           <div className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">
-            Listen Ready
+            Digest Ready
           </div>
         )}
       </div>
@@ -469,13 +469,13 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
                 <button
                   type="button"
                   onClick={() => void playAudio(previewAudioUrl, {
-                    title: articleSubject ? `${articleSubject} narration (preview)` : 'Newsletter narration (preview)',
+                    title: articleSubject ? `${articleSubject} digest (preview)` : 'Newsletter digest (preview)',
                     chapters: audioChapters,
                   })}
                   className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
                 >
                   <Play className="h-3 w-3" />
-                  Listen now
+                  Play digest
                 </button>
               )}
               <button
