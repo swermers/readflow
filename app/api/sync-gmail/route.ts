@@ -210,7 +210,7 @@ export async function POST() {
     console.error('Gmail sync error:', message);
 
     // If token refresh failed, mark Gmail as disconnected
-    if (message.includes('Token refresh failed')) {
+    if (message.includes('Token refresh failed') || message.includes('invalid_grant') || message.includes('(401)')) {
       await supabase
         .from('profiles')
         .update({
@@ -221,13 +221,27 @@ export async function POST() {
         .eq('id', user.id);
 
       return NextResponse.json(
-        { error: 'Gmail token expired. Please reconnect your Gmail account.' },
+        { error: 'Gmail session expired. Please go to Settings and reconnect your Gmail account.', code: 'TOKEN_EXPIRED' },
         { status: 401 }
       );
     }
 
+    if (message.includes('GOOGLE_CLIENT_ID')) {
+      return NextResponse.json(
+        { error: 'Gmail integration is not configured. Please contact support.' },
+        { status: 500 }
+      );
+    }
+
+    if (message.includes('Gmail list') || message.includes('Gmail get message')) {
+      return NextResponse.json(
+        { error: 'Could not read from Gmail. Please try again in a moment.' },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json(
-      { error: 'Sync failed. Please try again or reconnect your Gmail account.' },
+      { error: 'Sync encountered an error. Please try again or reconnect Gmail in Settings.' },
       { status: 500 }
     );
   }

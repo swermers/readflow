@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Highlighter, NotebookPen, ArrowRight } from 'lucide-react';
+import { Highlighter, NotebookPen } from 'lucide-react';
 
 export default function HighlightsSection() {
   return (
@@ -23,9 +23,8 @@ export default function HighlightsSection() {
           <p className="mt-2 text-sm text-ink-muted">Select any passage, highlight it, and revisit it in your Notes workspace.</p>
         </div>
         <div className="rounded-xl border border-line bg-surface p-4">
-          <p className="inline-flex items-center gap-2 text-sm font-medium text-ink"><NotebookPen className="h-4 w-4 text-accent" /> Coming soon: Share to second brain</p>
-          <p className="mt-2 text-sm text-ink-muted">Push curated highlights to your favorite note app and knowledge system.</p>
-          <p className="mt-2 inline-flex items-center gap-1 text-xs text-ink-faint">Notion · Obsidian · Reflect <ArrowRight className="h-3 w-3" /></p>
+          <p className="inline-flex items-center gap-2 text-sm font-medium text-ink"><NotebookPen className="h-4 w-4 text-accent" /> Notes &amp; annotations</p>
+          <p className="mt-2 text-sm text-ink-muted">Attach notes to any highlight or issue. Your reading notes live in one searchable workspace — no context switching.</p>
         </div>
       </div>
     </motion.section>

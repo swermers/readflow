@@ -101,7 +101,7 @@ export default function WeeklyBriefCard() {
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const [weekEnd, setWeekEnd] = useState<string | null>(null);
   const [nextEligibleAt, setNextEligibleAt] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
   const [podcastStatus, setPodcastStatus] = useState<string | null>(null);
   const [podcastSrc, setPodcastSrc] = useState<string | null>(null);

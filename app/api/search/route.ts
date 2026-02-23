@@ -72,7 +72,7 @@ async function fallbackSearch(
     .select('id, subject, snippet, from_email, received_at, status, senders(name)')
     .eq('user_id', userId)
     .is('deleted_at', null)
-    .or(`subject.ilike.%${safeTerm}%,snippet.ilike.%${safeTerm}%`)
+    .or(`subject.ilike.%${safeTerm}%,snippet.ilike.%${safeTerm}%,from_email.ilike.%${safeTerm}%`)
     .order('received_at', { ascending: false })
     .range(offset, offset + limit - 1);
 

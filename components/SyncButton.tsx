@@ -20,21 +20,33 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
 
     try {
       const res = await fetch('/api/sync-gmail', { method: 'POST' });
-      const data = await res.json();
+
+      let data: Record<string, unknown>;
+      try {
+        data = await res.json();
+      } catch {
+        data = {};
+      }
 
       if (!res.ok) {
-        triggerToast(data.error || 'Sync failed');
-        if (res.status === 401 && data.error?.includes('expired')) {
+        const errorMsg = (data.error as string) || 'Sync failed. Check Settings to make sure Gmail is connected.';
+        triggerToast(errorMsg);
+        if (res.status === 401 || (data.code === 'TOKEN_EXPIRED')) {
           onDisconnected?.();
+          router.push('/settings?gmail=expired');
         }
       } else {
-        triggerToast(data.message || `Imported ${data.imported} newsletters`);
+        const msg = (data.message as string) || `Imported ${data.imported} newsletters`;
+        triggerToast(msg);
+        if (data.warning) {
+          triggerToast(data.warning as string);
+        }
         refreshSidebar();
         router.refresh();
       }
     } catch (err) {
       console.error('Sync error:', err);
-      triggerToast('Sync failed');
+      triggerToast('Network error. Check your connection and try again.');
     }
 
     setSyncing(false);

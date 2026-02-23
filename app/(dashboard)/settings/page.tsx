@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, Sparkles, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -376,9 +376,22 @@ function SettingsContent() {
     });
   };
 
-  const handleUseLocalTimezone = () => {
+  const handleUseLocalTimezone = async () => {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (tz) setBriefDeliveryTz(tz);
+    if (!tz) return;
+    setBriefDeliveryTz(tz);
+    // Auto-save when using local timezone
+    const { data: { user: u } } = await supabase.auth.getUser();
+    if (!u) return;
+    const hour = Math.max(0, Math.min(23, Math.floor(briefDeliveryHour || 0)));
+    const days = briefDeliveryDays.length ? briefDeliveryDays : [1];
+    const { error } = await supabase
+      .from('profiles')
+      .update({ brief_delivery_days: days, brief_delivery_hour: hour, brief_delivery_tz: tz })
+      .eq('id', u.id);
+    if (!error) {
+      triggerToast('Timezone set and schedule saved');
+    }
   };
 
   const handleSaveBriefPreferences = async () => {
@@ -458,7 +471,7 @@ function SettingsContent() {
   };
 
   const handleDisconnectGmail = async () => {
-    if (!confirm('Disconnect Gmail? You will need to sign out and back in to reconnect.')) return;
+    if (!confirm('Disconnect Gmail? This will remove your Gmail tokens and sync labels. You will need to re-authorize through onboarding to reconnect.')) return;
 
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -471,19 +484,72 @@ function SettingsContent() {
         gmail_refresh_token: null,
         gmail_token_expires_at: null,
         gmail_sync_labels: [],
+        gmail_last_sync_at: null,
       })
       .eq('id', user.id);
 
     setGmailConnected(false);
     setLabels([]);
     setSelectedLabels([]);
-    triggerToast('Gmail disconnected');
+    setLastSync(null);
+    triggerToast('Gmail disconnected. Go through onboarding to reconnect.');
   };
 
+  const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm' | 'deleting'>('idle');
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+
   const handleDeleteAccount = async () => {
-    if (!confirm('Are you sure? This will sign you out and your data may be deleted. This action cannot be undone.')) return;
-    await supabase.auth.signOut();
-    router.push('/login');
+    if (deleteStep === 'idle') {
+      setDeleteStep('confirm');
+      return;
+    }
+
+    if (deleteStep !== 'confirm' || deleteConfirmText !== 'DELETE') return;
+
+    setDeleteStep('deleting');
+
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      setDeleteStep('idle');
+      return;
+    }
+
+    try {
+      // Clear all user data
+      await Promise.allSettled([
+        supabase.from('highlights').delete().eq('user_id', user.id),
+        supabase.from('user_issue_events').delete().eq('user_id', user.id),
+        supabase.from('user_article_feedback').delete().eq('user_id', user.id),
+        supabase.from('deleted_issues').delete().eq('user_id', user.id),
+        supabase.from('issues').delete().eq('user_id', user.id),
+        supabase.from('senders').delete().eq('user_id', user.id),
+      ]);
+
+      // Reset profile to clean slate
+      await supabase
+        .from('profiles')
+        .update({
+          gmail_connected: false,
+          gmail_access_token: null,
+          gmail_refresh_token: null,
+          gmail_token_expires_at: null,
+          gmail_sync_labels: [],
+          gmail_last_sync_at: null,
+          token_balance: 0,
+          brief_delivery_days: null,
+          brief_delivery_hour: null,
+          brief_delivery_tz: null,
+        })
+        .eq('id', user.id);
+
+      triggerToast('All data deleted. Signing you out.');
+      await supabase.auth.signOut();
+      router.push('/login');
+    } catch (err) {
+      console.error('Delete error:', err);
+      triggerToast('Could not fully delete data. Please try again.');
+      setDeleteStep('idle');
+    }
   };
 
   if (loading) {
@@ -505,7 +571,7 @@ function SettingsContent() {
 
       <div className="h-px bg-line-strong mb-12" />
 
-      <section className="mb-10 border border-line bg-surface-raised p-5 md:p-6">
+      <section className="mb-10 rounded-2xl border border-line bg-surface-raised p-5 md:p-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-xs uppercase tracking-[0.08em] text-ink-faint">Organization</p>
@@ -532,7 +598,7 @@ function SettingsContent() {
             </h3>
             <p className="text-sm text-ink-faint mt-1">How you appear in the app.</p>
           </div>
-          <div className="md:col-span-8 space-y-6 bg-surface-raised p-6 border border-line">
+          <div className="md:col-span-8 space-y-6 rounded-2xl bg-surface-raised p-6 border border-line">
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
                 <label className="text-label uppercase text-ink-faint">First Name</label>
@@ -585,7 +651,7 @@ function SettingsContent() {
             </h3>
             <p className="text-sm text-ink-faint mt-1">Pay per use. Buy tokens, use them anytime.</p>
           </div>
-          <div className="md:col-span-8 bg-surface-raised border border-line p-6 space-y-6">
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6 space-y-6">
 
             {/* Balance display */}
             <div className="border border-line p-6 text-center">
@@ -695,7 +761,7 @@ function SettingsContent() {
               Choose delivery days and time for your elite weekly brief package (high-signal reads + synthesis).
             </p>
           </div>
-          <div className="md:col-span-8 bg-surface-raised border border-line p-6 space-y-6">
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6 space-y-6">
             <div>
               <p className="text-label uppercase text-ink-faint mb-3">Delivery Days</p>
               <div className="grid grid-cols-4 md:grid-cols-7 gap-2">
@@ -758,6 +824,10 @@ function SettingsContent() {
               {savingBriefPrefs ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
               Save Brief Schedule
             </button>
+
+            <p className="text-xs text-ink-faint border-t border-line pt-4">
+              Auto-sync is enabled by default. When Gmail is connected, Readflow automatically syncs new newsletters every 15 minutes when you visit the app. You do not need to press Sync manually — your brief and rack will always reflect the latest content from your selected labels.
+            </p>
           </div>
         </section>
 
@@ -774,7 +844,7 @@ function SettingsContent() {
                 : 'Gmail access is needed to sync newsletters.'}
             </p>
           </div>
-          <div className="md:col-span-8 bg-surface-raised border border-line">
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line">
             <div className="p-6 space-y-6">
               {gmailConnected ? (
                 <>
@@ -917,17 +987,79 @@ function SettingsContent() {
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
           <div className="md:col-span-4">
             <h3 className="font-bold text-lg text-accent flex items-center gap-2">
-              <LogOut className="w-5 h-5" />
+              <ShieldAlert className="w-5 h-5" />
               Danger Zone
             </h3>
+            <p className="text-sm text-ink-faint mt-1">Irreversible actions.</p>
           </div>
-          <div className="md:col-span-8">
-            <button
-              onClick={handleDeleteAccount}
-              className="px-6 py-3 border border-red-200 dark:border-red-800 bg-red-50 dark:bg-red-900/20 text-accent text-label uppercase hover:bg-accent hover:text-white transition-colors"
-            >
-              Disconnect &amp; Delete Data
-            </button>
+          <div className="md:col-span-8 rounded-2xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10 p-6 space-y-4">
+
+            {gmailConnected && (
+              <div className="flex items-center justify-between pb-4 border-b border-red-200 dark:border-red-800">
+                <div>
+                  <p className="text-sm font-bold text-ink">Disconnect Gmail</p>
+                  <p className="text-xs text-ink-faint mt-0.5">Remove Gmail tokens and sync labels. You will need to go through onboarding again.</p>
+                </div>
+                <button
+                  onClick={handleDisconnectGmail}
+                  className="px-4 py-2 border border-red-200 dark:border-red-800 text-accent text-label uppercase hover:bg-accent hover:text-white transition-colors"
+                >
+                  Disconnect
+                </button>
+              </div>
+            )}
+
+            <div>
+              <p className="text-sm font-bold text-ink">Delete All Data &amp; Sign Out</p>
+              <p className="text-xs text-ink-faint mt-0.5">
+                Permanently deletes all newsletters, highlights, notes, senders, tokens, and preferences. You will be signed out and must complete onboarding again to use Readflow.
+              </p>
+
+              {deleteStep === 'idle' && (
+                <button
+                  onClick={handleDeleteAccount}
+                  className="mt-3 px-6 py-3 border border-red-200 dark:border-red-800 text-accent text-label uppercase hover:bg-accent hover:text-white transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Delete Everything
+                </button>
+              )}
+
+              {deleteStep === 'confirm' && (
+                <div className="mt-3 space-y-3 rounded-lg border border-red-300 dark:border-red-700 bg-surface p-4">
+                  <p className="text-sm text-ink font-medium">Type <strong>DELETE</strong> to confirm:</p>
+                  <input
+                    type="text"
+                    value={deleteConfirmText}
+                    onChange={(e) => setDeleteConfirmText(e.target.value)}
+                    placeholder="Type DELETE"
+                    className="w-full border border-line bg-surface px-3 py-2 text-sm text-ink focus:border-accent focus:outline-none"
+                    autoFocus
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleDeleteAccount}
+                      disabled={deleteConfirmText !== 'DELETE'}
+                      className="px-4 py-2 bg-red-600 text-white text-label uppercase disabled:opacity-40 hover:bg-red-700 transition-colors"
+                    >
+                      Confirm Delete
+                    </button>
+                    <button
+                      onClick={() => { setDeleteStep('idle'); setDeleteConfirmText(''); }}
+                      className="px-4 py-2 border border-line text-label uppercase text-ink hover:border-line-strong"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {deleteStep === 'deleting' && (
+                <div className="mt-3 flex items-center gap-2 text-sm text-ink-muted">
+                  <Loader2 className="w-4 h-4 animate-spin" /> Deleting all data...
+                </div>
+              )}
+            </div>
           </div>
         </section>
       </div>
