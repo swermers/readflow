@@ -30,7 +30,7 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
     try {
       const res = await fetch('/api/sync-gmail', { method: 'POST' });
       const raw = await res.text();
-      const data = parseJson<{ error?: string; message?: string; imported?: number }>(raw);
+      const data = parseJson<{ error?: string; message?: string; imported?: number; warning?: string }>(raw);
 
       if (!res.ok) {
         triggerToast(data?.error || 'Sync failed');
@@ -39,6 +39,7 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
         }
       } else {
         triggerToast(data?.message || `Imported ${data?.imported ?? 0} newsletters`);
+        if (data?.warning) triggerToast(data.warning);
         refreshSidebar();
         router.refresh();
       }

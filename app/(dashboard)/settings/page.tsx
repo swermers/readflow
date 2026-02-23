@@ -396,7 +396,7 @@ function SettingsContent() {
     try {
       const res = await fetch('/api/sync-gmail', { method: 'POST' });
       const raw = await res.text();
-      const data = parseJson<{ error?: string; message?: string; imported?: number }>(raw);
+      const data = parseJson<{ error?: string; message?: string; imported?: number; warning?: string }>(raw);
 
       if (!res.ok) {
         triggerToast(data?.error || 'Sync failed');
@@ -405,6 +405,7 @@ function SettingsContent() {
         }
       } else {
         triggerToast(data?.message || `Imported ${data?.imported ?? 0} newsletters`);
+        if (data?.warning) triggerToast(data.warning);
         setLastSync(new Date());
         await loadProfile();
       }
