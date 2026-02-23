@@ -26,6 +26,16 @@ const WEEKDAY_OPTIONS = [
 
 const FREE_TIER_SOURCE_LIMIT = 5;
 
+
+function parseJson<T>(raw: string): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 function SettingsContent() {
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
@@ -245,8 +255,9 @@ function SettingsContent() {
     setLabelsLoading(true);
     try {
       const res = await fetch('/api/gmail-labels');
-      const data = await res.json();
-      if (res.ok && data.labels) {
+      const raw = await res.text();
+      const data = parseJson<{ labels?: GmailLabel[] }>(raw);
+      if (res.ok && data?.labels) {
         setLabels(data.labels);
       } else if (res.status === 401) {
         setGmailConnected(false);
@@ -384,15 +395,16 @@ function SettingsContent() {
     setSyncing(true);
     try {
       const res = await fetch('/api/sync-gmail', { method: 'POST' });
-      const data = await res.json();
+      const raw = await res.text();
+      const data = parseJson<{ error?: string; message?: string; imported?: number }>(raw);
 
       if (!res.ok) {
-        triggerToast(data.error || 'Sync failed');
-        if (res.status === 401 && data.error?.includes('expired')) {
+        triggerToast(data?.error || 'Sync failed');
+        if (res.status === 401 && data?.error?.includes('expired')) {
           setGmailConnected(false);
         }
       } else {
-        triggerToast(data.message || `Imported ${data.imported} newsletters`);
+        triggerToast(data?.message || `Imported ${data?.imported ?? 0} newsletters`);
         setLastSync(new Date());
         await loadProfile();
       }
