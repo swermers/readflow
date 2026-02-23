@@ -596,7 +596,7 @@ function SettingsContent() {
               <p className="mt-1 text-xs text-ink-faint">
                 {unlimitedAiAccess
                   ? 'Unlimited access is active for this account.'
-                  : 'TL;DR = 5 tokens, Listen = 10 tokens'}
+                  : 'TL;DR = 5 tokens, Audio Digest = 10 tokens'}
               </p>
             </div>
 
@@ -606,9 +606,9 @@ function SettingsContent() {
                 <p className="text-label uppercase text-ink-faint mb-3">Buy Tokens</p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {[
-                    { id: 'starter', name: 'Starter', tokens: 100, price: '$3', per: '$0.03/token' },
-                    { id: 'standard', name: 'Standard', tokens: 500, price: '$10', per: '$0.02/token', badge: 'Best Value' },
-                    { id: 'power', name: 'Power', tokens: 1500, price: '$25', per: '$0.017/token' },
+                    { id: 'starter', name: 'Starter', tokens: 100, price: '$4', per: '$0.04/token' },
+                    { id: 'standard', name: 'Standard', tokens: 500, price: '$12', per: '$0.024/token', badge: 'Best Value' },
+                    { id: 'power', name: 'Power', tokens: 1500, price: '$29', per: '$0.019/token' },
                   ].map((pack) => (
                     <button
                       key={pack.id}

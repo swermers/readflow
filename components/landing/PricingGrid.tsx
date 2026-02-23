@@ -12,30 +12,30 @@ const tokenPacks = [
       '30 free tokens on signup',
       'Unlimited Sources',
       'Highlights & Notes',
-      '~6 AI Summaries or ~3 Listens',
+      '~6 AI Summaries or ~3 Audio Digests',
       '7-day Rack retention',
     ],
   },
   {
     name: 'Starter',
-    price: '$3',
+    price: '$4',
     label: '100 tokens',
     features: [
       '100 tokens — use anytime',
       '~20 AI Summaries',
-      '~10 Audio Listens',
+      '~10 Audio Digests',
       'Signal Sorting',
       'Highlight Export',
     ],
   },
   {
     name: 'Standard',
-    price: '$10',
+    price: '$12',
     label: '500 tokens',
     features: [
       '500 tokens — best value',
       '~100 AI Summaries',
-      '~50 Audio Listens',
+      '~50 Audio Digests',
       'Weekly Brief & Podcast',
       'Notion Sync',
     ],
@@ -44,12 +44,12 @@ const tokenPacks = [
   },
   {
     name: 'Power',
-    price: '$25',
+    price: '$29',
     label: '1,500 tokens',
     features: [
       '1,500 tokens',
       '~300 AI Summaries',
-      '~150 Audio Listens',
+      '~150 Audio Digests',
       'Everything included',
       'Lowest per-token cost',
     ],
@@ -95,7 +95,7 @@ export default function PricingGrid() {
         ))}
       </div>
       <p className="text-center text-xs text-ink-faint mt-4">
-        TL;DR = 5 tokens &middot; Listen = 10 tokens &middot; All features unlocked for everyone.
+        TL;DR = 5 tokens &middot; Audio Digest = 10 tokens &middot; All features unlocked for everyone.
       </p>
     </motion.div>
   );

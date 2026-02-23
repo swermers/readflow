@@ -442,7 +442,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
           >
             <Headphones className="h-3.5 w-3.5" />
-            {audioLoading ? 'Working...' : 'Listen'}
+            {audioLoading ? 'Working...' : 'Audio Digest'}
           </button>
         ) : (
           <div className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">
