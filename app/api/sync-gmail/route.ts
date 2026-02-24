@@ -257,7 +257,7 @@ async function handleSync() {
         const { msgId, msg: gmailMessage } = result.value;
 
         try {
-          const parsed = parseGmailMessage(gmailMessage);
+          const parsed = await parseGmailMessage(gmailMessage);
 
           // Find or create sender
           let { data: sender, error: senderQueryErr } = await db

@@ -1,9 +1,23 @@
 // Parse Gmail API message format into our Issue/Sender format
 
-import createDOMPurify from 'isomorphic-dompurify';
 import type { GmailMessage, GmailMessagePart } from './gmailClient';
 
-const purify = createDOMPurify;
+// Lazy-load DOMPurify to avoid crashing the module if isomorphic-dompurify
+// fails to initialize JSDOM in serverless environments.
+let purify: { sanitize: (html: string, config: Record<string, unknown>) => string } | null = null;
+let purifyLoadAttempted = false;
+
+async function getPurify() {
+  if (purifyLoadAttempted) return purify;
+  purifyLoadAttempted = true;
+  try {
+    const mod = await import('isomorphic-dompurify');
+    purify = mod.default || mod;
+  } catch (err) {
+    console.warn('[emailParser] DOMPurify unavailable, using fallback sanitizer:', err instanceof Error ? err.message : err);
+  }
+  return purify;
+}
 
 export interface ParsedEmail {
   from_email: string;
@@ -79,34 +93,56 @@ function stripHtml(html: string): string {
 }
 
 /**
- * Sanitize newsletter HTML using DOMPurify.
+ * Fallback sanitizer when DOMPurify is unavailable.
+ * Strips dangerous tags and event-handler attributes using regex.
+ */
+function fallbackSanitize(html: string): string {
+  let clean = html;
+  // Remove dangerous tags and their content
+  clean = clean.replace(/<\s*(script|iframe|object|embed|applet|form|input|button|select|textarea)\b[^>]*>[\s\S]*?<\/\s*\1\s*>/gi, '');
+  // Remove self-closing dangerous tags
+  clean = clean.replace(/<\s*(script|iframe|object|embed|applet|input)\b[^>]*\/?>/gi, '');
+  // Remove event-handler attributes
+  clean = clean.replace(/\s+on\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]*)/gi, '');
+  return clean;
+}
+
+/**
+ * Sanitize newsletter HTML using DOMPurify (if available) or regex fallback.
  * Strips dangerous elements (script, iframe, object, embed, form) and attributes
  * while preserving newsletter formatting (tables, images, links, styles).
  */
-function sanitizeHtml(html: string): string {
-  let clean = purify.sanitize(html, {
-    ALLOWED_TAGS: [
-      'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
-      'p', 'br', 'hr', 'blockquote', 'pre', 'code',
-      'ul', 'ol', 'li', 'dl', 'dt', 'dd',
-      'a', 'img', 'figure', 'figcaption',
-      'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
-      'strong', 'em', 'b', 'i', 'u', 's', 'sub', 'sup', 'mark', 'small',
-      'span', 'div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav',
-      'details', 'summary',
-    ],
-    ALLOWED_ATTR: [
-      'href', 'src', 'alt', 'title', 'width', 'height',
-      'class', 'id', 'style',
-      'target', 'rel',
-      'colspan', 'rowspan', 'align', 'valign',
-      'border', 'cellpadding', 'cellspacing',
-      'dir', 'lang',
-    ],
-    ALLOW_DATA_ATTR: false,
-    FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'applet', 'form', 'input', 'button', 'select', 'textarea'],
-    FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
-  });
+async function sanitizeHtml(html: string): Promise<string> {
+  const dp = await getPurify();
+
+  let clean: string;
+  if (dp) {
+    clean = dp.sanitize(html, {
+      ALLOWED_TAGS: [
+        'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'p', 'br', 'hr', 'blockquote', 'pre', 'code',
+        'ul', 'ol', 'li', 'dl', 'dt', 'dd',
+        'a', 'img', 'figure', 'figcaption',
+        'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
+        'strong', 'em', 'b', 'i', 'u', 's', 'sub', 'sup', 'mark', 'small',
+        'span', 'div', 'section', 'article', 'header', 'footer', 'main', 'aside', 'nav',
+        'details', 'summary',
+      ],
+      ALLOWED_ATTR: [
+        'href', 'src', 'alt', 'title', 'width', 'height',
+        'class', 'id', 'style',
+        'target', 'rel',
+        'colspan', 'rowspan', 'align', 'valign',
+        'border', 'cellpadding', 'cellspacing',
+        'dir', 'lang',
+      ],
+      ALLOW_DATA_ATTR: false,
+      FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'applet', 'form', 'input', 'button', 'select', 'textarea'],
+      FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+    });
+  } else {
+    clean = fallbackSanitize(html);
+  }
 
   // Strip tracking pixels (1x1 images)
   clean = clean.replace(/<img[^>]*(?:width|height)\s*=\s*["']?1["']?[^>]*>/gi, '');
@@ -119,7 +155,7 @@ function sanitizeHtml(html: string): string {
 /**
  * Parse a Gmail API message into our app's email format.
  */
-export function parseGmailMessage(message: GmailMessage): ParsedEmail {
+export async function parseGmailMessage(message: GmailMessage): Promise<ParsedEmail> {
   const fromRaw = getHeader(message, 'From');
   const { name, email } = parseFrom(fromRaw);
   const subject = getHeader(message, 'Subject') || '(No Subject)';
@@ -132,7 +168,7 @@ export function parseGmailMessage(message: GmailMessage): ParsedEmail {
   const textPart = findPart(message.payload.parts, 'text/plain');
 
   if (htmlPart?.body?.data) {
-    bodyHtml = sanitizeHtml(decodeBase64Url(htmlPart.body.data));
+    bodyHtml = await sanitizeHtml(decodeBase64Url(htmlPart.body.data));
   }
   if (textPart?.body?.data) {
     bodyText = decodeBase64Url(textPart.body.data);
@@ -142,7 +178,7 @@ export function parseGmailMessage(message: GmailMessage): ParsedEmail {
   if (!bodyHtml && !bodyText && message.payload.body?.data) {
     const decoded = decodeBase64Url(message.payload.body.data);
     if (message.payload.mimeType === 'text/html') {
-      bodyHtml = sanitizeHtml(decoded);
+      bodyHtml = await sanitizeHtml(decoded);
     } else {
       bodyText = decoded;
     }
