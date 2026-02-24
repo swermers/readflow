@@ -517,6 +517,9 @@ function SettingsContent() {
         if (data.warning) {
           triggerToast(data.warning as string);
         }
+        if (data.debug) {
+          console.log('[Settings Sync] Debug:', JSON.stringify(data.debug));
+        }
         setLastSync(new Date());
         await loadProfile();
       }

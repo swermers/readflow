@@ -50,6 +50,9 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
         if (data.warning) {
           triggerToast(data.warning as string);
         }
+        if (data.debug) {
+          console.log('[SyncButton] Sync debug:', JSON.stringify(data.debug));
+        }
         refreshSidebar();
         router.refresh();
       }

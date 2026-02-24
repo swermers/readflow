@@ -41,17 +41,22 @@ export default function AutoSync({ lastSyncAt, intervalMinutes = 15 }: AutoSyncP
 
     fetch('/api/sync-gmail', { method: 'POST' })
       .then(async (res) => {
-        if (!res.ok) return;
-
         const raw = await res.text();
         const data = parseJson<SyncPayload>(raw);
+
+        if (!res.ok) {
+          console.warn('[AutoSync] Sync failed:', res.status, raw.slice(0, 500));
+          return;
+        }
+
+        console.log('[AutoSync] Sync result:', raw.slice(0, 500));
         if ((data?.imported ?? 0) > 0) {
           refreshSidebar();
           router.refresh();
         }
       })
-      .catch(() => {
-        // Silent failure for auto-sync — user can always manually sync
+      .catch((err) => {
+        console.warn('[AutoSync] Network error:', err);
       });
   }, [lastSyncAt, intervalMinutes, router]);
 
