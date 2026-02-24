@@ -6,7 +6,19 @@ import { parseGmailMessage } from '@/utils/emailParser';
 import { classifyIssueSignal } from '@/utils/signalSortHeuristics';
 import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
+// Accept GET as well — some domain/CDN redirects (301) convert POST to GET.
+export async function GET() {
+  return handleSync();
+}
+
 export async function POST() {
+  return handleSync();
+}
+
+async function handleSync() {
   const supabase = await createClient();
 
   // Authenticate the user
