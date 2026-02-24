@@ -11,6 +11,15 @@ interface SyncButtonProps {
   onDisconnected?: () => void;
 }
 
+function parseJson<T>(raw: string): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 export default function SyncButton({ variant = 'primary', onDisconnected }: SyncButtonProps) {
   const [syncing, setSyncing] = useState(false);
   const router = useRouter();

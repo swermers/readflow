@@ -26,6 +26,16 @@ const WEEKDAY_OPTIONS = [
 
 const FREE_TIER_SOURCE_LIMIT = 5;
 
+
+function parseJson<T>(raw: string): T | null {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 function SettingsContent() {
   const [email, setEmail] = useState('');
   const [firstName, setFirstName] = useState('');
