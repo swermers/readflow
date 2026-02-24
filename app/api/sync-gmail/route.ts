@@ -20,22 +20,42 @@ export async function POST() {
 
 async function handleSync() {
   const syncStart = Date.now();
-  const supabase = await createClient();
+
+  let supabase;
+  try {
+    supabase = await createClient();
+  } catch (initErr) {
+    const msg = initErr instanceof Error ? initErr.message : String(initErr);
+    console.error('[Sync] createClient() threw:', msg);
+    return NextResponse.json(
+      { error: 'Server initialization failed', debug: { phase: 'createClient', message: msg } },
+      { status: 500 }
+    );
+  }
 
   // Authenticate the user
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-
-  if (!authError && user) {
-    // Rate limit: 3 sync requests per minute per user
-    const rl = checkRateLimit(`sync:${user.id}`, 3, 60_000);
-    if (!rl.allowed) {
-      console.warn(`[Sync] Rate limited user=${user.id} resetMs=${rl.resetMs}`);
-      return rateLimitResponse(rl.resetMs);
+  let user;
+  try {
+    const { data, error: authError } = await supabase.auth.getUser();
+    if (authError || !data?.user) {
+      console.warn('[Sync] Auth failed:', authError?.message || 'no user');
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+    user = data.user;
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    console.error('[Sync] auth.getUser() threw:', msg);
+    return NextResponse.json(
+      { error: 'Authentication error', debug: { phase: 'auth', message: msg } },
+      { status: 500 }
+    );
   }
-  if (authError || !user) {
-    console.warn('[Sync] Auth failed:', authError?.message || 'no user');
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+  // Rate limit: 3 sync requests per minute per user
+  const rl = checkRateLimit(`sync:${user.id}`, 3, 60_000);
+  if (!rl.allowed) {
+    console.warn(`[Sync] Rate limited user=${user.id} resetMs=${rl.resetMs}`);
+    return rateLimitResponse(rl.resetMs);
   }
 
   console.log(`[Sync] Starting sync for user=${user.id}`);
@@ -52,16 +72,27 @@ async function handleSync() {
   }
 
   // Get the user's Gmail tokens and label preferences
-  const { data: profile, error: profileError } = await db
-    .from('profiles')
-    .select('gmail_access_token, gmail_refresh_token, gmail_token_expires_at, gmail_connected, gmail_sync_labels')
-    .eq('id', user.id)
-    .single();
+  let profile;
+  try {
+    const { data, error: profileError } = await db
+      .from('profiles')
+      .select('gmail_access_token, gmail_refresh_token, gmail_token_expires_at, gmail_connected, gmail_sync_labels')
+      .eq('id', user.id)
+      .single();
 
-  if (profileError) {
-    console.error(`[Sync] Profile read error user=${user.id}:`, profileError.message);
+    if (profileError) {
+      console.error(`[Sync] Profile read error user=${user.id}:`, profileError.message);
+      return NextResponse.json(
+        { error: 'Could not read profile. Please try again.', debug: { phase: 'profile', message: profileError.message } },
+        { status: 500 }
+      );
+    }
+    profile = data;
+  } catch (profileErr) {
+    const msg = profileErr instanceof Error ? profileErr.message : String(profileErr);
+    console.error('[Sync] Profile query threw:', msg);
     return NextResponse.json(
-      { error: 'Could not read profile. Please try again.' },
+      { error: 'Database error', debug: { phase: 'profileQuery', message: msg } },
       { status: 500 }
     );
   }

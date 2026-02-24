@@ -505,8 +505,14 @@ function SettingsContent() {
         data = {};
       }
 
+      // Always log debug info if present (even on errors)
+      if (data.debug) {
+        console.log('[Settings Sync] Debug:', res.status, JSON.stringify(data.debug));
+      }
+
       if (!res.ok) {
         const errorMsg = (data.error as string) || 'Sync failed. Check that Gmail is connected and labels are selected.';
+        console.error('[Settings Sync] Error:', res.status, JSON.stringify(data));
         triggerToast(errorMsg);
         if (data.code === 'TOKEN_REVOKED') {
           setGmailConnected(false);
