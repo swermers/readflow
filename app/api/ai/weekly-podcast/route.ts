@@ -1,7 +1,7 @@
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
+import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
 import { enqueueJob } from '@/utils/jobs';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { createClient } from '@/utils/supabase/server';
@@ -155,6 +155,10 @@ export async function POST(request: NextRequest) {
     dedupeKey,
     { maxAttempts: 4 },
   );
+
+  // Charge tokens for podcast generation (uses TTS)
+  const PODCAST_TOKEN_COST = 15;
+  await consumeTokensAtomic(supabase, user.id, PODCAST_TOKEN_COST, 'Weekly podcast');
 
   return NextResponse.json({ status: 'queued', deliveryKey, weekStart, weekEnd }, { status: 202 });
 }

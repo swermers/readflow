@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
+import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
 import { refreshAccessToken, listMessageIdsByLabel, getMessage } from '@/utils/gmailClient';
 import { parseGmailMessage } from '@/utils/emailParser';
@@ -20,8 +21,17 @@ export async function POST() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
   }
 
+  // Use admin client for DB writes to bypass RLS issues
+  let db: ReturnType<typeof createAdminClient>;
+  try {
+    db = createAdminClient();
+  } catch {
+    console.warn('[Sync] Admin client unavailable, falling back to server client');
+    db = supabase as any;
+  }
+
   // Get the user's Gmail tokens and label preferences
-  const { data: profile, error: profileError } = await supabase
+  const { data: profile, error: profileError } = await db
     .from('profiles')
     .select('gmail_access_token, gmail_refresh_token, gmail_token_expires_at, gmail_connected, gmail_sync_labels')
     .eq('id', user.id)
@@ -49,7 +59,7 @@ export async function POST() {
     const { accessToken, expiresAt } = await refreshAccessToken(refreshToken);
 
     // Store the refreshed access token
-    await supabase
+    await db
       .from('profiles')
       .update({
         gmail_access_token: accessToken,
@@ -76,7 +86,7 @@ export async function POST() {
 
     if (messageIds.length === 0) {
       // Update last sync time even if nothing found
-      await supabase
+      await db
         .from('profiles')
         .update({ gmail_last_sync_at: new Date().toISOString() })
         .eq('id', user.id);
@@ -99,14 +109,14 @@ export async function POST() {
     }
 
     // Check which messages we've already imported
-    const { data: existingIssues } = await supabase
+    const { data: existingIssues } = await db
       .from('issues')
       .select('message_id')
       .eq('user_id', user.id)
       .in('message_id', messageIds);
 
     // Also exclude messages the user explicitly deleted
-    const { data: deletedIssueRows } = await supabase
+    const { data: deletedIssueRows } = await db
       .from('deleted_issues')
       .select('message_id')
       .eq('user_id', user.id)
@@ -117,7 +127,7 @@ export async function POST() {
     const newMessageIds = messageIds.filter((id) => !existingIds.has(id) && !deletedIds.has(id));
 
     if (newMessageIds.length === 0) {
-      await supabase
+      await db
         .from('profiles')
         .update({ gmail_last_sync_at: new Date().toISOString() })
         .eq('id', user.id);
@@ -144,7 +154,7 @@ export async function POST() {
           const parsed = parseGmailMessage(gmailMessage);
 
           // Find or create sender
-          let { data: sender } = await supabase
+          let { data: sender } = await db
             .from('senders')
             .select('id, status')
             .eq('user_id', user.id)
@@ -152,7 +162,7 @@ export async function POST() {
             .single();
 
           if (!sender) {
-            const { data: newSender, error: senderInsertError } = await supabase
+            const { data: newSender, error: senderInsertError } = await db
               .from('senders')
               .insert({
                 user_id: user.id,
@@ -183,7 +193,7 @@ export async function POST() {
           });
 
           // Insert the issue
-          const { error: insertError } = await supabase.from('issues').insert({
+          const { error: insertError } = await db.from('issues').insert({
             user_id: user.id,
             sender_id: sender.id,
             subject: parsed.subject,
@@ -198,17 +208,19 @@ export async function POST() {
             signal_reason: signal.reason,
           });
 
-          if (!insertError) {
+          if (insertError) {
+            console.error('[Sync] Issue insert error:', insertError.message);
+          } else {
             imported++;
           }
         } catch (msgError) {
-          console.error(`Failed to import message:`, msgError);
+          console.error('[Sync] Failed to import message:', msgError);
         }
       }
     }
 
     // Update last sync time
-    await supabase
+    await db
       .from('profiles')
       .update({ gmail_last_sync_at: new Date().toISOString() })
       .eq('id', user.id);
@@ -241,9 +253,9 @@ export async function POST() {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('Gmail sync error:', message);
 
-    // If token refresh failed, mark Gmail as disconnected
-    if (message.includes('Token refresh failed')) {
-      await supabase
+    // Only clear tokens when Google permanently revoked them
+    if (message.includes('invalid_grant') || message.includes('Token has been expired or revoked')) {
+      await db
         .from('profiles')
         .update({
           gmail_connected: false,
@@ -253,13 +265,35 @@ export async function POST() {
         .eq('id', user.id);
 
       return NextResponse.json(
-        { error: 'Gmail token expired. Please reconnect your Gmail account.' },
+        { error: 'Gmail access was revoked. Please reconnect Gmail in Settings.', code: 'TOKEN_REVOKED' },
         { status: 401 }
       );
     }
 
+    // Transient token refresh failure — don't nuke tokens
+    if (message.includes('Token refresh failed')) {
+      return NextResponse.json(
+        { error: 'Could not reach Gmail. Please try again in a moment.', code: 'REFRESH_FAILED' },
+        { status: 502 }
+      );
+    }
+
+    if (message.includes('GOOGLE_CLIENT_ID')) {
+      return NextResponse.json(
+        { error: 'Gmail integration is not configured. Please contact support.' },
+        { status: 500 }
+      );
+    }
+
+    if (message.includes('Gmail list') || message.includes('Gmail get message')) {
+      return NextResponse.json(
+        { error: 'Could not read from Gmail. Please try again in a moment.' },
+        { status: 502 }
+      );
+    }
+
     return NextResponse.json(
-      { error: 'Sync failed. Please try again or reconnect your Gmail account.' },
+      { error: 'Sync encountered an error. Please try again or reconnect Gmail in Settings.' },
       { status: 500 }
     );
   }

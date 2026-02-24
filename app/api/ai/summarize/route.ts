@@ -291,12 +291,12 @@ export async function POST(request: NextRequest) {
       }, { onConflict: 'issue_id' })
       .then(() => {});
 
-    const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
+    const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required, 'TL;DR summary');
     return NextResponse.json({
       provider,
       ...result,
       tokensRemaining: consumeResult.available,
-      tokensLimit: consumeResult.limit,
+      tokenBalance: consumeResult.available,
       planTier: consumeResult.tier,
       unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
     });
@@ -307,12 +307,12 @@ export async function POST(request: NextRequest) {
       const fallback = fallbackProvider === 'grok'
         ? await summarizeWithGrok(input, expectedLanguageCode)
         : await summarizeWithAnthropic(input, expectedLanguageCode);
-      const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required);
+      const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required, 'TL;DR summary');
       return NextResponse.json({
         provider: fallbackProvider,
         ...fallback,
         tokensRemaining: consumeResult.available,
-        tokensLimit: consumeResult.limit,
+        tokenBalance: consumeResult.available,
         planTier: consumeResult.tier,
         unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
       });

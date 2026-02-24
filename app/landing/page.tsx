@@ -55,7 +55,7 @@ export default function LandingPage() {
               Win your war on noise.
             </motion.h1>
             <motion.p {...fadeUp} className="mx-auto max-w-3xl text-lg text-ink-muted">
-              Turn your inbox into a sanctuary. Zero your inbox, save highlights and notes, get TL;DRs for long newsletters, and listen on the go.
+              Turn your inbox into a sanctuary. Zero your inbox, save highlights and notes, get TL;DRs for long newsletters, and listen to audio digests on the go.
             </motion.p>
             <HeroToggle />
           </section>
@@ -82,10 +82,10 @@ export default function LandingPage() {
 
           <section className="space-y-5">
             <motion.h2 {...fadeUp} className="flex items-center gap-2 text-display">
-              <Headphones className="h-6 w-6 text-accent" /> Listen on the go.
+              <Headphones className="h-6 w-6 text-accent" /> Audio digests on the go.
             </motion.h2>
             <motion.p {...fadeUp} className="max-w-3xl text-ink-muted">
-              Catch up while you work, walk, or commute with durable narration for your top reads.
+              Catch up while you work, walk, or commute with AI-generated audio digests of your top reads.
             </motion.p>
             <AudioWidget />
           </section>

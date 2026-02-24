@@ -23,6 +23,8 @@ type ErrorResponse = {
   providerErrors?: Record<string, string>;
   creditsRemaining?: number;
   creditsLimit?: number;
+  tokensRemaining?: number;
+  tokenBalance?: number;
   planTier?: string;
   unlimitedAiAccess?: boolean;
 };
@@ -200,7 +202,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
             clearGlobalAudioPendingIssue();
             void trackEvent('listen_completed');
             if (!readyToastShownRef.current) {
-              triggerToast('Narration is ready — tap play to listen.');
+              triggerToast('Audio digest is ready — tap play to listen.');
               readyToastShownRef.current = true;
             }
           }
@@ -253,7 +255,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
           setAudioUrl(payload.audioUrl);
           setPreviewAudioUrl(null);
           if (!readyToastShownRef.current) {
-            triggerToast('Narration is ready — tap play to listen.');
+            triggerToast('Audio digest is ready — tap play to listen.');
             readyToastShownRef.current = true;
           }
         }
@@ -284,13 +286,9 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
 
         setError(body?.error || 'Could not generate TL;DR right now.');
-        if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
-          setCreditsMeta({
-            remaining: body.creditsRemaining,
-            limit: body.creditsLimit,
-            tier: body.planTier || 'free',
-            unlimited: body.unlimitedAiAccess || false,
-          });
+        const bal = body?.tokensRemaining ?? body?.tokenBalance ?? body?.creditsRemaining;
+        if (typeof bal === 'number') {
+          setCreditsMeta({ remaining: bal, limit: bal, tier: body?.planTier || 'free', unlimited: body?.unlimitedAiAccess || false });
         }
         return;
       }
@@ -299,13 +297,9 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       setData(payload);
       setSummaryCollapsed(false);
       void trackEvent('tldr_generated');
-      if (typeof payload.creditsRemaining === 'number' && typeof payload.creditsLimit === 'number') {
-        setCreditsMeta({
-          remaining: payload.creditsRemaining,
-          limit: payload.creditsLimit,
-          tier: payload.planTier || 'free',
-          unlimited: payload.unlimitedAiAccess || false,
-        });
+      const bal = payload.tokensRemaining ?? payload.tokenBalance ?? payload.creditsRemaining;
+      if (typeof bal === 'number') {
+        setCreditsMeta({ remaining: bal, limit: bal, tier: payload.planTier || 'free', unlimited: payload.unlimitedAiAccess || false });
       }
     } catch {
       setError('Could not generate TL;DR right now.');
@@ -337,13 +331,9 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
         setAudioError(body?.error || 'Could not generate audio right now.');
         setAudioHints(body?.hints || []);
-        if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
-          setCreditsMeta({
-            remaining: body.creditsRemaining,
-            limit: body.creditsLimit,
-            tier: body.planTier || 'free',
-            unlimited: body.unlimitedAiAccess || false,
-          });
+        const errBal = body?.tokensRemaining ?? body?.tokenBalance ?? body?.creditsRemaining;
+        if (typeof errBal === 'number') {
+          setCreditsMeta({ remaining: errBal, limit: errBal, tier: body?.planTier || 'free', unlimited: body?.unlimitedAiAccess || false });
         }
         setAudioStatus('failed');
         readyToastShownRef.current = false;
@@ -355,8 +345,9 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         audioUrl?: string | null;
         previewAudioUrl?: string | null;
         status?: AudioStatus;
+        tokensRemaining?: number;
+        tokenBalance?: number;
         creditsRemaining?: number;
-        creditsLimit?: number;
         planTier?: string;
         unlimitedAiAccess?: boolean;
         updatedAt?: string | null;
@@ -378,13 +369,9 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         setAudioQueuedAt((prev) => prev || Date.now());
       }
       if (nextStatus === 'ready') setAudioQueuedAt(null);
-      if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
-        setCreditsMeta({
-          remaining: body.creditsRemaining,
-          limit: body.creditsLimit,
-          tier: body.planTier || 'free',
-          unlimited: body.unlimitedAiAccess || false,
-        });
+      const audioBal = body?.tokensRemaining ?? body?.tokenBalance ?? body?.creditsRemaining;
+      if (typeof audioBal === 'number') {
+        setCreditsMeta({ remaining: audioBal, limit: audioBal, tier: body?.planTier || 'free', unlimited: body?.unlimitedAiAccess || false });
       }
     } catch {
       setAudioError('Could not generate audio right now.');
@@ -455,11 +442,11 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
             className="inline-flex items-center justify-center gap-2 rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-line-strong disabled:opacity-60"
           >
             <Headphones className="h-3.5 w-3.5" />
-            {audioLoading ? 'Working...' : 'Listen'}
+            {audioLoading ? 'Working...' : 'Audio Digest'}
           </button>
         ) : (
           <div className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">
-            Listen Ready
+            Digest Ready
           </div>
         )}
       </div>
@@ -482,13 +469,13 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
                 <button
                   type="button"
                   onClick={() => void playAudio(previewAudioUrl, {
-                    title: articleSubject ? `${articleSubject} narration (preview)` : 'Newsletter narration (preview)',
+                    title: articleSubject ? `${articleSubject} digest (preview)` : 'Newsletter digest (preview)',
                     chapters: audioChapters,
                   })}
                   className="inline-flex items-center gap-1 text-xs text-ink-faint hover:text-ink"
                 >
                   <Play className="h-3 w-3" />
-                  Listen now
+                  Play digest
                 </button>
               )}
               <button
@@ -540,24 +527,23 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       {creditsMeta && (
         <div className="mt-3">
           <p className="text-xs text-ink-faint">
-            AI credits: {creditsMeta.unlimited ? 'Unlimited' : `${creditsMeta.remaining}/${creditsMeta.limit} remaining`} on {creditsMeta.tier.toUpperCase()}.
+            {creditsMeta.unlimited ? 'Unlimited tokens' : `${creditsMeta.remaining} tokens remaining`}
           </p>
           {!creditsMeta.unlimited && creditsMeta.remaining <= 0 && (
             <div className="mt-2 rounded-lg border border-accent/30 bg-accent/5 px-3 py-2">
               <p className="text-xs font-medium text-ink">
-                You&apos;ve used all your credits this cycle.{' '}
+                Out of tokens.{' '}
                 <a href="/settings" className="text-accent underline hover:opacity-80">
-                  Upgrade your plan
+                  Buy more tokens
                 </a>{' '}
-                for more AI summaries and audio.
+                to continue using AI features.
               </p>
             </div>
           )}
-          {!creditsMeta.unlimited && creditsMeta.remaining > 0 && creditsMeta.remaining <= Math.ceil(creditsMeta.limit * 0.2) && (
+          {!creditsMeta.unlimited && creditsMeta.remaining > 0 && creditsMeta.remaining <= 15 && (
             <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-              Running low on credits.{' '}
-              <a href="/settings" className="underline hover:opacity-80">Upgrade</a>{' '}
-              for more.
+              Running low on tokens.{' '}
+              <a href="/settings" className="underline hover:opacity-80">Buy more</a>
             </p>
           )}
         </div>

@@ -77,7 +77,7 @@ export default function SearchPage() {
             type="text"
             value={query}
             onChange={(e) => handleInput(e.target.value)}
-            placeholder="Search newsletters..."
+            placeholder="Search by keyword, topic, or sender name..."
             autoFocus
             className="w-full rounded-xl border border-line bg-surface pl-12 pr-4 py-3.5 text-sm text-ink placeholder:text-ink-faint focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent transition-colors"
           />
@@ -93,6 +93,20 @@ export default function SearchPage() {
         <div className="text-center py-16">
           <Search className="w-10 h-10 text-ink-faint mx-auto mb-4" />
           <p className="text-sm text-ink-muted">Start typing to search across all your newsletters.</p>
+          <div className="mt-6 flex flex-wrap justify-center gap-2">
+            {['Stratechery', 'AI', 'climate', 'substack'].map((hint) => (
+              <button
+                key={hint}
+                onClick={() => { handleInput(hint); setQuery(hint); }}
+                className="rounded-full border border-line px-3 py-1.5 text-xs text-ink-muted hover:border-accent hover:text-accent transition-colors"
+              >
+                {hint}
+              </button>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-ink-faint">
+            Tip: search by sender name, email address, or any keyword in the subject or body.
+          </p>
         </div>
       )}
 
@@ -121,6 +135,11 @@ export default function SearchPage() {
                   <span className="text-[10px] uppercase tracking-[0.08em] text-accent truncate">
                     {result.sender_name || result.from_email}
                   </span>
+                  {result.sender_name && (
+                    <span className="text-[10px] text-ink-faint truncate max-w-[180px]">
+                      {result.from_email}
+                    </span>
+                  )}
                   {result.status === 'unread' && <div className="w-1.5 h-1.5 rounded-full bg-accent flex-shrink-0" />}
                 </div>
                 <h3 className="text-sm font-semibold text-ink line-clamp-2 group-hover:text-accent transition-colors">

@@ -19,6 +19,8 @@ type BriefResponse = {
   nextEligibleAt?: string;
   creditsRemaining?: number;
   creditsLimit?: number;
+  tokensRemaining?: number;
+  tokenBalance?: number;
   planTier?: string;
   unlimitedAiAccess?: boolean;
 };
@@ -28,6 +30,8 @@ type ErrorResponse = {
   nextEligibleAt?: string;
   creditsRemaining?: number;
   creditsLimit?: number;
+  tokensRemaining?: number;
+  tokenBalance?: number;
   planTier?: string;
   unlimitedAiAccess?: boolean;
 };
@@ -42,6 +46,8 @@ type WeeklyGetResponse = {
   creditBlockedReason?: string | null;
   creditsRemaining?: number;
   creditsLimit?: number;
+  tokensRemaining?: number;
+  tokenBalance?: number;
   planTier?: string;
   unlimitedAiAccess?: boolean;
 };
@@ -95,7 +101,7 @@ export default function WeeklyBriefCard() {
   const [weekStart, setWeekStart] = useState<string | null>(null);
   const [weekEnd, setWeekEnd] = useState<string | null>(null);
   const [nextEligibleAt, setNextEligibleAt] = useState<string | null>(null);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
   const [podcastStatus, setPodcastStatus] = useState<string | null>(null);
   const [podcastSrc, setPodcastSrc] = useState<string | null>(null);
@@ -147,8 +153,9 @@ export default function WeeklyBriefCard() {
         setWeekStart(body.weekStart || null);
         setWeekEnd(body.weekEnd || null);
         setNextEligibleAt(body.nextEligibleAt || null);
-        if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
-          setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free', unlimited: body.unlimitedAiAccess || false });
+        {
+          const bal = body?.tokensRemaining ?? body?.tokenBalance ?? body?.creditsRemaining;
+          if (typeof bal === 'number') setCreditsMeta({ remaining: bal, limit: bal, tier: body?.planTier || 'free', unlimited: body?.unlimitedAiAccess || false });
         }
 
         if (body.brief) {
@@ -215,8 +222,9 @@ export default function WeeklyBriefCard() {
         const body = (await res.json().catch(() => null)) as ErrorResponse | null;
         setError(body?.error || 'Could not generate your weekly brief right now.');
         if (body?.nextEligibleAt) setNextEligibleAt(body.nextEligibleAt);
-        if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
-          setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free', unlimited: body.unlimitedAiAccess || false });
+        {
+          const bal = body?.tokensRemaining ?? body?.tokenBalance ?? body?.creditsRemaining;
+          if (typeof bal === 'number') setCreditsMeta({ remaining: bal, limit: bal, tier: body?.planTier || 'free', unlimited: body?.unlimitedAiAccess || false });
         }
         return;
       }
@@ -229,8 +237,9 @@ export default function WeeklyBriefCard() {
       setWeekEnd(body.weekEnd || null);
       setNextEligibleAt(body.nextEligibleAt || null);
       setCollapsed(false);
-      if (typeof body?.creditsRemaining === 'number' && typeof body?.creditsLimit === 'number') {
-        setCreditsMeta({ remaining: body.creditsRemaining, limit: body.creditsLimit, tier: body.planTier || 'free', unlimited: body.unlimitedAiAccess || false });
+      {
+        const bal = body?.tokensRemaining ?? body?.tokenBalance ?? body?.creditsRemaining;
+        if (typeof bal === 'number') setCreditsMeta({ remaining: bal, limit: bal, tier: body?.planTier || 'free', unlimited: body?.unlimitedAiAccess || false });
       }
     } catch {
       setError('Could not generate your weekly brief right now.');
@@ -308,7 +317,7 @@ export default function WeeklyBriefCard() {
 
       {creditsMeta && (
         <p className="mt-3 text-xs text-ink-faint">
-          AI credits: {creditsMeta.unlimited ? 'Unlimited' : `${creditsMeta.remaining}/${creditsMeta.limit} remaining`} on {creditsMeta.tier.toUpperCase()}.
+          {creditsMeta.unlimited ? 'Unlimited tokens' : `${creditsMeta.remaining} tokens remaining`}
         </p>
       )}
 

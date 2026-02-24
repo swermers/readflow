@@ -2,6 +2,7 @@ import { createClient } from '@/utils/supabase/server';
 import { ArrowUpRight } from 'lucide-react';
 import TrackIssueLink from '@/components/TrackIssueLink';
 import WeeklyBriefCard from '@/components/WeeklyBriefCard';
+import CollapsibleSection from '@/components/CollapsibleSection';
 
 export default async function BriefingPage() {
   const supabase = await createClient();
@@ -129,9 +130,9 @@ export default async function BriefingPage() {
       const freshnessScore = Math.max(0, 20 - ageInDays * 3);
       const senderScore = Math.min(30, Math.max(0, (senderAffinity.get(email.from_email || '') || 0) * 2));
       const issueAutoTags = issueTags.get(email.id) || [];
-      const affinityBoost = issueAutoTags.reduce((sum, tag) => sum + Math.min(4, tagAffinity.get(tag) || 0), 0);
+      const affinityBoost = issueAutoTags.reduce((sum: number, tag: string) => sum + Math.min(4, tagAffinity.get(tag) || 0), 0);
       const senderDownrank = senderPenalty.get(email.from_email || '') || 0;
-      const tagDownrank = issueAutoTags.reduce((sum, tag) => sum + (tagPenalty.get(tag) || 0), 0);
+      const tagDownrank = issueAutoTags.reduce((sum: number, tag: string) => sum + (tagPenalty.get(tag) || 0), 0);
 
       const why: string[] = [];
       if ((senderAffinity.get(email.from_email || '') || 0) >= 3) why.push('You frequently engage with this sender');
@@ -162,7 +163,7 @@ export default async function BriefingPage() {
 
   if (recommendedIssues.length < 5) {
     for (const issue of rankedIssues) {
-      if (recommendedIssues.some((item) => item.id === issue.id)) continue;
+      if (recommendedIssues.some((item: any) => item.id === issue.id)) continue;
       recommendedIssues.push(issue);
       if (recommendedIssues.length >= 5) break;
     }
@@ -177,15 +178,13 @@ export default async function BriefingPage() {
         </div>
       </header>
 
-      <section className="mb-8 rounded-2xl border border-line bg-surface-raised p-4 md:p-5">
-        <div className="flex flex-col gap-1 md:flex-row md:items-end md:justify-between">
-          <div>
-            <p className="text-xs uppercase tracking-[0.1em] text-accent">Executive Assistant</p>
-            <h2 className="text-lg font-semibold text-ink">Signal Snapshot</h2>
-            <p className="text-xs text-ink-faint">Quick triage across your unread stack this week.</p>
-          </div>
-        </div>
-        <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+      <CollapsibleSection
+        label="Executive Assistant"
+        title="Signal Snapshot"
+        subtitle="Quick triage across your unread stack this week."
+        defaultCollapsed={true}
+      >
+        <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
           {executiveStats.map((item) => (
             <div key={item.label} className="rounded-lg border border-line bg-surface px-3 py-2">
               <p className="text-[10px] uppercase tracking-[0.08em] text-ink-faint">{item.label}</p>
@@ -193,19 +192,16 @@ export default async function BriefingPage() {
             </div>
           ))}
         </div>
-      </section>
+      </CollapsibleSection>
 
       {recommendedIssues.length > 0 && (
-        <section className="mb-8 rounded-2xl border border-line bg-surface-raised p-4 md:p-5">
-          <div className="flex items-end justify-between gap-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.1em] text-accent">Start Here</p>
-              <h2 className="text-lg font-semibold text-ink">Top 5 issues to read now</h2>
-              <p className="text-xs text-ink-faint">Auto-prioritized from this week’s stack.</p>
-            </div>
-          </div>
-
-          <div className="mt-4 space-y-2">
+        <CollapsibleSection
+          label="Start Here"
+          title="Top 5 issues to read now"
+          subtitle="Auto-prioritized from this week's stack."
+          defaultCollapsed={true}
+        >
+          <div className="space-y-2">
             {recommendedIssues.map((issue: any, index: number) => (
               <TrackIssueLink
                 key={issue.id}
@@ -216,7 +212,7 @@ export default async function BriefingPage() {
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.08em] text-accent">#{index + 1} · {issue.signal_tier === 'high_signal' ? 'High Signal' : 'Recommended'}</p>
+                    <p className="text-[10px] uppercase tracking-[0.08em] text-accent">#{index + 1} &middot; {issue.signal_tier === 'high_signal' ? 'High Signal' : 'Recommended'}</p>
                     <p className="mt-1 line-clamp-1 text-sm font-medium text-ink">{issue.subject}</p>
                     <p className="mt-1 line-clamp-1 text-xs text-ink-faint">Why: {issue.recommendationReason}</p>
                   </div>
@@ -225,7 +221,7 @@ export default async function BriefingPage() {
               </TrackIssueLink>
             ))}
           </div>
-        </section>
+        </CollapsibleSection>
       )}
 
       <WeeklyBriefCard />

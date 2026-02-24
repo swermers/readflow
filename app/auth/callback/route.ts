@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
+import { createAdminClient } from '@/utils/supabase/admin';
 
 function generateAlias(length = 8): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
@@ -52,15 +53,25 @@ export async function GET(request: Request) {
       console.log('[Auth Callback] provider_token present:', !!providerToken);
       console.log('[Auth Callback] provider_refresh_token present:', !!providerRefreshToken);
 
+      // Use admin client to bypass RLS for profile operations
+      // The anon client can fail due to auth context timing during callback
+      let admin: ReturnType<typeof createAdminClient> | null = null;
+      try {
+        admin = createAdminClient();
+      } catch {
+        console.warn('[Auth Callback] Admin client unavailable, falling back to anon client');
+      }
+      const db = admin || supabase;
+
       // Ensure profile exists
-      const { data: existing } = await supabase
+      const { data: existing } = await db
         .from('profiles')
         .select('id')
         .eq('id', user.id)
         .single();
 
       if (!existing) {
-        const { error: insertErr } = await supabase.from('profiles').insert({
+        const { error: insertErr } = await db.from('profiles').insert({
           id: user.id,
           email: user.email,
           forwarding_alias: generateAlias(),
@@ -74,21 +85,7 @@ export async function GET(request: Request) {
       let gmailConnected = false;
       let tokenSaveError: string | null = null;
 
-      // Check if gmail columns exist
-      let gmailColumnsExist = true;
-      {
-        const { error: gmailSelectErr } = await supabase
-          .from('profiles')
-          .select('gmail_connected')
-          .eq('id', user.id)
-          .single();
-        if (gmailSelectErr && gmailSelectErr.message?.includes('schema cache')) {
-          gmailColumnsExist = false;
-          console.error('[Auth Callback] Gmail columns not found — run migration 002');
-        }
-      }
-
-      if (gmailColumnsExist && (providerToken || providerRefreshToken)) {
+      if (providerToken || providerRefreshToken) {
         const updates: Record<string, unknown> = {
           gmail_connected: true,
         };
@@ -101,7 +98,7 @@ export async function GET(request: Request) {
           updates.gmail_refresh_token = providerRefreshToken;
         }
 
-        const { error: updateErr } = await supabase
+        const { error: updateErr } = await db
           .from('profiles')
           .update(updates)
           .eq('id', user.id);
@@ -113,7 +110,7 @@ export async function GET(request: Request) {
           console.log('[Auth Callback] Gmail tokens saved successfully');
           gmailConnected = true;
         }
-      } else if (gmailColumnsExist && !providerToken && !providerRefreshToken) {
+      } else {
         console.warn('[Auth Callback] No provider tokens received from OAuth session.');
         console.warn('[Auth Callback] Check: Supabase Google provider has Client ID AND Client Secret');
       }
@@ -127,13 +124,6 @@ export async function GET(request: Request) {
         }
         if (gmailConnected) {
           return NextResponse.redirect(`${siteUrl}/settings?gmail=connected`);
-        }
-        if (!gmailColumnsExist) {
-          return NextResponse.redirect(
-            `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent(
-              'Database migration required: run supabase/migrations/002_add_gmail_tokens.sql'
-            )}`
-          );
         }
         if (!providerToken && !providerRefreshToken) {
           return NextResponse.redirect(

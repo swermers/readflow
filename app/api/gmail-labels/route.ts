@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { refreshAccessToken, listLabels } from '@/utils/gmailClient';
+import { createAdminClient } from '@/utils/supabase/admin';
 
 export async function GET() {
   const cookieStore = cookies();
@@ -69,15 +70,122 @@ export async function GET() {
     return NextResponse.json({ labels });
   } catch (err: any) {
     console.error('Gmail labels error:', err);
+    const msg = err.message || '';
 
-    if (err.message?.includes('Token refresh failed')) {
+    // Only clear tokens if Google explicitly rejected the refresh token
+    // (invalid_grant means token was revoked or expired permanently)
+    if (msg.includes('invalid_grant') || msg.includes('Token has been expired or revoked')) {
       await supabase
         .from('profiles')
         .update({ gmail_connected: false, gmail_access_token: null, gmail_refresh_token: null })
         .eq('id', user.id);
-      return NextResponse.json({ error: 'Gmail token expired. Please sign in again.' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Gmail access was revoked. Please reconnect Gmail.', code: 'TOKEN_REVOKED' },
+        { status: 401 }
+      );
     }
 
-    return NextResponse.json({ error: err.message || 'Failed to fetch labels' }, { status: 500 });
+    // For other token refresh failures (network, temporary Google errors), don't nuke tokens
+    if (msg.includes('Token refresh failed')) {
+      return NextResponse.json(
+        { error: 'Could not reach Gmail. Please try again in a moment.', code: 'REFRESH_FAILED' },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ error: msg || 'Failed to fetch labels' }, { status: 500 });
   }
+}
+
+/**
+ * POST /api/gmail-labels — save selected label IDs to the user's profile.
+ * Tries admin client first, falls back to authenticated server client.
+ */
+export async function POST(request: Request) {
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // safe to ignore
+          }
+        },
+      },
+    }
+  );
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  let body: { labels?: string[] };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
+  if (!Array.isArray(body.labels)) {
+    return NextResponse.json({ error: 'labels must be an array' }, { status: 400 });
+  }
+
+  // Try admin client first, then fall back to server client
+  let adminAvailable = false;
+  try {
+    const admin = createAdminClient();
+    adminAvailable = true;
+
+    const { error, data } = await admin
+      .from('profiles')
+      .update({ gmail_sync_labels: body.labels })
+      .eq('id', user.id)
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('[Gmail Labels] Admin save failed:', error);
+      return NextResponse.json({ error: `Failed to save labels: ${error.message}` }, { status: 500 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ saved: true, count: body.labels.length });
+  } catch (adminErr) {
+    if (adminAvailable) {
+      console.error('[Gmail Labels] Admin query failed:', adminErr);
+      return NextResponse.json({ error: 'Failed to save labels' }, { status: 500 });
+    }
+    console.warn('[Gmail Labels] Admin client unavailable, using server client');
+  }
+
+  // Fallback: authenticated server client
+  const { error, data } = await supabase
+    .from('profiles')
+    .update({ gmail_sync_labels: body.labels })
+    .eq('id', user.id)
+    .select('id')
+    .single();
+
+  if (error) {
+    console.error('[Gmail Labels] Server save failed:', error);
+    return NextResponse.json({ error: `Failed to save labels: ${error.message}` }, { status: 500 });
+  }
+  if (!data) {
+    console.error('[Gmail Labels] Server update returned no rows — RLS may be blocking');
+    return NextResponse.json({ error: 'Save failed — no rows updated' }, { status: 500 });
+  }
+
+  return NextResponse.json({ saved: true, count: body.labels.length });
 }

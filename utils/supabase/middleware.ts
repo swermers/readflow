@@ -53,9 +53,21 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/privacy') ||
     pathname.startsWith('/terms');
 
-  if (!user && !isPublicRoute) {
+  // Never redirect API routes — they handle auth internally and return JSON errors.
+  // Redirecting a POST /api/* request to /login causes a 405 (Method Not Allowed)
+  // because page routes only accept GET.
+  const isApiRoute = pathname.startsWith('/api/');
+
+  if (!user && !isPublicRoute && !isApiRoute) {
     const url = request.nextUrl.clone();
     url.pathname = '/login';
+    return NextResponse.redirect(url);
+  }
+
+  // Redirect authenticated users from / to /briefing (Brief is the default view)
+  if (user && pathname === '/') {
+    const url = request.nextUrl.clone();
+    url.pathname = '/briefing';
     return NextResponse.redirect(url);
   }
 

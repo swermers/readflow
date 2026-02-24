@@ -18,7 +18,7 @@ export default function BriefSignalSection() {
         <ul className="mt-4 space-y-2 text-sm text-ink-muted">
           <li>• Start Here: 5 high-signal reads</li>
           <li>• TL;DRs generated for top issues</li>
-          <li>• Listen queue prepared for commute</li>
+          <li>• Audio digests queued for commute</li>
         </ul>
       </article>
 

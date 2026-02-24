@@ -2,11 +2,11 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { consumeTokensAtomic } from '@/utils/aiEntitlements';
 import { buildAudioHash, getGlobalAudioCache, normalizeAudioText, upsertGlobalAudioCache } from '@/utils/audioCache';
 import { latencyMs, recordAudioMetric } from '@/utils/audioMetrics';
-import { buildAudioScript, extractReadableTextFromHtml, sanitizeForSpeech, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
+import { extractReadableTextFromHtml, sanitizeForSpeech, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
+import { generateAudioDigest } from '@/utils/audioDigest';
 
 const MAX_CHUNK_CHARS = 2500;
 const FIRST_CHUNK_CHARS = 420;
-const ABBREVIATED_WORD_THRESHOLD = Number(process.env.AUDIO_ABBREVIATED_WORD_THRESHOLD || 1200);
 
 function truncateAtSignoff(text: string) {
   const lines = text
@@ -77,7 +77,8 @@ function splitIntoSpeechChunks(input: string) {
 }
 
 async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: string, voice: string, preferredModel: string) {
-  const models = Array.from(new Set([preferredModel, 'gpt-4o-mini-tts', 'tts-1']));
+  // Use tts-1 as default (cheapest), with preferred model and gpt-4o-mini-tts as fallbacks
+  const models = Array.from(new Set([preferredModel, 'tts-1', 'gpt-4o-mini-tts']));
 
   let lastStatus = 0;
   let lastError = '';
@@ -113,52 +114,6 @@ async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: st
 }
 
 
-async function generateAbbreviatedBodyWithAi(openaiApiKey: string, subject: string, rawBody: string) {
-  const model = process.env.OPENAI_ABBREVIATION_MODEL || 'gpt-4o-mini';
-  const endpoint = process.env.OPENAI_CHAT_ENDPOINT || 'https://api.openai.com/v1/chat/completions';
-  const snippet = rawBody.slice(0, 16000);
-
-  const res = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${openaiApiKey}`,
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You create concise but deep audio briefing scripts. Keep all core ideas, evidence, and important tradeoffs. Output plain text only. No markdown or bullets.',
-        },
-        {
-          role: 'user',
-          content:
-            `Create an abbreviated cliff-notes narration for this article while preserving depth. Use 6 to 10 sentences. Keep sequence coherent and natural.
-
-Title: ${subject}
-
-Article:
-${snippet}`,
-        },
-      ],
-      max_tokens: 550,
-    }),
-  });
-
-  if (!res.ok) return null;
-
-  const json = (await res.json().catch(() => null)) as {
-    choices?: Array<{ message?: { content?: string } }>;
-  } | null;
-
-  const text = json?.choices?.[0]?.message?.content?.trim();
-  if (!text) return null;
-  return sanitizeForSpeech(text);
-}
-
 async function setAudioStatus(
   supabase: SupabaseClient,
   userId: string,
@@ -179,7 +134,6 @@ async function setAudioStatus(
     },
     { onConflict: 'issue_id,user_id' },
   );
-
 }
 
 
@@ -212,8 +166,6 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     stripHtmlForSpeech(issue.body_html || '')
   ).trim();
   const contentWithoutSignoff = truncateAtSignoff(articleText);
-  const wordCount = (contentWithoutSignoff || articleText).split(/\s+/).filter(Boolean).length;
-  const audioMode: 'full' | 'abbreviated' = wordCount >= ABBREVIATED_WORD_THRESHOLD ? 'abbreviated' : 'full';
 
   const openaiApiKey = process.env.OPENAI_API_KEY;
   if (!openaiApiKey) {
@@ -221,17 +173,20 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     throw new Error('OPENAI_API_KEY missing');
   }
 
-  const abbreviatedBody =
-    audioMode === 'abbreviated'
-      ? await generateAbbreviatedBodyWithAi(openaiApiKey, issue.subject || 'Newsletter article', contentWithoutSignoff || articleText).catch(() => null)
-      : null;
+  // Always generate a digest — never send the raw article to TTS.
+  // This produces a 350-500 word narration (~2-3 min audio) that covers
+  // all sections, themes, key data, and takeaways.
+  const digestText = await generateAudioDigest(
+    issue.subject || 'Newsletter article',
+    contentWithoutSignoff || articleText,
+  );
 
-  const built = buildAudioScript({
-    title: issue.subject || 'Newsletter article',
-    rawText: contentWithoutSignoff || articleText,
-    mode: audioMode,
-    abbreviatedBodyOverride: abbreviatedBody || undefined,
-  });
+  // If AI digest generation fails, fall back to a cleaned-up excerpt
+  const scriptBody = digestText || sanitizeForSpeech(
+    (contentWithoutSignoff || articleText).slice(0, 3000),
+  );
+
+  const fullScript = `${issue.subject || 'Newsletter article'}. ${scriptBody}`;
 
   const normalizedBody = normalizeAudioText(contentWithoutSignoff || articleText);
   const senderName = Array.isArray(issue.senders)
@@ -244,7 +199,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     senderName || issue.from_email || '',
     publishDate,
     normalizedBody,
-    audioMode,
+    'digest',
   ]);
 
   let globalHit: Awaited<ReturnType<typeof getGlobalAudioCache>> = null;
@@ -275,13 +230,12 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
 
   await safeRecordMetric(supabase, 'audio_cache_miss');
 
-  const fullInput = `${issue.subject || 'Newsletter article'}\n\n${built.script}`;
-
-  const preferredModel = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
+  // Default to tts-1 (cheapest model) — override via env var if needed
+  const preferredModel = process.env.OPENAI_TTS_MODEL || 'tts-1';
   const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
   const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
 
-  const chunks = splitIntoSpeechChunks(fullInput);
+  const chunks = splitIntoSpeechChunks(fullScript);
   const audioChunks: Buffer[] = [];
   let usedModel = preferredModel;
 
@@ -324,7 +278,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   let chargedAt = latest?.credits_charged_at || null;
 
   if (!chargedAt || chargedCredits < 10) {
-    const consumeResult = await consumeTokensAtomic(supabase, userId, 10);
+    const consumeResult = await consumeTokensAtomic(supabase, userId, 10, 'Audio digest');
     if (!consumeResult.allowed) {
       await setAudioStatus(supabase, userId, issueId, 'failed', usedModel);
       await safeRecordMetric(supabase, 'audio_generation_failed', 1, 'Insufficient credits');
@@ -343,7 +297,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       contentType: 'article',
       mimeType: 'audio/mpeg',
       audioBase64,
-      scriptText: built.script,
+      scriptText: fullScript,
       provider: 'openai',
       model: usedModel,
     });
