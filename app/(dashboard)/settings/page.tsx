@@ -451,21 +451,32 @@ function SettingsContent() {
     setSyncing(true);
     try {
       const res = await fetch('/api/sync-gmail', { method: 'POST' });
-      const data = await res.json();
+
+      let data: Record<string, unknown>;
+      try {
+        data = await res.json();
+      } catch {
+        data = {};
+      }
 
       if (!res.ok) {
-        triggerToast(data.error || 'Sync failed');
-        if (res.status === 401 && data.error?.includes('expired')) {
+        const errorMsg = (data.error as string) || 'Sync failed. Check that Gmail is connected and labels are selected.';
+        triggerToast(errorMsg);
+        if (res.status === 401 || data.code === 'TOKEN_EXPIRED') {
           setGmailConnected(false);
+          setGmailError('Gmail session expired. Please reconnect below.');
         }
       } else {
-        triggerToast(data.message || `Imported ${data.imported} newsletters`);
+        triggerToast((data.message as string) || `Imported ${data.imported} newsletters`);
+        if (data.warning) {
+          triggerToast(data.warning as string);
+        }
         setLastSync(new Date());
         await loadProfile();
       }
     } catch (err) {
       console.error('Sync error:', err);
-      triggerToast('Sync failed');
+      triggerToast('Network error. Check your connection and try again.');
     }
     setSyncing(false);
   };
