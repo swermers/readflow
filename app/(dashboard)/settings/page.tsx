@@ -388,18 +388,19 @@ function SettingsContent() {
 
   const handleSaveProfile = async () => {
     setSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setSaving(false); return; }
-
-    const { error } = await supabase
-      .from('profiles')
-      .upsert({ id: user.id, email: user.email, first_name: firstName, last_name: lastName });
-
-    if (error) {
-      console.error('Error saving profile:', error);
-      triggerToast('Error saving profile');
-    } else {
-      triggerToast('Profile saved');
+    try {
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ first_name: firstName, last_name: lastName }),
+      });
+      if (!res.ok) {
+        triggerToast('Error saving profile');
+      } else {
+        triggerToast('Profile saved');
+      }
+    } catch {
+      triggerToast('Network error saving profile');
     }
     setSaving(false);
   };
@@ -415,47 +416,46 @@ function SettingsContent() {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (!tz) return;
     setBriefDeliveryTz(tz);
-    // Auto-save when using local timezone
-    const { data: { user: u } } = await supabase.auth.getUser();
-    if (!u) return;
     const hour = Math.max(0, Math.min(23, Math.floor(briefDeliveryHour || 0)));
     const days = briefDeliveryDays.length ? briefDeliveryDays : [1];
-    const { error } = await supabase
-      .from('profiles')
-      .update({ brief_delivery_days: days, brief_delivery_hour: hour, brief_delivery_tz: tz })
-      .eq('id', u.id);
-    if (!error) {
-      triggerToast('Timezone set and schedule saved');
+    try {
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ brief_delivery_days: days, brief_delivery_hour: hour, brief_delivery_tz: tz }),
+      });
+      if (res.ok) {
+        triggerToast('Timezone set and schedule saved');
+      }
+    } catch {
+      // silent
     }
   };
 
   const handleSaveBriefPreferences = async () => {
     setSavingBriefPrefs(true);
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
-      setSavingBriefPrefs(false);
-      return;
-    }
-
     const hour = Math.max(0, Math.min(23, Math.floor(briefDeliveryHour || 0)));
     const days = briefDeliveryDays.length ? briefDeliveryDays : [1];
 
-    const { error } = await supabase
-      .from('profiles')
-      .update({
-        brief_delivery_days: days,
-        brief_delivery_hour: hour,
-        brief_delivery_tz: (briefDeliveryTz || 'UTC').trim(),
-      })
-      .eq('id', user.id);
+    try {
+      const res = await fetch('/api/profile/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          brief_delivery_days: days,
+          brief_delivery_hour: hour,
+          brief_delivery_tz: (briefDeliveryTz || 'UTC').trim(),
+        }),
+      });
 
-    if (error) {
+      if (!res.ok) {
+        triggerToast('Could not save brief schedule');
+      } else {
+        setBriefDeliveryHour(hour);
+        triggerToast('Brief schedule saved');
+      }
+    } catch {
       triggerToast('Could not save brief schedule');
-    } else {
-      setBriefDeliveryHour(hour);
-      triggerToast('Brief schedule saved');
     }
 
     setSavingBriefPrefs(false);
