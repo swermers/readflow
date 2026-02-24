@@ -69,10 +69,18 @@ export async function POST() {
 
     // List messages from all selected labels (up to 50 per label)
     const allMessageIds: string[] = [];
+    const failedLabels: string[] = [];
+
     for (const labelId of syncLabels) {
-      const ids = await listMessageIdsByLabel(accessToken, labelId, 50);
-      allMessageIds.push(...ids);
+      try {
+        const ids = await listMessageIdsByLabel(accessToken, labelId, 50);
+        allMessageIds.push(...ids);
+      } catch (labelError) {
+        console.error('Failed to list Gmail label during sync:', labelId, labelError);
+        failedLabels.push(labelId);
+      }
     }
+
     // Deduplicate (a message can have multiple labels)
     const messageIds = Array.from(new Set(allMessageIds));
 
@@ -83,7 +91,21 @@ export async function POST() {
         .update({ gmail_last_sync_at: new Date().toISOString() })
         .eq('id', user.id);
 
-      return NextResponse.json({ imported: 0, message: 'No new newsletters found' });
+      if (failedLabels.length === syncLabels.length) {
+        return NextResponse.json(
+          {
+            error: 'Selected Gmail labels are unavailable. Please refresh labels in Settings and save again.',
+            code: 'INVALID_SYNC_LABELS',
+          },
+          { status: 400 }
+        );
+      }
+
+      return NextResponse.json({
+        imported: 0,
+        message: 'No new newsletters found',
+        warning: failedLabels.length ? 'Some labels could not be synced. Refresh labels in Settings.' : undefined,
+      });
     }
 
     // Check which messages we've already imported
@@ -210,9 +232,19 @@ export async function POST() {
         : 'No new newsletters to import',
     };
 
+    const warnings: string[] = [];
+
     if (sourceLimitReached) {
-      responsePayload.warning = 'Some sources were skipped due to plan limits.';
+      warnings.push('Some sources were skipped due to plan limits.');
       responsePayload.code = 'SOURCE_LIMIT_REACHED';
+    }
+
+    if (failedLabels.length) {
+      warnings.push('Some labels could not be synced. Refresh labels in Settings.');
+    }
+
+    if (warnings.length) {
+      responsePayload.warning = warnings.join(' ');
     }
 
     return NextResponse.json(responsePayload);
