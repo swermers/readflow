@@ -2,71 +2,90 @@ import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 /**
- * POST /api/account/delete
- * Deletes all user data and resets the profile to a clean slate.
- * Uses admin client to bypass RLS (some tables lack DELETE policies).
+ * DELETE /api/account/delete
+ * Permanently deletes the user's auth account.
+ * All data cascades via ON DELETE CASCADE (auth.users → profiles → issues, senders, etc.)
+ * Accepts GET and POST as well — some infrastructure layers block certain methods.
  */
+export async function GET() {
+  return handleDelete();
+}
+
 export async function POST() {
-  const supabase = await createClient();
+  return handleDelete();
+}
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+async function handleDelete() {
+  let supabase;
+  try {
+    supabase = await createClient();
+  } catch (initErr) {
+    const msg = initErr instanceof Error ? initErr.message : String(initErr);
+    console.error('[Delete Account] createClient() threw:', msg);
+    return NextResponse.json(
+      { error: 'Server initialization failed', debug: { phase: 'createClient', message: msg } },
+      { status: 500 }
+    );
   }
 
-  let db: ReturnType<typeof createAdminClient>;
+  let user;
   try {
-    db = createAdminClient();
+    const { data, error: authError } = await supabase.auth.getUser();
+    if (authError || !data?.user) {
+      return NextResponse.json(
+        { error: 'Unauthorized', debug: { phase: 'auth', message: authError?.message || 'no user' } },
+        { status: 401 }
+      );
+    }
+    user = data.user;
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    console.error('[Delete Account] auth.getUser() threw:', msg);
+    return NextResponse.json(
+      { error: 'Authentication error', debug: { phase: 'auth', message: msg } },
+      { status: 500 }
+    );
+  }
+
+  // Admin client is required to delete auth users
+  let adminDb;
+  try {
+    adminDb = createAdminClient();
   } catch {
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    console.error('[Delete Account] Admin client unavailable — cannot delete auth user');
+    return NextResponse.json(
+      { error: 'Account deletion requires server admin access. Please contact support.', debug: { phase: 'adminClient' } },
+      { status: 500 }
+    );
   }
 
   try {
-    // Delete all user data from child tables
-    const results = await Promise.allSettled([
-      db.from('highlights').delete().eq('user_id', user.id),
-      db.from('user_issue_events').delete().eq('user_id', user.id),
-      db.from('user_article_feedback').delete().eq('user_id', user.id),
-      db.from('deleted_issues').delete().eq('user_id', user.id),
-      db.from('issues').delete().eq('user_id', user.id),
-      db.from('senders').delete().eq('user_id', user.id),
-    ]);
+    console.log(`[Delete Account] Deleting user=${user.id} email=${user.email}`);
 
-    // Log any failures
-    results.forEach((r, i) => {
-      if (r.status === 'rejected') {
-        console.error(`[Delete Account] Table ${i} delete failed:`, r.reason);
-      } else if (r.value?.error) {
-        console.error(`[Delete Account] Table ${i} delete error:`, r.value.error.message);
-      }
-    });
+    // Delete the auth user — ON DELETE CASCADE handles everything:
+    // auth.users → profiles → issues, senders, highlights, etc.
+    const { error: deleteError } = await adminDb.auth.admin.deleteUser(user.id);
 
-    // Reset profile to clean slate
-    const { error: resetError } = await db
-      .from('profiles')
-      .update({
-        gmail_connected: false,
-        gmail_access_token: null,
-        gmail_refresh_token: null,
-        gmail_token_expires_at: null,
-        gmail_sync_labels: [],
-        gmail_last_sync_at: null,
-        ai_credits_used: 0,
-        brief_delivery_days: null,
-        brief_delivery_hour: null,
-        brief_delivery_tz: null,
-      })
-      .eq('id', user.id);
-
-    if (resetError) {
-      console.error('[Delete Account] Profile reset error:', resetError.message);
-      return NextResponse.json({ error: 'Failed to reset profile' }, { status: 500 });
+    if (deleteError) {
+      console.error('[Delete Account] auth.admin.deleteUser failed:', deleteError.message);
+      return NextResponse.json(
+        { error: 'Could not delete account. Please try again.', debug: { phase: 'deleteUser', message: deleteError.message } },
+        { status: 500 }
+      );
     }
 
+    console.log(`[Delete Account] Successfully deleted user=${user.id}`);
     return NextResponse.json({ deleted: true });
   } catch (err) {
-    console.error('[Delete Account] Unexpected error:', err);
-    return NextResponse.json({ error: 'Could not fully delete data' }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[Delete Account] Unexpected error:', msg);
+    return NextResponse.json(
+      { error: 'Could not delete account', debug: { phase: 'deleteUser', message: msg } },
+      { status: 500 }
+    );
   }
 }

@@ -496,7 +496,7 @@ function SettingsContent() {
   const handleSyncNow = async () => {
     setSyncing(true);
     try {
-      const res = await fetch('/api/sync-gmail', { method: 'POST' });
+      const res = await fetch('/api/sync-gmail', { cache: 'no-store' });
 
       let data: Record<string, unknown>;
       try {
@@ -505,8 +505,14 @@ function SettingsContent() {
         data = {};
       }
 
+      // Always log debug info if present (even on errors)
+      if (data.debug) {
+        console.log('[Settings Sync] Debug:', res.status, JSON.stringify(data.debug));
+      }
+
       if (!res.ok) {
         const errorMsg = (data.error as string) || 'Sync failed. Check that Gmail is connected and labels are selected.';
+        console.error('[Settings Sync] Error:', res.status, JSON.stringify(data));
         triggerToast(errorMsg);
         if (data.code === 'TOKEN_REVOKED') {
           setGmailConnected(false);
@@ -516,6 +522,9 @@ function SettingsContent() {
         triggerToast((data.message as string) || `Imported ${data.imported} newsletters`);
         if (data.warning) {
           triggerToast(data.warning as string);
+        }
+        if (data.debug) {
+          console.log('[Settings Sync] Debug:', JSON.stringify(data.debug));
         }
         setLastSync(new Date());
         await loadProfile();
@@ -563,10 +572,11 @@ function SettingsContent() {
     setDeleteStep('deleting');
 
     try {
-      const res = await fetch('/api/account/delete', { method: 'POST' });
+      const res = await fetch('/api/account/delete', { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        console.error('[Settings Delete] Error:', res.status, JSON.stringify(data));
         triggerToast(data.error || 'Could not delete data. Please try again.');
         setDeleteStep('idle');
         return;

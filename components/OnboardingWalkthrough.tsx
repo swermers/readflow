@@ -4,7 +4,6 @@ import { useState } from 'react';
 import Link from 'next/link';
 import {
   ArrowRight,
-  Check,
   CheckCircle2,
   ChevronLeft,
   ChevronRight,
@@ -71,9 +70,9 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
                   1
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-ink">Connect your Gmail account</h3>
+                  <h3 className="text-lg font-semibold text-ink">Gmail is connected</h3>
                   <p className="mt-1 text-sm text-ink-muted">
-                    Readflow needs read-only access to your Gmail so it can import newsletters you&apos;ve labeled.
+                    Your Gmail account is linked and Readflow has read-only access.
                     We never modify or delete your emails.
                   </p>
                 </div>
@@ -86,27 +85,19 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
                 </div>
                 <ul className="space-y-2 text-sm text-ink-muted pl-6">
                   <li className="flex items-start gap-2">
-                    <Check className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-                    You sign in with Google and grant read-only Gmail access
+                    <CheckCircle2 className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0" />
+                    Gmail connected with read-only access
                   </li>
                   <li className="flex items-start gap-2">
-                    <Check className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-                    Readflow imports newsletters from the labels you choose
+                    <ArrowRight className="h-3.5 w-3.5 text-accent mt-0.5 flex-shrink-0" />
+                    Next: create a label and filters in Gmail
                   </li>
                   <li className="flex items-start gap-2">
-                    <Check className="h-3.5 w-3.5 text-green-500 mt-0.5 flex-shrink-0" />
-                    Auto-sync keeps your library current every 15 minutes
+                    <ArrowRight className="h-3.5 w-3.5 text-accent mt-0.5 flex-shrink-0" />
+                    Then select labels in Readflow Settings to start syncing
                   </li>
                 </ul>
               </div>
-
-              <Link
-                href="/settings"
-                className="inline-flex items-center gap-2 rounded-lg bg-ink px-5 py-2.5 text-xs uppercase tracking-[0.08em] text-surface hover:bg-accent transition-colors"
-              >
-                <Settings className="h-3.5 w-3.5" />
-                Open Settings to connect Gmail
-              </Link>
             </div>
           )}
 

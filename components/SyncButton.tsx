@@ -28,7 +28,7 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
     setSyncing(true);
 
     try {
-      const res = await fetch('/api/sync-gmail', { method: 'POST' });
+      const res = await fetch('/api/sync-gmail', { cache: 'no-store' });
 
       let data: Record<string, unknown>;
       try {
@@ -49,6 +49,9 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
         triggerToast(msg);
         if (data.warning) {
           triggerToast(data.warning as string);
+        }
+        if (data.debug) {
+          console.log('[SyncButton] Sync debug:', JSON.stringify(data.debug));
         }
         refreshSidebar();
         router.refresh();
