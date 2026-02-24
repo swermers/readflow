@@ -26,48 +26,56 @@ async function handleDelete() {
   } catch (initErr) {
     const msg = initErr instanceof Error ? initErr.message : String(initErr);
     console.error('[Delete Account] createClient() threw:', msg);
-    return NextResponse.json({ error: 'Server initialization failed' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Server initialization failed', debug: { phase: 'createClient', message: msg } },
+      { status: 500 }
+    );
   }
 
   let user;
   try {
     const { data, error: authError } = await supabase.auth.getUser();
     if (authError || !data?.user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Unauthorized', debug: { phase: 'auth', message: authError?.message || 'no user' } },
+        { status: 401 }
+      );
     }
     user = data.user;
   } catch (authErr) {
     const msg = authErr instanceof Error ? authErr.message : String(authErr);
     console.error('[Delete Account] auth.getUser() threw:', msg);
-    return NextResponse.json({ error: 'Authentication error' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Authentication error', debug: { phase: 'auth', message: msg } },
+      { status: 500 }
+    );
   }
 
+  // Use admin client for DB writes to bypass RLS; fall back to server client
   let db: ReturnType<typeof createAdminClient>;
   try {
     db = createAdminClient();
   } catch {
-    return NextResponse.json({ error: 'Server configuration error' }, { status: 500 });
+    console.warn('[Delete Account] Admin client unavailable, falling back to server client');
+    db = supabase as any;
   }
 
   try {
-    // Delete all user data from child tables
-    const results = await Promise.allSettled([
-      db.from('highlights').delete().eq('user_id', user.id),
-      db.from('user_issue_events').delete().eq('user_id', user.id),
-      db.from('user_article_feedback').delete().eq('user_id', user.id),
-      db.from('deleted_issues').delete().eq('user_id', user.id),
-      db.from('issues').delete().eq('user_id', user.id),
-      db.from('senders').delete().eq('user_id', user.id),
-    ]);
-
-    // Log any failures
-    results.forEach((r, i) => {
-      if (r.status === 'rejected') {
-        console.error(`[Delete Account] Table ${i} delete failed:`, r.reason);
-      } else if (r.value?.error) {
-        console.error(`[Delete Account] Table ${i} delete error:`, r.value.error.message);
+    // Delete child tables first (order matters for foreign keys)
+    const childTables = ['highlights', 'user_issue_events', 'user_article_feedback', 'deleted_issues'];
+    for (const table of childTables) {
+      const { error } = await db.from(table).delete().eq('user_id', user.id);
+      if (error) {
+        console.warn(`[Delete Account] ${table} delete error (continuing):`, error.message);
       }
-    });
+    }
+
+    // Then delete issues, then senders (issues references senders)
+    const { error: issuesErr } = await db.from('issues').delete().eq('user_id', user.id);
+    if (issuesErr) console.warn('[Delete Account] issues delete error:', issuesErr.message);
+
+    const { error: sendersErr } = await db.from('senders').delete().eq('user_id', user.id);
+    if (sendersErr) console.warn('[Delete Account] senders delete error:', sendersErr.message);
 
     // Reset profile to clean slate
     const { error: resetError } = await db
@@ -88,12 +96,19 @@ async function handleDelete() {
 
     if (resetError) {
       console.error('[Delete Account] Profile reset error:', resetError.message);
-      return NextResponse.json({ error: 'Failed to reset profile' }, { status: 500 });
+      return NextResponse.json(
+        { error: 'Failed to reset profile', debug: { phase: 'profileReset', message: resetError.message } },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json({ deleted: true });
   } catch (err) {
-    console.error('[Delete Account] Unexpected error:', err);
-    return NextResponse.json({ error: 'Could not fully delete data' }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error('[Delete Account] Unexpected error:', msg);
+    return NextResponse.json(
+      { error: 'Could not fully delete data', debug: { phase: 'deleteOps', message: msg } },
+      { status: 500 }
+    );
   }
 }

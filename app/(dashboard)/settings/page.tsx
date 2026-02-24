@@ -576,6 +576,7 @@ function SettingsContent() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
+        console.error('[Settings Delete] Error:', res.status, JSON.stringify(data));
         triggerToast(data.error || 'Could not delete data. Please try again.');
         setDeleteStep('idle');
         return;
