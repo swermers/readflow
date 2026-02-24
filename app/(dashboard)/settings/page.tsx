@@ -69,57 +69,53 @@ function SettingsContent() {
 
     setEmail(user.email || '');
 
+    // Use full_name (the actual DB column) — split into first/last for display
     const { data: profile } = await supabase
       .from('profiles')
-      .select('id, first_name, last_name')
+      .select('id, full_name')
       .eq('id', user.id)
       .single();
 
-    if (profile) {
-      setFirstName(profile.first_name || user.user_metadata?.full_name?.split(' ')[0] || '');
-      setLastName(profile.last_name || user.user_metadata?.full_name?.split(' ').slice(1).join(' ') || '');
+    const fullNameRaw = profile?.full_name || user.user_metadata?.full_name || '';
+    setFirstName(fullNameRaw.split(' ')[0] || '');
+    setLastName(fullNameRaw.split(' ').slice(1).join(' ') || '');
 
-      // Gmail and plan columns may not exist if later migrations haven't been run
-      const { data: gmailProfile } = await supabase
-        .from('profiles')
-        .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, token_balance, unlimited_ai_access')
-        .eq('id', user.id)
-        .single();
+    // Gmail + plan fields (only columns that exist in the DB schema)
+    const { data: gmailProfile } = await supabase
+      .from('profiles')
+      .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, unlimited_ai_access')
+      .eq('id', user.id)
+      .single();
 
-      if (gmailProfile) {
-        setGmailConnected(gmailProfile.gmail_connected || false);
-        setSelectedLabels(gmailProfile.gmail_sync_labels || []);
-        if (gmailProfile.gmail_last_sync_at) {
-          setLastSync(new Date(gmailProfile.gmail_last_sync_at));
-        }
-        setPlanTier((gmailProfile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
-        setTokenBalance(gmailProfile.token_balance ?? 0);
-        setUnlimitedAiAccess(Boolean(gmailProfile.unlimited_ai_access));
+    if (gmailProfile) {
+      setGmailConnected(gmailProfile.gmail_connected || false);
+      setSelectedLabels(gmailProfile.gmail_sync_labels || []);
+      if (gmailProfile.gmail_last_sync_at) {
+        setLastSync(new Date(gmailProfile.gmail_last_sync_at));
       }
+      setPlanTier((gmailProfile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
+      setUnlimitedAiAccess(Boolean(gmailProfile.unlimited_ai_access));
+    }
 
-      const { data: briefPrefs } = await supabase
-        .from('profiles')
-        .select('brief_delivery_days, brief_delivery_hour, brief_delivery_tz')
-        .eq('id', user.id)
-        .maybeSingle<{
-          brief_delivery_days: number[] | null;
-          brief_delivery_hour: number | null;
-          brief_delivery_tz: string | null;
-        }>();
+    // Brief schedule
+    const { data: briefPrefs } = await supabase
+      .from('profiles')
+      .select('brief_delivery_days, brief_delivery_hour, brief_delivery_tz')
+      .eq('id', user.id)
+      .maybeSingle<{
+        brief_delivery_days: number[] | null;
+        brief_delivery_hour: number | null;
+        brief_delivery_tz: string | null;
+      }>();
 
-      if (briefPrefs) {
-        setBriefDeliveryDays(
-          Array.isArray(briefPrefs.brief_delivery_days) && briefPrefs.brief_delivery_days.length
-            ? briefPrefs.brief_delivery_days.map((day) => Number(day))
-            : [1],
-        );
-        setBriefDeliveryHour(Number.isFinite(Number(briefPrefs.brief_delivery_hour)) ? Number(briefPrefs.brief_delivery_hour) : 9);
-        setBriefDeliveryTz(briefPrefs.brief_delivery_tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
-      }
-    } else {
-      const fullName = user.user_metadata?.full_name || '';
-      setFirstName(fullName.split(' ')[0] || '');
-      setLastName(fullName.split(' ').slice(1).join(' ') || '');
+    if (briefPrefs) {
+      setBriefDeliveryDays(
+        Array.isArray(briefPrefs.brief_delivery_days) && briefPrefs.brief_delivery_days.length
+          ? briefPrefs.brief_delivery_days.map((day) => Number(day))
+          : [1],
+      );
+      setBriefDeliveryHour(Number.isFinite(Number(briefPrefs.brief_delivery_hour)) ? Number(briefPrefs.brief_delivery_hour) : 9);
+      setBriefDeliveryTz(briefPrefs.brief_delivery_tz || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
     }
 
     setLoading(false);
@@ -388,10 +384,11 @@ function SettingsContent() {
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
+      const fullName = [firstName.trim(), lastName.trim()].filter(Boolean).join(' ');
       const res = await fetch('/api/profile/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ first_name: firstName, last_name: lastName }),
+        body: JSON.stringify({ full_name: fullName }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -585,7 +582,7 @@ function SettingsContent() {
           gmail_token_expires_at: null,
           gmail_sync_labels: [],
           gmail_last_sync_at: null,
-          token_balance: 0,
+          ai_credits_used: 0,
           brief_delivery_days: null,
           brief_delivery_hour: null,
           brief_delivery_tz: null,

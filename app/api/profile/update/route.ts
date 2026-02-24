@@ -4,8 +4,7 @@ import { NextResponse } from 'next/server';
 
 /** Allowlist of profile columns that can be updated from the client. */
 const ALLOWED_FIELDS = new Set([
-  'first_name',
-  'last_name',
+  'full_name',
   'brief_delivery_days',
   'brief_delivery_hour',
   'brief_delivery_tz',
