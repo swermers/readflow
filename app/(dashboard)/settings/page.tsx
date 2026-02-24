@@ -572,7 +572,7 @@ function SettingsContent() {
     setDeleteStep('deleting');
 
     try {
-      const res = await fetch('/api/account/delete', { method: 'POST' });
+      const res = await fetch('/api/account/delete', { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {

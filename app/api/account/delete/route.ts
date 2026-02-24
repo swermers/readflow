@@ -2,17 +2,44 @@ import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
 
+export const runtime = 'nodejs';
+export const dynamic = 'force-dynamic';
+
 /**
- * POST /api/account/delete
+ * DELETE /api/account/delete
  * Deletes all user data and resets the profile to a clean slate.
  * Uses admin client to bypass RLS (some tables lack DELETE policies).
+ * Accepts GET and POST as well — some infrastructure layers block certain methods.
  */
-export async function POST() {
-  const supabase = await createClient();
+export async function GET() {
+  return handleDelete();
+}
 
-  const { data: { user }, error: authError } = await supabase.auth.getUser();
-  if (authError || !user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+export async function POST() {
+  return handleDelete();
+}
+
+async function handleDelete() {
+  let supabase;
+  try {
+    supabase = await createClient();
+  } catch (initErr) {
+    const msg = initErr instanceof Error ? initErr.message : String(initErr);
+    console.error('[Delete Account] createClient() threw:', msg);
+    return NextResponse.json({ error: 'Server initialization failed' }, { status: 500 });
+  }
+
+  let user;
+  try {
+    const { data, error: authError } = await supabase.auth.getUser();
+    if (authError || !data?.user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+    user = data.user;
+  } catch (authErr) {
+    const msg = authErr instanceof Error ? authErr.message : String(authErr);
+    console.error('[Delete Account] auth.getUser() threw:', msg);
+    return NextResponse.json({ error: 'Authentication error' }, { status: 500 });
   }
 
   let db: ReturnType<typeof createAdminClient>;
