@@ -496,7 +496,7 @@ function SettingsContent() {
   const handleSyncNow = async () => {
     setSyncing(true);
     try {
-      const res = await fetch('/api/sync-gmail', { method: 'POST' });
+      const res = await fetch('/api/sync-gmail', { cache: 'no-store' });
 
       let data: Record<string, unknown>;
       try {

@@ -28,7 +28,7 @@ export default function SyncButton({ variant = 'primary', onDisconnected }: Sync
     setSyncing(true);
 
     try {
-      const res = await fetch('/api/sync-gmail', { method: 'POST' });
+      const res = await fetch('/api/sync-gmail', { cache: 'no-store' });
 
       let data: Record<string, unknown>;
       try {

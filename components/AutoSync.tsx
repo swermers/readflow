@@ -39,7 +39,7 @@ export default function AutoSync({ lastSyncAt, intervalMinutes = 15 }: AutoSyncP
 
     hasSynced.current = true;
 
-    fetch('/api/sync-gmail', { method: 'POST' })
+    fetch('/api/sync-gmail', { cache: 'no-store' })
       .then(async (res) => {
         const raw = await res.text();
         const data = parseJson<SyncPayload>(raw);
