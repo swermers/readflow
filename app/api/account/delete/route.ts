@@ -53,9 +53,9 @@ export async function POST() {
         gmail_sync_labels: [],
         gmail_last_sync_at: null,
         ai_credits_used: 0,
-        brief_delivery_days: null,
-        brief_delivery_hour: null,
-        brief_delivery_tz: null,
+        brief_delivery_days: [1],
+        brief_delivery_hour: 9,
+        brief_delivery_tz: 'UTC',
       })
       .eq('id', user.id);
 
