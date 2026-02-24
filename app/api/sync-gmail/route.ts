@@ -209,8 +209,8 @@ export async function POST() {
     const message = err instanceof Error ? err.message : 'Unknown error';
     console.error('Gmail sync error:', message);
 
-    // If token refresh failed, mark Gmail as disconnected
-    if (message.includes('Token refresh failed') || message.includes('invalid_grant') || message.includes('(401)')) {
+    // Only clear tokens when Google permanently revoked them
+    if (message.includes('invalid_grant') || message.includes('Token has been expired or revoked')) {
       await supabase
         .from('profiles')
         .update({
@@ -221,8 +221,16 @@ export async function POST() {
         .eq('id', user.id);
 
       return NextResponse.json(
-        { error: 'Gmail session expired. Please go to Settings and reconnect your Gmail account.', code: 'TOKEN_EXPIRED' },
+        { error: 'Gmail access was revoked. Please reconnect Gmail in Settings.', code: 'TOKEN_REVOKED' },
         { status: 401 }
+      );
+    }
+
+    // Transient token refresh failure — don't nuke tokens
+    if (message.includes('Token refresh failed')) {
+      return NextResponse.json(
+        { error: 'Could not reach Gmail. Please try again in a moment.', code: 'REFRESH_FAILED' },
+        { status: 502 }
       );
     }
 

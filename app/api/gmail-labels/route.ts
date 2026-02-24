@@ -69,15 +69,29 @@ export async function GET() {
     return NextResponse.json({ labels });
   } catch (err: any) {
     console.error('Gmail labels error:', err);
+    const msg = err.message || '';
 
-    if (err.message?.includes('Token refresh failed')) {
+    // Only clear tokens if Google explicitly rejected the refresh token
+    // (invalid_grant means token was revoked or expired permanently)
+    if (msg.includes('invalid_grant') || msg.includes('Token has been expired or revoked')) {
       await supabase
         .from('profiles')
         .update({ gmail_connected: false, gmail_access_token: null, gmail_refresh_token: null })
         .eq('id', user.id);
-      return NextResponse.json({ error: 'Gmail token expired. Please sign in again.' }, { status: 401 });
+      return NextResponse.json(
+        { error: 'Gmail access was revoked. Please reconnect Gmail.', code: 'TOKEN_REVOKED' },
+        { status: 401 }
+      );
     }
 
-    return NextResponse.json({ error: err.message || 'Failed to fetch labels' }, { status: 500 });
+    // For other token refresh failures (network, temporary Google errors), don't nuke tokens
+    if (msg.includes('Token refresh failed')) {
+      return NextResponse.json(
+        { error: 'Could not reach Gmail. Please try again in a moment.', code: 'REFRESH_FAILED' },
+        { status: 502 }
+      );
+    }
+
+    return NextResponse.json({ error: msg || 'Failed to fetch labels' }, { status: 500 });
   }
 }

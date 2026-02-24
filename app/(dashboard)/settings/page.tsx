@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -41,6 +41,7 @@ function SettingsContent() {
   const [selectedLabels, setSelectedLabels] = useState<string[]>([]);
   const [labelsLoading, setLabelsLoading] = useState(false);
   const [labelsSaving, setLabelsSaving] = useState(false);
+  const [labelsOpen, setLabelsOpen] = useState(false);
   const [planTier, setPlanTier] = useState<'free' | 'pro' | 'elite'>('free');
   const [tokenBalance, setTokenBalance] = useState(0);
   const [unlimitedAiAccess, setUnlimitedAiAccess] = useState(false);
@@ -295,19 +296,36 @@ function SettingsContent() {
     }
   };
 
-  const fetchLabels = async () => {
+  const fetchLabels = async (retries = 1) => {
     setLabelsLoading(true);
     try {
       const res = await fetch('/api/gmail-labels');
-      const data = await res.json();
-      if (res.ok && data.labels) {
-        setLabels(data.labels);
-      } else if (res.status === 401) {
+      let data: Record<string, unknown> = {};
+      try { data = await res.json(); } catch { /* empty */ }
+
+      if (res.ok && Array.isArray(data.labels)) {
+        setLabels(data.labels as GmailLabel[]);
+        setGmailError(null);
+      } else if (res.status === 401 && data.code === 'TOKEN_REVOKED') {
+        // Only disconnect when Google permanently revoked the token
         setGmailConnected(false);
-        setGmailError('Gmail session expired. Please sign out and sign back in.');
+        setGmailError('Gmail access was revoked. Please reconnect below.');
+      } else if ((res.status === 502 || res.status >= 500) && retries > 0) {
+        // Transient error — retry once after a short delay
+        await new Promise(r => setTimeout(r, 2000));
+        setLabelsLoading(false);
+        return fetchLabels(retries - 1);
+      } else if (!res.ok) {
+        // Non-fatal error — show message but keep connected state
+        console.error('Label fetch error:', data.error);
       }
     } catch {
-      console.error('Failed to fetch labels');
+      console.error('Failed to fetch labels (network)');
+      if (retries > 0) {
+        await new Promise(r => setTimeout(r, 2000));
+        setLabelsLoading(false);
+        return fetchLabels(retries - 1);
+      }
     }
     setLabelsLoading(false);
   };
@@ -429,8 +447,7 @@ function SettingsContent() {
 
   const handleReconnectGmail = async () => {
     setGmailError(null);
-    // Sign out + re-auth to get fresh provider tokens
-    await supabase.auth.signOut();
+    // Re-link Google without signing out — preserves the session
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -462,9 +479,9 @@ function SettingsContent() {
       if (!res.ok) {
         const errorMsg = (data.error as string) || 'Sync failed. Check that Gmail is connected and labels are selected.';
         triggerToast(errorMsg);
-        if (res.status === 401 || data.code === 'TOKEN_EXPIRED') {
+        if (data.code === 'TOKEN_REVOKED') {
           setGmailConnected(false);
-          setGmailError('Gmail session expired. Please reconnect below.');
+          setGmailError('Gmail access was revoked. Please reconnect below.');
         }
       } else {
         triggerToast((data.message as string) || `Imported ${data.imported} newsletters`);
@@ -873,41 +890,62 @@ function SettingsContent() {
                     </button>
                   </div>
 
-                  {/* Label selection */}
+                  {/* Label selection dropdown */}
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <label className="text-label uppercase text-ink-faint flex items-center gap-1.5">
-                        <Tag className="w-3 h-3" />
-                        Labels to Sync
-                      </label>
-                      {labels.length > 0 && (
-                        <button
-                          onClick={fetchLabels}
-                          disabled={labelsLoading}
-                          className="text-xs text-ink-faint hover:text-ink transition-colors flex items-center gap-1"
-                        >
-                          <RefreshCw className={`w-3 h-3 ${labelsLoading ? 'animate-spin' : ''}`} />
-                          Refresh
-                        </button>
-                      )}
-                    </div>
+                    <label className="text-label uppercase text-ink-faint flex items-center gap-1.5">
+                      <Tag className="w-3 h-3" />
+                      Labels to Sync
+                    </label>
 
-                    {isFreeTierSourceLimited && (
-                      <p className="text-xs text-ink-faint">
-                        Free tier: choose up to {FREE_TIER_SOURCE_LIMIT} labels ({selectedLabels.length}/{FREE_TIER_SOURCE_LIMIT} selected).
-                      </p>
+                    {/* Selected labels summary chips */}
+                    {selectedLabels.length > 0 && labels.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedLabels.map(id => {
+                          const label = labels.find(l => l.id === id);
+                          return label ? (
+                            <span
+                              key={id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-ink/5 border border-line text-xs text-ink"
+                            >
+                              {label.name}
+                              <button
+                                onClick={() => toggleLabel(id)}
+                                className="text-ink-faint hover:text-accent transition-colors"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </span>
+                          ) : null;
+                        })}
+                      </div>
                     )}
 
-                    {labelsLoading && labels.length === 0 ? (
-                      <div className="flex items-center gap-2 text-sm text-ink-muted py-4">
-                        <Loader2 className="w-4 h-4 animate-spin" /> Loading labels from Gmail...
+                    {/* Dropdown trigger */}
+                    <button
+                      onClick={() => setLabelsOpen(!labelsOpen)}
+                      disabled={labelsLoading && labels.length === 0}
+                      className="w-full flex items-center justify-between px-3 py-2.5 border border-line hover:border-line-strong bg-surface text-sm text-ink transition-colors disabled:opacity-50"
+                    >
+                      <span className="text-ink-muted">
+                        {labelsLoading && labels.length === 0
+                          ? 'Loading labels...'
+                          : labels.length === 0
+                            ? 'No labels found'
+                            : `${selectedLabels.length} label${selectedLabels.length !== 1 ? 's' : ''} selected`}
+                      </span>
+                      <div className="flex items-center gap-2">
+                        {labelsLoading && <Loader2 className="w-3 h-3 animate-spin text-ink-faint" />}
+                        <ChevronDown className={`w-4 h-4 text-ink-faint transition-transform ${labelsOpen ? 'rotate-180' : ''}`} />
                       </div>
-                    ) : labels.length > 0 ? (
-                      <div className="space-y-1">
+                    </button>
+
+                    {/* Dropdown panel */}
+                    {labelsOpen && labels.length > 0 && (
+                      <div className="border border-line bg-surface max-h-56 overflow-y-auto">
                         {labels.map(label => (
                           <label
                             key={label.id}
-                            className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-overlay cursor-pointer transition-colors border border-transparent hover:border-line"
+                            className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-overlay cursor-pointer transition-colors border-b border-line last:border-0"
                           >
                             <input
                               type="checkbox"
@@ -921,20 +959,28 @@ function SettingsContent() {
                             )}
                           </label>
                         ))}
-                        <button
-                          onClick={handleSaveLabels}
-                          disabled={labelsSaving}
-                          className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-5 py-2.5 hover:bg-accent transition-colors disabled:opacity-50 mt-3"
-                        >
-                          {labelsSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                          Save Labels
-                        </button>
                       </div>
-                    ) : (
-                      <p className="text-sm text-ink-faint py-2">
-                        No labels found. Create labels in Gmail to organize your newsletters.
-                      </p>
                     )}
+
+                    {/* Refresh + Save row */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={handleSaveLabels}
+                        disabled={labelsSaving}
+                        className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-5 py-2.5 hover:bg-accent transition-colors disabled:opacity-50"
+                      >
+                        {labelsSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                        Save Labels
+                      </button>
+                      <button
+                        onClick={() => fetchLabels()}
+                        disabled={labelsLoading}
+                        className="flex items-center gap-1 text-xs text-ink-faint hover:text-ink transition-colors px-3 py-2.5"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${labelsLoading ? 'animate-spin' : ''}`} />
+                        Refresh
+                      </button>
+                    </div>
                   </div>
 
                   {/* Sync button */}
