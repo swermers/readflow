@@ -520,20 +520,17 @@ function SettingsContent() {
   const handleDisconnectGmail = async () => {
     if (!confirm('Disconnect Gmail? This will remove your Gmail tokens and sync labels. You will need to re-authorize through onboarding to reconnect.')) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
-
-    await supabase
-      .from('profiles')
-      .update({
-        gmail_connected: false,
-        gmail_access_token: null,
-        gmail_refresh_token: null,
-        gmail_token_expires_at: null,
-        gmail_sync_labels: [],
-        gmail_last_sync_at: null,
-      })
-      .eq('id', user.id);
+    try {
+      const res = await fetch('/api/account/disconnect-gmail', { method: 'POST' });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        triggerToast(data.error || 'Failed to disconnect Gmail');
+        return;
+      }
+    } catch {
+      triggerToast('Network error disconnecting Gmail');
+      return;
+    }
 
     setGmailConnected(false);
     setLabels([]);
@@ -555,39 +552,15 @@ function SettingsContent() {
 
     setDeleteStep('deleting');
 
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      setDeleteStep('idle');
-      return;
-    }
-
     try {
-      // Clear all user data
-      await Promise.allSettled([
-        supabase.from('highlights').delete().eq('user_id', user.id),
-        supabase.from('user_issue_events').delete().eq('user_id', user.id),
-        supabase.from('user_article_feedback').delete().eq('user_id', user.id),
-        supabase.from('deleted_issues').delete().eq('user_id', user.id),
-        supabase.from('issues').delete().eq('user_id', user.id),
-        supabase.from('senders').delete().eq('user_id', user.id),
-      ]);
+      const res = await fetch('/api/account/delete', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
 
-      // Reset profile to clean slate
-      await supabase
-        .from('profiles')
-        .update({
-          gmail_connected: false,
-          gmail_access_token: null,
-          gmail_refresh_token: null,
-          gmail_token_expires_at: null,
-          gmail_sync_labels: [],
-          gmail_last_sync_at: null,
-          ai_credits_used: 0,
-          brief_delivery_days: null,
-          brief_delivery_hour: null,
-          brief_delivery_tz: null,
-        })
-        .eq('id', user.id);
+      if (!res.ok) {
+        triggerToast(data.error || 'Could not delete data. Please try again.');
+        setDeleteStep('idle');
+        return;
+      }
 
       triggerToast('All data deleted. Signing you out.');
       await supabase.auth.signOut();
