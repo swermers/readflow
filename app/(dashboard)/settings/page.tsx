@@ -346,43 +346,42 @@ function SettingsContent() {
     setLabelsLoading(false);
   };
 
-  const toggleLabel = (labelId: string) => {
-    setSelectedLabels((prev) => {
-      if (prev.includes(labelId)) {
-        return prev.filter((id) => id !== labelId);
-      }
-
-      if (isFreeTierSourceLimited && prev.length >= FREE_TIER_SOURCE_LIMIT) {
-        window.alert('Free tier supports up to 5 active sources. Upgrade to unlimited to sync more labels.');
-        return prev;
-      }
-
-      return [...prev, labelId];
-    });
-  };
-
-  const handleSaveLabels = async () => {
-    if (isFreeTierSourceLimited && selectedLabels.length > FREE_TIER_SOURCE_LIMIT) {
-      window.alert('Please keep only 5 labels on free tier, or upgrade to unlimited.');
-      return;
-    }
-
+  const saveLabelsToDb = async (labelsToSave: string[]) => {
     setLabelsSaving(true);
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) { setLabelsSaving(false); return; }
 
     const { error } = await supabase
       .from('profiles')
-      .update({ gmail_sync_labels: selectedLabels })
+      .update({ gmail_sync_labels: labelsToSave })
       .eq('id', user.id);
 
     if (error) {
       console.error('Error saving labels:', error);
       triggerToast('Error saving label preferences');
     } else {
-      triggerToast('Label preferences saved');
+      triggerToast('Labels saved');
     }
     setLabelsSaving(false);
+  };
+
+  const toggleLabel = (labelId: string) => {
+    setSelectedLabels((prev) => {
+      let next: string[];
+      if (prev.includes(labelId)) {
+        next = prev.filter((id) => id !== labelId);
+      } else {
+        if (isFreeTierSourceLimited && prev.length >= FREE_TIER_SOURCE_LIMIT) {
+          window.alert('Free tier supports up to 5 active sources. Upgrade to unlimited to sync more labels.');
+          return prev;
+        }
+        next = [...prev, labelId];
+      }
+
+      // Auto-save immediately so selections persist
+      saveLabelsToDb(next);
+      return next;
+    });
   };
 
   const handleSaveProfile = async () => {
@@ -978,16 +977,15 @@ function SettingsContent() {
                       </div>
                     )}
 
-                    {/* Refresh + Save row */}
-                    <div className="flex items-center gap-2">
-                      <button
-                        onClick={handleSaveLabels}
-                        disabled={labelsSaving}
-                        className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-5 py-2.5 hover:bg-accent transition-colors disabled:opacity-50"
-                      >
-                        {labelsSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                        Save Labels
-                      </button>
+                    {/* Status + Refresh row */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-ink-faint flex items-center gap-1.5">
+                        {labelsSaving ? (
+                          <><Loader2 className="w-3 h-3 animate-spin" /> Saving...</>
+                        ) : (
+                          selectedLabels.length > 0 && <><Save className="w-3 h-3" /> Auto-saved</>
+                        )}
+                      </span>
                       <button
                         onClick={() => fetchLabels()}
                         disabled={labelsLoading}
