@@ -72,6 +72,46 @@ export function GlobalAudioPlayerProvider({ children }: { children: React.ReactN
     }
   };
 
+  // Register Media Session handlers so lock-screen / notification controls
+  // directly call play/pause/seek on the audio element without lag.
+  useEffect(() => {
+    if (!('mediaSession' in navigator)) return;
+
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    navigator.mediaSession.setActionHandler('play', () => {
+      void audio.play();
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      audio.pause();
+    });
+    navigator.mediaSession.setActionHandler('seekbackward', (details) => {
+      audio.currentTime = Math.max(0, audio.currentTime - (details.seekOffset || 10));
+    });
+    navigator.mediaSession.setActionHandler('seekforward', (details) => {
+      audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + (details.seekOffset || 10));
+    });
+    navigator.mediaSession.setActionHandler('seekto', (details) => {
+      if (typeof details.seekTime === 'number') {
+        audio.currentTime = details.seekTime;
+      }
+    });
+    navigator.mediaSession.setActionHandler('stop', () => {
+      audio.pause();
+      audio.currentTime = 0;
+    });
+
+    return () => {
+      navigator.mediaSession.setActionHandler('play', null);
+      navigator.mediaSession.setActionHandler('pause', null);
+      navigator.mediaSession.setActionHandler('seekbackward', null);
+      navigator.mediaSession.setActionHandler('seekforward', null);
+      navigator.mediaSession.setActionHandler('seekto', null);
+      navigator.mediaSession.setActionHandler('stop', null);
+    };
+  }, []);
+
   const pause = () => {
     audioRef.current?.pause();
   };
@@ -253,12 +293,32 @@ export function GlobalAudioPlayerProvider({ children }: { children: React.ReactN
         controls
         preload="auto"
         className="hidden"
-        onPlay={() => setIsPlaying(true)}
-        onPause={() => setIsPlaying(false)}
-        onEnded={() => setIsPlaying(false)}
+        onPlay={() => {
+          setIsPlaying(true);
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
+        }}
+        onPause={() => {
+          setIsPlaying(false);
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
+        }}
+        onEnded={() => {
+          setIsPlaying(false);
+          if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
+        }}
         onLoadedMetadata={() => setDuration(audioRef.current?.duration || 0)}
         onDurationChange={() => setDuration(audioRef.current?.duration || 0)}
-        onTimeUpdate={() => setCurrentTime(audioRef.current?.currentTime || 0)}
+        onTimeUpdate={() => {
+          const audio = audioRef.current;
+          if (!audio) return;
+          setCurrentTime(audio.currentTime);
+          if ('mediaSession' in navigator && Number.isFinite(audio.duration)) {
+            navigator.mediaSession.setPositionState({
+              duration: audio.duration,
+              position: audio.currentTime,
+              playbackRate: audio.playbackRate,
+            });
+          }
+        }}
       />
     </GlobalAudioPlayerContext.Provider>
   );
