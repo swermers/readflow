@@ -147,16 +147,27 @@ body {
 .newsletter-body {
   word-break: break-word;
   overflow-wrap: break-word;
+  overflow-x: hidden;
 }
 
 .newsletter-body img {
-  max-width: 100%;
-  height: auto;
+  max-width: 100% !important;
+  height: auto !important;
 }
 
 .newsletter-body table {
-  max-width: 100%;
+  max-width: 100% !important;
+  width: 100% !important;
   border-collapse: collapse;
+}
+
+.newsletter-body :where(td, th, div, section, article, header, footer) {
+  max-width: 100% !important;
+  box-sizing: border-box;
+}
+
+.newsletter-body :where(table, td, th, div, img) {
+  min-width: 0 !important;
 }
 
 
