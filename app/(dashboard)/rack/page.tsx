@@ -84,16 +84,19 @@ export default async function Home() {
 
   let gmailConnected = false;
   let lastSyncAt: string | null = null;
+  let needsOnboarding = true;
 
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('gmail_connected, gmail_last_sync_at')
+      .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels')
       .eq('id', user.id)
       .single();
 
     gmailConnected = profile?.gmail_connected || false;
     lastSyncAt = profile?.gmail_last_sync_at || null;
+    const labels = profile?.gmail_sync_labels ?? [];
+    needsOnboarding = labels.length === 0;
   }
 
   if (error) {
@@ -117,7 +120,7 @@ export default async function Home() {
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
-      {!gmailConnected && <OnboardingWalkthrough open />}
+      {needsOnboarding && <OnboardingWalkthrough open />}
       {gmailConnected && <AutoSync lastSyncAt={lastSyncAt} />}
 
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -175,7 +178,7 @@ export default async function Home() {
         ))}
 
         {dedupedEmails.length === 0 && (
-          !gmailConnected ? (
+          needsOnboarding ? (
             <SetupGuide gmailConnected={gmailConnected} />
           ) : (
             <div className="col-span-full flex items-center justify-center py-20">

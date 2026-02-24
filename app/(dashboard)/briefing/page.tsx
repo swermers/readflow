@@ -22,14 +22,15 @@ export default async function BriefingPage() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  let gmailConnected = false;
+  let needsOnboarding = true;
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('gmail_connected')
+      .select('gmail_sync_labels')
       .eq('id', user.id)
       .single();
-    gmailConnected = profile?.gmail_connected || false;
+    const labels = profile?.gmail_sync_labels ?? [];
+    needsOnboarding = labels.length === 0;
   }
 
   let senderAffinity = new Map<string, number>();
@@ -182,7 +183,7 @@ export default async function BriefingPage() {
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
-      {!gmailConnected && <OnboardingWalkthrough open />}
+      {needsOnboarding && <OnboardingWalkthrough open />}
 
       <header className="mb-10 flex items-end justify-between gap-4">
         <div>
