@@ -356,12 +356,11 @@ function SettingsContent() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        console.error('Error saving labels:', data.error);
-        triggerToast(data.error || 'Error saving label preferences');
-      } else {
-        triggerToast('Labels saved');
+        console.error('Error saving labels:', res.status, data);
+        triggerToast(data.error || `Error saving labels (${res.status})`);
       }
-    } catch {
+    } catch (err) {
+      console.error('Network error saving labels:', err);
       triggerToast('Network error saving labels');
     }
     setLabelsSaving(false);
@@ -394,12 +393,15 @@ function SettingsContent() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ first_name: firstName, last_name: lastName }),
       });
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        triggerToast('Error saving profile');
+        console.error('Profile save error:', res.status, data);
+        triggerToast(data.error || `Error saving profile (${res.status})`);
       } else {
         triggerToast('Profile saved');
       }
-    } catch {
+    } catch (err) {
+      console.error('Profile save network error:', err);
       triggerToast('Network error saving profile');
     }
     setSaving(false);
@@ -447,14 +449,17 @@ function SettingsContent() {
           brief_delivery_tz: (briefDeliveryTz || 'UTC').trim(),
         }),
       });
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        triggerToast('Could not save brief schedule');
+        console.error('Brief schedule save error:', res.status, data);
+        triggerToast(data.error || `Could not save brief schedule (${res.status})`);
       } else {
         setBriefDeliveryHour(hour);
         triggerToast('Brief schedule saved');
       }
-    } catch {
+    } catch (err) {
+      console.error('Brief schedule save network error:', err);
       triggerToast('Could not save brief schedule');
     }
 

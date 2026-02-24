@@ -99,7 +99,7 @@ export async function GET() {
 
 /**
  * POST /api/gmail-labels — save selected label IDs to the user's profile.
- * Uses admin client to bypass RLS (same pattern as auth callback).
+ * Tries admin client first, falls back to authenticated server client.
  */
 export async function POST(request: Request) {
   const cookieStore = cookies();
@@ -140,23 +140,51 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'labels must be an array' }, { status: 400 });
   }
 
-  // Use admin client to bypass RLS
-  let db: ReturnType<typeof createAdminClient>;
+  // Try admin client first, then fall back to server client
+  let adminAvailable = false;
   try {
-    db = createAdminClient();
-  } catch {
-    // fallback to anon client
-    db = supabase as any;
+    const admin = createAdminClient();
+    adminAvailable = true;
+
+    const { error, data } = await admin
+      .from('profiles')
+      .update({ gmail_sync_labels: body.labels })
+      .eq('id', user.id)
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('[Gmail Labels] Admin save failed:', error);
+      return NextResponse.json({ error: `Failed to save labels: ${error.message}` }, { status: 500 });
+    }
+    if (!data) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ saved: true, count: body.labels.length });
+  } catch (adminErr) {
+    if (adminAvailable) {
+      console.error('[Gmail Labels] Admin query failed:', adminErr);
+      return NextResponse.json({ error: 'Failed to save labels' }, { status: 500 });
+    }
+    console.warn('[Gmail Labels] Admin client unavailable, using server client');
   }
 
-  const { error } = await db
+  // Fallback: authenticated server client
+  const { error, data } = await supabase
     .from('profiles')
     .update({ gmail_sync_labels: body.labels })
-    .eq('id', user.id);
+    .eq('id', user.id)
+    .select('id')
+    .single();
 
   if (error) {
-    console.error('[Gmail Labels] Save failed:', error);
-    return NextResponse.json({ error: 'Failed to save labels' }, { status: 500 });
+    console.error('[Gmail Labels] Server save failed:', error);
+    return NextResponse.json({ error: `Failed to save labels: ${error.message}` }, { status: 500 });
+  }
+  if (!data) {
+    console.error('[Gmail Labels] Server update returned no rows — RLS may be blocking');
+    return NextResponse.json({ error: 'Save failed — no rows updated' }, { status: 500 });
   }
 
   return NextResponse.json({ saved: true, count: body.labels.length });

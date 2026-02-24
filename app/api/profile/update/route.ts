@@ -13,8 +13,8 @@ const ALLOWED_FIELDS = new Set([
 
 /**
  * POST /api/profile/update
- * Generic profile update endpoint using admin client to bypass RLS.
- * Only allows updating fields in the ALLOWED_FIELDS allowlist.
+ * Generic profile update endpoint. Tries admin client first, then
+ * falls back to authenticated server client with verification.
  */
 export async function POST(request: Request) {
   const supabase = await createClient();
@@ -43,22 +43,55 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
   }
 
-  // Use admin client to bypass RLS
-  let db: ReturnType<typeof createAdminClient>;
+  // Try admin client first (bypasses RLS)
+  let adminAvailable = false;
   try {
-    db = createAdminClient();
-  } catch {
-    db = supabase as any;
+    const admin = createAdminClient();
+    adminAvailable = true;
+
+    const { error, data } = await admin
+      .from('profiles')
+      .update(updates)
+      .eq('id', user.id)
+      .select('id')
+      .single();
+
+    if (error) {
+      console.error('[Profile Update] Admin update error:', error);
+      return NextResponse.json({ error: `Save failed: ${error.message}` }, { status: 500 });
+    }
+
+    if (!data) {
+      console.error('[Profile Update] Admin update returned no rows for user:', user.id);
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
+    }
+
+    return NextResponse.json({ saved: true });
+  } catch (adminErr) {
+    if (adminAvailable) {
+      // Admin client was created but the query failed
+      console.error('[Profile Update] Admin query failed:', adminErr);
+      return NextResponse.json({ error: 'Save failed' }, { status: 500 });
+    }
+    console.warn('[Profile Update] Admin client unavailable, using server client');
   }
 
-  const { error } = await db
+  // Fallback: use the authenticated server client
+  const { error, data } = await supabase
     .from('profiles')
     .update(updates)
-    .eq('id', user.id);
+    .eq('id', user.id)
+    .select('id')
+    .single();
 
   if (error) {
-    console.error('[Profile Update] Failed:', error);
-    return NextResponse.json({ error: 'Failed to save' }, { status: 500 });
+    console.error('[Profile Update] Server update error:', error);
+    return NextResponse.json({ error: `Save failed: ${error.message}` }, { status: 500 });
+  }
+
+  if (!data) {
+    console.error('[Profile Update] Server update returned no rows — RLS may be blocking writes');
+    return NextResponse.json({ error: 'Save failed — no rows updated' }, { status: 500 });
   }
 
   return NextResponse.json({ saved: true });
