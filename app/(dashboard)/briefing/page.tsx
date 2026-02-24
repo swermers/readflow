@@ -3,6 +3,7 @@ import { ArrowUpRight } from 'lucide-react';
 import TrackIssueLink from '@/components/TrackIssueLink';
 import WeeklyBriefCard from '@/components/WeeklyBriefCard';
 import CollapsibleSection from '@/components/CollapsibleSection';
+import OnboardingWalkthrough from '@/components/OnboardingWalkthrough';
 
 export default async function BriefingPage() {
   const supabase = await createClient();
@@ -20,6 +21,16 @@ export default async function BriefingPage() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  let gmailConnected = false;
+  if (user) {
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('gmail_connected')
+      .eq('id', user.id)
+      .single();
+    gmailConnected = profile?.gmail_connected || false;
+  }
 
   let senderAffinity = new Map<string, number>();
   let issueTags = new Map<string, string[]>();
@@ -171,6 +182,8 @@ export default async function BriefingPage() {
 
   return (
     <div className="p-6 md:p-12 min-h-screen">
+      {!gmailConnected && <OnboardingWalkthrough open />}
+
       <header className="mb-10 flex items-end justify-between gap-4">
         <div>
           <h1 className="text-display-lg text-ink">Briefing.</h1>
