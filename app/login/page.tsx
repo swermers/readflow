@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const supabase = createClient();
   const router = useRouter();
@@ -14,6 +15,8 @@ export default function LoginPage() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session) {
         router.replace('/');
+      } else {
+        setCheckingSession(false);
       }
     });
   }, []);
@@ -42,6 +45,17 @@ export default function LoginPage() {
       setLoading(false);
     }
   };
+
+  if (checkingSession) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-surface">
+        <div className="text-center">
+          <div className="inline-block h-1 w-10 bg-accent mb-8" />
+          <h1 className="text-2xl font-bold tracking-tight text-ink">Readflow.</h1>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface p-6">
