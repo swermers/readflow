@@ -2,6 +2,7 @@ import { createServerClient } from '@supabase/ssr';
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import { refreshAccessToken, listLabels } from '@/utils/gmailClient';
+import { createAdminClient } from '@/utils/supabase/admin';
 
 export async function GET() {
   const cookieStore = cookies();
@@ -94,4 +95,69 @@ export async function GET() {
 
     return NextResponse.json({ error: msg || 'Failed to fetch labels' }, { status: 500 });
   }
+}
+
+/**
+ * POST /api/gmail-labels — save selected label IDs to the user's profile.
+ * Uses admin client to bypass RLS (same pattern as auth callback).
+ */
+export async function POST(request: Request) {
+  const cookieStore = cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          } catch {
+            // safe to ignore
+          }
+        },
+      },
+    }
+  );
+
+  const { data: { user }, error: authError } = await supabase.auth.getUser();
+  if (authError || !user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  let body: { labels?: string[] };
+  try {
+    body = await request.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
+  if (!Array.isArray(body.labels)) {
+    return NextResponse.json({ error: 'labels must be an array' }, { status: 400 });
+  }
+
+  // Use admin client to bypass RLS
+  let db: ReturnType<typeof createAdminClient>;
+  try {
+    db = createAdminClient();
+  } catch {
+    // fallback to anon client
+    db = supabase as any;
+  }
+
+  const { error } = await db
+    .from('profiles')
+    .update({ gmail_sync_labels: body.labels })
+    .eq('id', user.id);
+
+  if (error) {
+    console.error('[Gmail Labels] Save failed:', error);
+    return NextResponse.json({ error: 'Failed to save labels' }, { status: 500 });
+  }
+
+  return NextResponse.json({ saved: true, count: body.labels.length });
 }

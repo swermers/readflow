@@ -348,19 +348,21 @@ function SettingsContent() {
 
   const saveLabelsToDb = async (labelsToSave: string[]) => {
     setLabelsSaving(true);
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) { setLabelsSaving(false); return; }
-
-    const { error } = await supabase
-      .from('profiles')
-      .update({ gmail_sync_labels: labelsToSave })
-      .eq('id', user.id);
-
-    if (error) {
-      console.error('Error saving labels:', error);
-      triggerToast('Error saving label preferences');
-    } else {
-      triggerToast('Labels saved');
+    try {
+      const res = await fetch('/api/gmail-labels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ labels: labelsToSave }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error('Error saving labels:', data.error);
+        triggerToast(data.error || 'Error saving label preferences');
+      } else {
+        triggerToast('Labels saved');
+      }
+    } catch {
+      triggerToast('Network error saving labels');
     }
     setLabelsSaving(false);
   };
@@ -378,8 +380,8 @@ function SettingsContent() {
         next = [...prev, labelId];
       }
 
-      // Auto-save immediately so selections persist
-      saveLabelsToDb(next);
+      // Auto-save via server API (fire-and-forget from state setter)
+      void saveLabelsToDb(next);
       return next;
     });
   };

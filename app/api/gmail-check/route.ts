@@ -1,4 +1,5 @@
 import { createClient } from '@/utils/supabase/server';
+import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
 import { refreshAccessToken } from '@/utils/gmailClient';
 
@@ -17,7 +18,16 @@ export async function GET() {
     return NextResponse.json({ connected: false }, { status: 401 });
   }
 
-  const { data: profile } = await supabase
+  // Use admin client for writes to bypass RLS timing issues
+  let admin: ReturnType<typeof createAdminClient> | null = null;
+  try {
+    admin = createAdminClient();
+  } catch {
+    // fallback below
+  }
+  const db = admin || supabase;
+
+  const { data: profile } = await db
     .from('profiles')
     .select('gmail_refresh_token, gmail_connected')
     .eq('id', user.id)
@@ -38,7 +48,7 @@ export async function GET() {
     const { accessToken, expiresAt } = await refreshAccessToken(profile.gmail_refresh_token);
 
     // Token is valid — fix the flag and update the access token
-    await supabase
+    await db
       .from('profiles')
       .update({
         gmail_connected: true,
@@ -53,7 +63,7 @@ export async function GET() {
 
     // Token permanently revoked — clear everything
     if (msg.includes('invalid_grant') || msg.includes('Token has been expired or revoked')) {
-      await supabase
+      await db
         .from('profiles')
         .update({
           gmail_connected: false,
