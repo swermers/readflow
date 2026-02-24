@@ -240,12 +240,28 @@ function SettingsContent() {
     };
   }, [refreshAiUsage]);
 
-  // Fetch labels when gmail becomes connected
+  // When gmail appears disconnected, check if tokens are actually valid and auto-restore
   useEffect(() => {
+    if (loading) return; // wait for profile to load first
     if (gmailConnected) {
       fetchLabels();
+      return;
     }
-  }, [gmailConnected]);
+    // gmail_connected is false — try to self-heal
+    const checkGmail = async () => {
+      try {
+        const res = await fetch('/api/gmail-check');
+        const data = await res.json();
+        if (data.connected) {
+          setGmailConnected(true);
+          // fetchLabels will be triggered by the state change above
+        }
+      } catch {
+        // silent — user can still click reconnect manually
+      }
+    };
+    checkGmail();
+  }, [gmailConnected, loading]);
 
   useEffect(() => {
     if (!gmailConnected || labelsLoading || labels.length === 0 || !isFreeTierSourceLimited) return;
