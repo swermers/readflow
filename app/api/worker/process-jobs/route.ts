@@ -19,8 +19,11 @@ type ProcessResult = {
 
 function isAuthorized(request: Request) {
   const auth = request.headers.get('authorization');
-  const expected = process.env.WORKER_SECRET;
-  return Boolean(expected) && auth === `Bearer ${expected}`;
+  const workerSecret = process.env.WORKER_SECRET;
+  const cronSecret = process.env.CRON_SECRET;
+  if (workerSecret && auth === `Bearer ${workerSecret}`) return true;
+  if (cronSecret && auth === `Bearer ${cronSecret}`) return true;
+  return false;
 }
 
 function average(values: number[]) {
