@@ -7,9 +7,13 @@ import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils
 import { ANTHROPIC_MODEL_CANDIDATES, XAI_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
 import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
+import type { SignalTier } from '@/utils/signalSortHeuristics';
+
 type SummaryResult = {
   summary: string;
   takeaways: string[];
+  signal_tier?: SignalTier;
+  signal_reason?: string;
 };
 
 const MAX_INPUT_CHARS = 12000;
@@ -93,6 +97,8 @@ function stripHtml(html: string) {
     .trim();
 }
 
+const VALID_SIGNAL_TIERS: SignalTier[] = ['high_signal', 'news', 'reference', 'unclassified'];
+
 function normalizeSummaryPayload(payload: unknown): SummaryResult | null {
   if (!payload || typeof payload !== 'object') return null;
   const obj = payload as Record<string, unknown>;
@@ -106,14 +112,23 @@ function normalizeSummaryPayload(payload: unknown): SummaryResult | null {
     .slice(0, 5);
 
   if (!summary || takeaways.length === 0) return null;
-  return { summary, takeaways };
+
+  const rawTier = typeof obj.signal_tier === 'string' ? obj.signal_tier.trim().toLowerCase() : '';
+  const signal_tier = VALID_SIGNAL_TIERS.includes(rawTier as SignalTier)
+    ? (rawTier as SignalTier)
+    : undefined;
+  const signal_reason = signal_tier && typeof obj.signal_reason === 'string'
+    ? obj.signal_reason.trim().slice(0, 120)
+    : undefined;
+
+  return { summary, takeaways, signal_tier, signal_reason };
 }
 
 async function summarizeWithAnthropic(input: string, expectedLanguageCode: string) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) throw new Error('Anthropic key is not configured');
 
-  const prompt = `You are helping summarize a newsletter article for a reader app.\nThe article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}).\nWrite summary and takeaways ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings).\n\nArticle:\n${input}`;
+  const prompt = `You are helping summarize a newsletter article for a reader app.\nThe article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}).\nWrite summary and takeaways ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings), signal_tier (string), signal_reason (string).\n\nFor signal_tier, classify this newsletter into exactly one of:\n- high_signal: Actionable strategies, deep analysis, original research, frameworks\n- news: Daily/weekly recaps, headlines, roundups, timely updates\n- reference: Guides, tutorials, evergreen resources, documentation\n- unclassified: Promotions, thin content, or unclear fit\n\nFor signal_reason, write a short phrase (under 12 words) explaining why.\n\nArticle:\n${input}`;
 
   let lastError: Error | null = null;
 
@@ -127,7 +142,7 @@ async function summarizeWithAnthropic(input: string, expectedLanguageCode: strin
       },
       body: JSON.stringify({
         model,
-        max_tokens: 500,
+        max_tokens: 600,
         temperature: 0.2,
         messages: [{ role: 'user', content: prompt }],
       }),
@@ -162,7 +177,7 @@ async function summarizeWithGrok(input: string, expectedLanguageCode: string) {
   const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
   if (!apiKey) throw new Error('Grok key is not configured');
 
-  const prompt = `The article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}). Return strict JSON only with keys summary (string) and takeaways (array of 3 short strings).\nWrite ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\n\nArticle:\n${input}`;
+  const prompt = `The article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}). Return strict JSON only with keys: summary (string), takeaways (array of 3 short strings), signal_tier (string), signal_reason (string).\nWrite ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\n\nFor signal_tier, classify this newsletter into exactly one of:\n- high_signal: Actionable strategies, deep analysis, original research, frameworks\n- news: Daily/weekly recaps, headlines, roundups, timely updates\n- reference: Guides, tutorials, evergreen resources, documentation\n- unclassified: Promotions, thin content, or unclear fit\n\nFor signal_reason, write a short phrase (under 12 words) explaining why.\n\nArticle:\n${input}`;
 
   let lastError: Error | null = null;
 
@@ -291,6 +306,19 @@ export async function POST(request: NextRequest) {
       }, { onConflict: 'issue_id' })
       .then(() => {});
 
+    // Upgrade signal classification with AI result (fire-and-forget)
+    if (result.signal_tier) {
+      supabase
+        .from('issues')
+        .update({
+          signal_tier: result.signal_tier,
+          signal_reason: result.signal_reason || null,
+        })
+        .eq('id', issueId)
+        .eq('user_id', user.id)
+        .then(() => {});
+    }
+
     const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required, 'TL;DR summary');
     return NextResponse.json({
       provider,
@@ -307,6 +335,19 @@ export async function POST(request: NextRequest) {
       const fallback = fallbackProvider === 'grok'
         ? await summarizeWithGrok(input, expectedLanguageCode)
         : await summarizeWithAnthropic(input, expectedLanguageCode);
+
+      if (fallback.signal_tier) {
+        supabase
+          .from('issues')
+          .update({
+            signal_tier: fallback.signal_tier,
+            signal_reason: fallback.signal_reason || null,
+          })
+          .eq('id', issueId)
+          .eq('user_id', user.id)
+          .then(() => {});
+      }
+
       const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required, 'TL;DR summary');
       return NextResponse.json({
         provider: fallbackProvider,
