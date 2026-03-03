@@ -11,7 +11,8 @@ export default async function BriefingPage() {
 
   const { data: emails } = await supabase
     .from('issues')
-    .select('id, subject, snippet, from_email, received_at, signal_tier, signal_reason, senders(name, status)')
+    .select('id, subject, snippet, from_email, received_at, signal_tier, signal_reason, senders!inner(name, status)')
+    .eq('senders.status', 'approved')
     .eq('status', 'unread')
     .is('deleted_at', null)
     .gte('received_at', sevenDaysAgo)
@@ -26,11 +27,23 @@ export default async function BriefingPage() {
   if (user) {
     const { data: profile } = await supabase
       .from('profiles')
-      .select('gmail_sync_labels')
+      .select('gmail_sync_labels, onboarding_completed')
       .eq('id', user.id)
       .single();
     const labels = profile?.gmail_sync_labels ?? [];
-    needsOnboarding = labels.length === 0;
+    // Show onboarding if: not explicitly completed AND no Gmail labels AND no senders yet
+    if (profile?.onboarding_completed) {
+      needsOnboarding = false;
+    } else if (labels.length > 0) {
+      needsOnboarding = false;
+    } else {
+      // Check if they have any senders (from forwarding)
+      const { count } = await supabase
+        .from('senders')
+        .select('id', { count: 'exact', head: true })
+        .limit(1);
+      needsOnboarding = (count ?? 0) === 0;
+    }
   }
 
   let senderAffinity = new Map<string, number>();
