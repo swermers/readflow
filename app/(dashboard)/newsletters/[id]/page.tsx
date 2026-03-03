@@ -78,7 +78,7 @@ export default async function NewsletterPage({ params }: { params: { id: string 
         <AISummaryCard issueId={email.id} articleText={email.body_text || ""} articleSubject={email.subject || "Newsletter"} />
 
         {/* Newsletter Content */}
-        <HighlightableContent issueId={email.id} bodyHtml={email.body_html || ''} />
+        <HighlightableContent issueId={email.id} bodyHtml={email.body_html || (email.body_text ? `<div style="white-space:pre-wrap">${email.body_text}</div>` : '')} />
 
         {/* Footer Actions */}
         <IssueActions

@@ -130,8 +130,8 @@ Deno.serve(async (req) => {
     // ─── 4. GENERATE SNIPPET ───
     const snippet = generateSnippet(bodyText || bodyHtml, 200);
 
-    // ─── 5. SANITIZE HTML ───
-    const cleanHtml = sanitizeHtml(bodyHtml || '');
+    // ─── 5. SANITIZE HTML (fall back to plain text → HTML) ───
+    const cleanHtml = sanitizeHtml(bodyHtml || '') || textToHtml(bodyText || '');
 
     // ─── 6. INSERT THE ISSUE ───
     const { data: issue, error: issueError } = await supabase
@@ -265,4 +265,23 @@ function sanitizeHtml(html: string): string {
   clean = clean.replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
 
   return clean;
+}
+
+
+// ─── HELPER: Convert plain text to basic HTML ───
+// Used when an email has no HTML body (e.g. Gmail forwarding confirmations)
+
+function textToHtml(text: string): string {
+  if (!text) return '';
+  const escaped = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Convert URLs to clickable links
+  const linked = escaped.replace(
+    /(https?:\/\/[^\s)]+)/g,
+    '<a href="$1">$1</a>',
+  );
+  // Wrap in a pre-wrap div to preserve line breaks
+  return `<div style="white-space:pre-wrap">${linked}</div>`;
 }
