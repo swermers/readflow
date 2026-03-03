@@ -9,7 +9,7 @@
  *   1. Deploy: `wrangler deploy`
  *   2. Set secrets: `wrangler secret put WEBHOOK_URL` and `wrangler secret put WEBHOOK_SECRET`
  *   3. In Cloudflare dashboard → Email Routing → configure catch-all route
- *      for *@ingest.readflow.app to this Worker
+ *      for *@readflowlibrary.xyz to this Worker
  */
 
 import PostalMime from 'postal-mime';

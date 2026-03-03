@@ -2,7 +2,7 @@ import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
 
-const INGEST_DOMAIN = 'ingest.readflow.app';
+const INGEST_DOMAIN = 'readflowlibrary.xyz';
 
 function generateAlias(length = 8): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';

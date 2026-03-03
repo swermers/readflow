@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
     const { toAddress, fromEmail, fromName, subject, bodyHtml, bodyText, messageId } = parsed;
 
     // ─── 1. FIND THE USER BY FORWARDING ALIAS ───
-    // The "to" address is like "abc123@ingest.readflow.app"
+    // The "to" address is like "abc123@readflowlibrary.xyz"
     // We extract "abc123" and look it up in profiles
     const alias = toAddress.split('@')[0]?.toLowerCase();
 

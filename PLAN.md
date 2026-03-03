@@ -55,7 +55,7 @@ Replace Gmail OAuth (`gmail.readonly` — restricted, requires CASA) as the prim
 - `package.json` — dependencies (e.g., `postal-mime` for MIME parsing)
 
 ### 2b. Cloudflare Email Routing Configuration
-- Document MX record setup for `ingest.readflow.app` (or subdomain)
+- Document MX record setup for `readflowlibrary.xyz`
 - Configure catch-all route → Email Worker
 - Document DNS changes needed
 
@@ -69,7 +69,7 @@ Replace Gmail OAuth (`gmail.readonly` — restricted, requires CASA) as the prim
 
 ### 3a. Update Settings page (`app/(dashboard)/settings/page.tsx`)
 - Add prominent **"Your Readflow Email"** section at the top of settings:
-  - Display: `{forwarding_alias}@ingest.readflow.app`
+  - Display: `{forwarding_alias}@readflowlibrary.xyz`
   - Copy-to-clipboard button
   - Brief explanation: "Subscribe to newsletters with this email, or forward from Gmail"
 - Fetch `forwarding_alias` from profile on load
