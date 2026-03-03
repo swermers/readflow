@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Archive, BookmarkCheck, Globe, Check } from 'lucide-react';
+import { Archive, BookmarkCheck, Globe, Check, Trash2 } from 'lucide-react';
 import { triggerToast } from '@/components/Toast';
 
 interface IssueActionsProps {
@@ -14,6 +14,7 @@ interface IssueActionsProps {
 export default function IssueActions({ issueId, currentStatus, senderWebsite }: IssueActionsProps) {
   const [status, setStatus] = useState(currentStatus);
   const [loading, setLoading] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const router = useRouter();
 
   const updateStatus = async (newStatus: 'unread' | 'read' | 'archived') => {
@@ -87,16 +88,60 @@ export default function IssueActions({ issueId, currentStatus, senderWebsite }: 
         ) : null}
       </div>
 
-      {senderWebsite && (
-        <a
-          href={senderWebsite}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-2 text-label uppercase text-ink-faint transition-colors hover:text-accent"
-        >
-          Visit Website <Globe className="h-4 w-4" />
-        </a>
-      )}
+      <div className="flex items-center gap-4">
+        {senderWebsite && (
+          <a
+            href={senderWebsite}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-2 text-label uppercase text-ink-faint transition-colors hover:text-accent"
+          >
+            Visit Website <Globe className="h-4 w-4" />
+          </a>
+        )}
+
+        {!confirmDelete ? (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            disabled={loading}
+            className="flex items-center gap-2 text-label uppercase text-ink-faint transition-colors hover:text-red-500 disabled:opacity-50"
+          >
+            <Trash2 className="h-4 w-4" />
+            Delete
+          </button>
+        ) : (
+          <span className="flex items-center gap-2">
+            <span className="text-label uppercase text-red-500">Delete?</span>
+            <button
+              onClick={async () => {
+                setLoading(true);
+                try {
+                  const res = await fetch(`/api/issues/${issueId}`, { method: 'DELETE' });
+                  if (res.ok) {
+                    triggerToast('Deleted');
+                    setTimeout(() => router.push('/'), 400);
+                  }
+                } catch (err) {
+                  console.error('Failed to delete:', err);
+                } finally {
+                  setLoading(false);
+                  setConfirmDelete(false);
+                }
+              }}
+              disabled={loading}
+              className="text-label uppercase text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => setConfirmDelete(false)}
+              className="text-label uppercase text-ink-faint hover:text-ink transition-colors"
+            >
+              No
+            </button>
+          </span>
+        )}
+      </div>
     </div>
   );
 }
