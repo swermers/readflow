@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X, Copy, Check, Inbox } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -67,6 +67,10 @@ function SettingsContent() {
   const [briefDeliveryTz, setBriefDeliveryTz] = useState('UTC');
   const [savingBriefPrefs, setSavingBriefPrefs] = useState(false);
   const [hasPromptedTopFive, setHasPromptedTopFive] = useState(false);
+  const [forwardingEmail, setForwardingEmail] = useState<string | null>(null);
+  const [forwardingCopied, setForwardingCopied] = useState(false);
+  const [regeneratingAlias, setRegeneratingAlias] = useState(false);
+  const [gmailSectionOpen, setGmailSectionOpen] = useState<boolean | null>(null);
 
   const supabase = createClient();
   const isFreeTierSourceLimited = false; // Pay-per-use: no source limit
@@ -203,8 +207,47 @@ function SettingsContent() {
   };
 
 
+  const loadForwardingEmail = useCallback(async () => {
+    try {
+      const res = await fetch('/api/profile/forwarding-email', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setForwardingEmail(data.email || null);
+      }
+    } catch {
+      // best effort
+    }
+  }, []);
+
+  const handleCopyForwardingEmail = () => {
+    if (!forwardingEmail) return;
+    navigator.clipboard.writeText(forwardingEmail);
+    setForwardingCopied(true);
+    setTimeout(() => setForwardingCopied(false), 2000);
+    triggerToast('Copied to clipboard');
+  };
+
+  const handleRegenerateAlias = async () => {
+    if (!confirm('Regenerate your Readflow email? Newsletters sent to your old address will stop arriving. You will need to re-subscribe with your new address.')) return;
+    setRegeneratingAlias(true);
+    try {
+      const res = await fetch('/api/profile/forwarding-email', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setForwardingEmail(data.email || null);
+        triggerToast('New Readflow email generated');
+      } else {
+        triggerToast('Could not regenerate email');
+      }
+    } catch {
+      triggerToast('Network error');
+    }
+    setRegeneratingAlias(false);
+  };
+
   useEffect(() => {
     loadProfile();
+    loadForwardingEmail();
     handleGmailCallbackResult();
     handlePurchaseResult();
     void refreshAiUsage();
@@ -245,6 +288,13 @@ function SettingsContent() {
       window.removeEventListener('focus', onFocus);
     };
   }, [refreshAiUsage]);
+
+  // Auto-open Gmail section if Gmail is already connected
+  useEffect(() => {
+    if (!loading && gmailSectionOpen === null) {
+      setGmailSectionOpen(gmailConnected);
+    }
+  }, [loading, gmailConnected, gmailSectionOpen]);
 
   // When gmail appears disconnected, check if tokens are actually valid and auto-restore
   useEffect(() => {
@@ -606,7 +656,7 @@ function SettingsContent() {
       {/* Header */}
       <header className="mb-10">
         <h1 className="text-display-lg text-ink">Control Room.</h1>
-        <p className="text-sm text-ink-muted mt-1">Preferences &amp; Gmail sync.</p>
+        <p className="text-sm text-ink-muted mt-1">Your Readflow email, preferences &amp; sync.</p>
       </header>
 
       <div className="h-px bg-line-strong mb-12" />
@@ -628,6 +678,52 @@ function SettingsContent() {
       </section>
 
       <div className="space-y-16">
+
+        {/* ─── Your Readflow Email ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8">
+          <div className="md:col-span-4">
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <Inbox className="w-5 h-5 text-ink-faint" />
+              Your Readflow Email
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">
+              Subscribe to newsletters with this address. Emails arrive directly in your Rack.
+            </p>
+          </div>
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6 space-y-4">
+            {forwardingEmail ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 border border-line bg-surface px-4 py-3 font-mono text-sm text-ink select-all">
+                    {forwardingEmail}
+                  </div>
+                  <button
+                    onClick={handleCopyForwardingEmail}
+                    className="px-4 py-3 border border-line hover:border-line-strong transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    {forwardingCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-ink-faint" />}
+                  </button>
+                </div>
+                <div className="space-y-2 text-xs text-ink-muted">
+                  <p>Use this email to sign up for newsletters (Substack, Beehiiv, Ghost, etc). Verification emails will appear in your Rack — click the link to confirm your subscription.</p>
+                  <p>You can also forward emails from Gmail or any other inbox to this address.</p>
+                </div>
+                <button
+                  onClick={handleRegenerateAlias}
+                  disabled={regeneratingAlias}
+                  className="text-xs text-ink-faint hover:text-accent transition-colors disabled:opacity-50"
+                >
+                  {regeneratingAlias ? 'Regenerating...' : 'Regenerate email (if receiving spam)'}
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-ink-muted">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading your Readflow email...
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* ─── Profile Section ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8">
@@ -871,20 +967,27 @@ function SettingsContent() {
           </div>
         </section>
 
-        {/* ─── Gmail Sync Manager ─── */}
+        {/* ─── Gmail Sync Manager (Optional) ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
           <div className="md:col-span-4">
-            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
-              <Mail className="w-5 h-5 text-ink-faint" />
-              Sync Manager
-            </h3>
+            <button
+              onClick={() => setGmailSectionOpen(!gmailSectionOpen)}
+              className="text-left w-full"
+            >
+              <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+                <Mail className="w-5 h-5 text-ink-faint" />
+                Gmail Sync
+                <span className="text-[10px] uppercase tracking-wider text-ink-faint border border-line px-1.5 py-0.5 rounded">Optional</span>
+                <ChevronDown className={`w-4 h-4 text-ink-faint transition-transform ${!!gmailSectionOpen ? 'rotate-180' : ''}`} />
+              </h3>
+            </button>
             <p className="text-sm text-ink-faint mt-1">
               {gmailConnected
-                ? 'Choose which labels to sync and import newsletters.'
-                : 'Gmail access is needed to sync newsletters.'}
+                ? 'Import newsletters from your existing Gmail account.'
+                : 'Optionally connect Gmail to import existing newsletters.'}
             </p>
           </div>
-          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line">
+          {!!gmailSectionOpen && <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line">
             <div className="p-6 space-y-6">
               {gmailConnected ? (
                 <>
@@ -1048,7 +1151,7 @@ function SettingsContent() {
                 </>
               )}
             </div>
-          </div>
+          </div>}
         </section>
 
         {/* ─── Danger Zone ─── */}

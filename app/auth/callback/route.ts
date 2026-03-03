@@ -111,11 +111,11 @@ export async function GET(request: Request) {
           gmailConnected = true;
         }
       } else {
-        console.warn('[Auth Callback] No provider tokens received from OAuth session.');
-        console.warn('[Auth Callback] Check: Supabase Google provider has Client ID AND Client Secret');
+        // No provider tokens — normal for email/password and magic link users
+        console.log('[Auth Callback] No provider tokens (email/password or magic link login).');
       }
 
-      // If redirecting to /settings, include result info
+      // If redirecting to /settings (e.g. Gmail re-auth), include result info
       if (next.startsWith('/settings')) {
         if (tokenSaveError) {
           return NextResponse.redirect(
@@ -125,13 +125,7 @@ export async function GET(request: Request) {
         if (gmailConnected) {
           return NextResponse.redirect(`${siteUrl}/settings?gmail=connected`);
         }
-        if (!providerToken && !providerRefreshToken) {
-          return NextResponse.redirect(
-            `${siteUrl}/settings?gmail=error&gmail_error=${encodeURIComponent(
-              'No provider tokens received. Check that your Supabase Google provider has both Client ID AND Client Secret configured.'
-            )}`
-          );
-        }
+        // No tokens but came from settings — user may have been trying to connect Gmail
         return NextResponse.redirect(`${siteUrl}/settings`);
       }
 

@@ -1,0 +1,10 @@
+name = "readflow-email-worker"
+main = "src/index.ts"
+compatibility_date = "2024-05-12"
+
+# Secrets (set via `wrangler secret put`):
+#   WEBHOOK_URL    – your Supabase Edge Function URL, e.g. https://<project>.supabase.co/functions/v1/receive-email
+#   WEBHOOK_SECRET – shared secret for authenticating webhook calls
+
+# Email routing: Cloudflare dashboard → Email Routing → Route to Worker
+# Configure catch-all on your ingest domain (e.g. *@ingest.readflow.app)
