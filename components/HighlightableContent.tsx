@@ -453,6 +453,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     container.innerHTML = DOMPurify.sanitize(bodyHtml || '', {
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'applet', 'form', 'input', 'button', 'select', 'textarea'],
       FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
+      ADD_ATTR: ['target'],
       ALLOW_DATA_ATTR: false,
     });
 

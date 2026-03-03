@@ -280,7 +280,7 @@ function textToHtml(text: string): string {
   // Convert URLs to clickable links
   const linked = escaped.replace(
     /(https?:\/\/[^\s)]+)/g,
-    '<a href="$1">$1</a>',
+    '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>',
   );
   // Wrap in a pre-wrap div to preserve line breaks
   return `<div style="white-space:pre-wrap">${linked}</div>`;
