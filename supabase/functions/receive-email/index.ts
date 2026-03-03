@@ -59,16 +59,40 @@ Deno.serve(async (req) => {
     let bodyText = rawBodyText;
 
     const isForwarded = /^(Fwd|Fw):\s*/i.test(subject);
+    console.log('[forward-debug] subject:', JSON.stringify(subject));
+    console.log('[forward-debug] isForwarded:', isForwarded);
+    console.log('[forward-debug] fromEmail:', fromEmail, 'fromName:', fromName);
+    console.log('[forward-debug] bodyHtml length:', bodyHtml?.length, 'bodyText length:', bodyText?.length);
+    console.log('[forward-debug] bodyText first 500:', bodyText?.substring(0, 500));
+    console.log('[forward-debug] bodyHtml first 500:', bodyHtml?.substring(0, 500));
+
     if (isForwarded) {
       const originalSender = extractForwardedSender(bodyText || bodyHtml);
+      console.log('[forward-debug] extractedSender:', JSON.stringify(originalSender));
       if (originalSender) {
         fromEmail = originalSender.email;
         fromName = originalSender.name || fromEmail.split('@')[0];
       }
       subject = subject.replace(/^(Fwd|Fw):\s*/i, '');
+
       // Strip the forwarding header block from the body
-      bodyHtml = stripForwardingHeaders(bodyHtml);
-      bodyText = stripForwardingHeaders(bodyText);
+      const strippedHtml = stripForwardingHeaders(bodyHtml);
+      const strippedText = stripForwardingHeaders(bodyText);
+      console.log('[forward-debug] strippedHtml length:', strippedHtml?.length, '(was', bodyHtml?.length, ')');
+      console.log('[forward-debug] strippedText length:', strippedText?.length, '(was', bodyText?.length, ')');
+
+      // Safety: only use stripped version if it still has meaningful content
+      const strippedHtmlText = strippedHtml.replace(/<[^>]*>/g, '').trim();
+      if (strippedHtmlText.length > 50) {
+        bodyHtml = strippedHtml;
+      } else {
+        console.log('[forward-debug] HTML stripping removed too much, keeping original');
+      }
+      if (strippedText.trim().length > 50) {
+        bodyText = strippedText;
+      } else {
+        console.log('[forward-debug] Text stripping removed too much, keeping original');
+      }
     }
 
     // ─── 1. FIND THE USER BY FORWARDING ALIAS ───
@@ -350,52 +374,41 @@ function extractForwardedSender(
 function stripForwardingHeaders(body: string): string {
   if (!body) return '';
 
-  // ─── Gmail HTML: detect by gmail_quote CSS class ───
-  // Gmail wraps forwarded content in <div class="gmail_quote"> with the
-  // forwarding metadata (From, Date, Subject, To) in <div class="gmail_attr">.
-  // Any text the user typed before forwarding sits *before* the gmail_quote div.
-  if (/<div[^>]*class="[^"]*gmail_quote/i.test(body)) {
-    let cleaned = body;
-    // Remove the forwarding metadata div
-    cleaned = cleaned.replace(
-      /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*?<\/div>/i,
-      '',
-    );
-    // Drop everything before the forwarded content (user's own message)
-    cleaned = cleaned.replace(
-      /^[\s\S]*?(<div[^>]*class="[^"]*gmail_quote)/i,
-      '$1',
-    );
-    return cleaned.trim();
-  }
+  let cleaned = body;
 
-  // ─── Plain-text stripping ───
-  // Remove everything from the start through the forwarding header block.
-  // The header block ends with a blank line (\n\n) before the original content.
+  // ─── Gmail HTML: remove only the forwarding metadata div ───
+  // Gmail puts "---------- Forwarded message ---------" and the From/Date/
+  // Subject/To lines inside <div class="gmail_attr">. Remove just that div.
+  cleaned = cleaned.replace(
+    /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*?<\/div>/i,
+    '',
+  );
 
-  // Normalize line endings
-  const normalized = body.replace(/\r\n/g, '\n');
+  // ─── Plain-text forwarding markers ───
+  // For non-HTML bodies, strip the marker + header lines.
+  // The header block ends with a double newline before the original content.
+  const normalized = cleaned.replace(/\r\n/g, '\n');
 
   // Gmail: "---------- Forwarded message ---------"
-  let cleaned = normalized.replace(
-    /[\s\S]*?-{5,}\s*Forwarded message\s*-{5,}\n(?:.*\n)*?\n/i,
+  let stripped = normalized.replace(
+    /-{5,}\s*Forwarded message\s*-{5,}\n(?:.*\n)*?\n/i,
     '',
   );
-  if (cleaned !== normalized) return cleaned.trim();
+  if (stripped !== normalized) return stripped.trim();
 
   // Apple Mail: "Begin forwarded message:"
-  cleaned = normalized.replace(
-    /[\s\S]*?Begin forwarded message:[\s\S]*?\n\n/i,
+  stripped = normalized.replace(
+    /Begin forwarded message:\n(?:.*\n)*?\n/i,
     '',
   );
-  if (cleaned !== normalized) return cleaned.trim();
+  if (stripped !== normalized) return stripped.trim();
 
   // Outlook: "-----Original Message-----"
-  cleaned = normalized.replace(
-    /[\s\S]*?-{5,}\s*Original Message\s*-{5,}\n(?:.*\n)*?\n/i,
+  stripped = normalized.replace(
+    /-{5,}\s*Original Message\s*-{5,}\n(?:.*\n)*?\n/i,
     '',
   );
-  if (cleaned !== normalized) return cleaned.trim();
+  if (stripped !== normalized) return stripped.trim();
 
-  return body.trim();
+  return cleaned.trim();
 }
