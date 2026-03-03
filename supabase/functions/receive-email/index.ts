@@ -318,11 +318,18 @@ function extractForwardedSender(
 ): { email: string; name: string } | null {
   if (!body) return null;
 
-  // Strip HTML tags to parse the text
-  const text = body.replace(/<[^>]*>/g, ' ');
+  // Strip HTML tags and decode common HTML entities so the regex can
+  // reliably find "Name <email>" even in Gmail's HTML forwarding block
+  // (which uses &lt; / &gt; around the address).
+  const text = body
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/&nbsp;/g, ' ');
 
   const fromMatch = text.match(
-    /(?:Forwarded message|Begin forwarded message|Original Message)[\s\S]{0,300}?From:\s*(?:"?([^"<\n]*)"?\s*)?<?([^\s<>\n]+@[^\s<>\n]+)>?/i,
+    /(?:Forwarded message|Begin forwarded message|Original Message)[\s\S]{0,500}?From:\s*(?:"?([^"<\n]*)"?\s*)?<?\s*([^\s<>\n]+@[^\s<>\n]+)\s*>?/i,
   );
 
   if (fromMatch) {
@@ -343,29 +350,52 @@ function extractForwardedSender(
 function stripForwardingHeaders(body: string): string {
   if (!body) return '';
 
-  // Gmail HTML forward: the forwarding block is inside a <div class="gmail_quote">
-  // or preceded by the dashed marker
-  let cleaned = body;
+  // ─── Gmail HTML: detect by gmail_quote CSS class ───
+  // Gmail wraps forwarded content in <div class="gmail_quote"> with the
+  // forwarding metadata (From, Date, Subject, To) in <div class="gmail_attr">.
+  // Any text the user typed before forwarding sits *before* the gmail_quote div.
+  if (/<div[^>]*class="[^"]*gmail_quote/i.test(body)) {
+    let cleaned = body;
+    // Remove the forwarding metadata div
+    cleaned = cleaned.replace(
+      /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*?<\/div>/i,
+      '',
+    );
+    // Drop everything before the forwarded content (user's own message)
+    cleaned = cleaned.replace(
+      /^[\s\S]*?(<div[^>]*class="[^"]*gmail_quote)/i,
+      '$1',
+    );
+    return cleaned.trim();
+  }
 
-  // Strip the text-based forwarding block:
-  //   "---------- Forwarded message ---------"
-  //   "From: ...\nDate: ...\nSubject: ...\nTo: ...\n"
-  cleaned = cleaned.replace(
-    /-{5,}\s*Forwarded message\s*-{5,}[\s\S]*?(?:From:.*\n)(?:Date:.*\n)?(?:Subject:.*\n)?(?:To:.*\n)?/i,
+  // ─── Plain-text stripping ───
+  // Remove everything from the start through the forwarding header block.
+  // The header block ends with a blank line (\n\n) before the original content.
+
+  // Normalize line endings
+  const normalized = body.replace(/\r\n/g, '\n');
+
+  // Gmail: "---------- Forwarded message ---------"
+  let cleaned = normalized.replace(
+    /[\s\S]*?-{5,}\s*Forwarded message\s*-{5,}\n(?:.*\n)*?\n/i,
     '',
   );
+  if (cleaned !== normalized) return cleaned.trim();
 
-  // Apple Mail: "Begin forwarded message:" followed by headers
-  cleaned = cleaned.replace(
-    /Begin forwarded message:[\s\S]*?(?:From:.*\n)(?:Date:.*\n)?(?:Subject:.*\n)?(?:To:.*\n)?/i,
+  // Apple Mail: "Begin forwarded message:"
+  cleaned = normalized.replace(
+    /[\s\S]*?Begin forwarded message:[\s\S]*?\n\n/i,
     '',
   );
+  if (cleaned !== normalized) return cleaned.trim();
 
-  // Outlook: "-----Original Message-----" followed by headers
-  cleaned = cleaned.replace(
-    /-{5,}\s*Original Message\s*-{5,}[\s\S]*?(?:From:.*\n)(?:Sent:.*\n)?(?:Subject:.*\n)?(?:To:.*\n)?/i,
+  // Outlook: "-----Original Message-----"
+  cleaned = normalized.replace(
+    /[\s\S]*?-{5,}\s*Original Message\s*-{5,}\n(?:.*\n)*?\n/i,
     '',
   );
+  if (cleaned !== normalized) return cleaned.trim();
 
-  return cleaned.trim();
+  return body.trim();
 }
