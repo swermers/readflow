@@ -47,7 +47,29 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { toAddress, fromEmail, fromName, subject, bodyHtml, bodyText, messageId } = parsed;
+    const { toAddress, fromEmail: rawFromEmail, fromName: rawFromName, subject: rawSubject, bodyHtml: rawBodyHtml, bodyText: rawBodyText, messageId } = parsed;
+
+    // ─── 0. DETECT FORWARDED EMAILS ───
+    // When a user manually forwards a newsletter, the "from" is the user,
+    // not the original sender. Detect this and extract the real sender.
+    let fromEmail = rawFromEmail;
+    let fromName = rawFromName;
+    let subject = rawSubject;
+    let bodyHtml = rawBodyHtml;
+    let bodyText = rawBodyText;
+
+    const isForwarded = /^(Fwd|Fw):\s*/i.test(subject);
+    if (isForwarded) {
+      const originalSender = extractForwardedSender(bodyText || bodyHtml);
+      if (originalSender) {
+        fromEmail = originalSender.email;
+        fromName = originalSender.name || fromEmail.split('@')[0];
+      }
+      subject = subject.replace(/^(Fwd|Fw):\s*/i, '');
+      // Strip the forwarding header block from the body
+      bodyHtml = stripForwardingHeaders(bodyHtml);
+      bodyText = stripForwardingHeaders(bodyText);
+    }
 
     // ─── 1. FIND THE USER BY FORWARDING ALIAS ───
     // The "to" address is like "abc123@readflowlibrary.xyz"
@@ -284,4 +306,66 @@ function textToHtml(text: string): string {
   );
   // Wrap in a pre-wrap div to preserve line breaks
   return `<div style="white-space:pre-wrap">${linked}</div>`;
+}
+
+
+// ─── HELPER: Extract original sender from a forwarded email body ───
+// Looks for common forwarding markers from Gmail, Apple Mail, Outlook
+// and extracts the "From:" line that follows.
+
+function extractForwardedSender(
+  body: string,
+): { email: string; name: string } | null {
+  if (!body) return null;
+
+  // Strip HTML tags to parse the text
+  const text = body.replace(/<[^>]*>/g, ' ');
+
+  const fromMatch = text.match(
+    /(?:Forwarded message|Begin forwarded message|Original Message)[\s\S]{0,300}?From:\s*(?:"?([^"<\n]*)"?\s*)?<?([^\s<>\n]+@[^\s<>\n]+)>?/i,
+  );
+
+  if (fromMatch) {
+    return {
+      name: (fromMatch[1] || '').trim(),
+      email: fromMatch[2],
+    };
+  }
+
+  return null;
+}
+
+
+// ─── HELPER: Strip forwarding header block from the body ───
+// Removes the "---------- Forwarded message ---------\nFrom: ...\nTo: ...\n"
+// block so the reader view shows only the original content.
+
+function stripForwardingHeaders(body: string): string {
+  if (!body) return '';
+
+  // Gmail HTML forward: the forwarding block is inside a <div class="gmail_quote">
+  // or preceded by the dashed marker
+  let cleaned = body;
+
+  // Strip the text-based forwarding block:
+  //   "---------- Forwarded message ---------"
+  //   "From: ...\nDate: ...\nSubject: ...\nTo: ...\n"
+  cleaned = cleaned.replace(
+    /-{5,}\s*Forwarded message\s*-{5,}[\s\S]*?(?:From:.*\n)(?:Date:.*\n)?(?:Subject:.*\n)?(?:To:.*\n)?/i,
+    '',
+  );
+
+  // Apple Mail: "Begin forwarded message:" followed by headers
+  cleaned = cleaned.replace(
+    /Begin forwarded message:[\s\S]*?(?:From:.*\n)(?:Date:.*\n)?(?:Subject:.*\n)?(?:To:.*\n)?/i,
+    '',
+  );
+
+  // Outlook: "-----Original Message-----" followed by headers
+  cleaned = cleaned.replace(
+    /-{5,}\s*Original Message\s*-{5,}[\s\S]*?(?:From:.*\n)(?:Sent:.*\n)?(?:Subject:.*\n)?(?:To:.*\n)?/i,
+    '',
+  );
+
+  return cleaned.trim();
 }
