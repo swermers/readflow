@@ -33,7 +33,30 @@ export async function GET() {
     .single();
 
   if (!profile?.forwarding_alias) {
-    return NextResponse.json({ error: 'No forwarding alias found' }, { status: 404 });
+    // Auto-generate alias for existing users who don't have one yet
+    const newAlias = generateAlias();
+
+    let db;
+    try {
+      db = createAdminClient();
+    } catch {
+      db = supabase;
+    }
+
+    const { error: updateError } = await db
+      .from('profiles')
+      .update({ forwarding_alias: newAlias })
+      .eq('id', user.id);
+
+    if (updateError) {
+      return NextResponse.json({ error: 'Failed to generate alias' }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      alias: newAlias,
+      email: `${newAlias}@${INGEST_DOMAIN}`,
+      domain: INGEST_DOMAIN,
+    });
   }
 
   return NextResponse.json({
