@@ -101,6 +101,15 @@ Deno.serve(async (req) => {
       sender = newSender;
     }
 
+    // ─── 2b. REJECT BLOCKED SENDERS ───
+    if (sender.status === 'blocked') {
+      console.log(`Blocked sender ${fromEmail} for user ${userId}, skipping`);
+      return new Response(JSON.stringify({ message: 'Sender is blocked, skipped' }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
     // ─── 3. DEDUPLICATION CHECK ───
     if (messageId) {
       const { data: existing } = await supabase
