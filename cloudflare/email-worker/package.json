@@ -8,7 +8,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20240512.0",
-    "wrangler": "^3.57.0"
+    "wrangler": "^3.114.17"
   },
   "dependencies": {
     "postal-mime": "^2.2.0"
