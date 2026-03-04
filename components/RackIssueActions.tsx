@@ -1,7 +1,7 @@
 'use client';
 
 import { type MouseEvent } from 'react';
-import { Archive, BookmarkPlus } from 'lucide-react';
+import { Archive, BookmarkPlus, Clock } from 'lucide-react';
 import IssueDeleteButton from './IssueDeleteButton';
 import { useRouter } from 'next/navigation';
 import { triggerToast } from './Toast';
@@ -13,7 +13,7 @@ interface RackIssueActionsProps {
 export default function RackIssueActions({ issueId }: RackIssueActionsProps) {
   const router = useRouter();
 
-  const updateStatus = async (event: MouseEvent, status: 'read' | 'archived') => {
+  const updateStatus = async (event: MouseEvent, status: 'read' | 'archived' | 'queued') => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -27,6 +27,8 @@ export default function RackIssueActions({ issueId }: RackIssueActionsProps) {
 
     if (status === 'read') {
       triggerToast('Saved to Library');
+    } else if (status === 'queued') {
+      triggerToast('Moved to Read Later');
     } else {
       triggerToast('Archived and removed');
     }
@@ -42,6 +44,13 @@ export default function RackIssueActions({ issueId }: RackIssueActionsProps) {
       >
         <BookmarkPlus className="h-3.5 w-3.5" />
         <span className="hidden min-[420px]:inline">Save</span>
+      </button>
+      <button
+        onClick={(event) => updateStatus(event, 'queued')}
+        className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-ink-muted hover:border-accent hover:text-accent min-[420px]:px-2.5"
+      >
+        <Clock className="h-3.5 w-3.5" />
+        <span className="hidden min-[420px]:inline">Later</span>
       </button>
       <button
         onClick={(event) => updateStatus(event, 'archived')}

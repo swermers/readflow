@@ -4,6 +4,8 @@ import TrackIssueLink from '@/components/TrackIssueLink';
 import WeeklyBriefCard from '@/components/WeeklyBriefCard';
 import CollapsibleSection from '@/components/CollapsibleSection';
 import OnboardingWalkthrough from '@/components/OnboardingWalkthrough';
+import QueuedArticles from '@/components/QueuedArticles';
+import SenderLeaderboard from '@/components/SenderLeaderboard';
 
 export default async function BriefingPage() {
   const supabase = await createClient();
@@ -18,6 +20,15 @@ export default async function BriefingPage() {
     .gte('received_at', sevenDaysAgo)
     .order('received_at', { ascending: false })
     .limit(120);
+
+  const { data: queuedArticles } = await supabase
+    .from('issues')
+    .select('id, subject, from_email, received_at, senders!inner(name, status)')
+    .eq('senders.status', 'approved')
+    .eq('status', 'queued')
+    .is('deleted_at', null)
+    .order('received_at', { ascending: false })
+    .limit(20);
 
   const {
     data: { user },
@@ -121,6 +132,31 @@ export default async function BriefingPage() {
         tagPenalty.set(tag, (tagPenalty.get(tag) || 0) + 3);
       }
     }
+  }
+
+  // ─── Build sender leaderboard from engagement data ───
+  const topSenderEmails = Array.from(senderAffinity.entries())
+    .filter(([, score]) => score > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+
+  let senderLeaderboard: { name: string; email: string; score: number; maxScore: number }[] = [];
+  if (topSenderEmails.length > 0 && user) {
+    const { data: senderRows } = await supabase
+      .from('senders')
+      .select('email, name')
+      .eq('user_id', user.id)
+      .in('email', topSenderEmails.map(([email]) => email));
+
+    const nameMap = new Map((senderRows || []).map((s: any) => [s.email, s.name]));
+    const maxScore = topSenderEmails[0]?.[1] || 1;
+
+    senderLeaderboard = topSenderEmails.map(([email, score]) => ({
+      name: nameMap.get(email) || email.split('@')[0],
+      email,
+      score,
+      maxScore,
+    }));
   }
 
   const signalStats = (emails || []).reduce(
@@ -250,6 +286,26 @@ export default async function BriefingPage() {
           </div>
         </CollapsibleSection>
       )}
+
+      {(queuedArticles || []).length > 0 && (
+        <CollapsibleSection
+          label="Read Later"
+          title={`${(queuedArticles || []).length} queued`}
+          subtitle="Articles you moved off the Rack to read later."
+          defaultCollapsed={false}
+        >
+          <QueuedArticles articles={queuedArticles || []} />
+        </CollapsibleSection>
+      )}
+
+      <CollapsibleSection
+        label="Analytics"
+        title="Top Senders"
+        subtitle="Ranked by your engagement over the last 60 days."
+        defaultCollapsed={true}
+      >
+        <SenderLeaderboard senders={senderLeaderboard} />
+      </CollapsibleSection>
 
       <WeeklyBriefCard />
     </div>
