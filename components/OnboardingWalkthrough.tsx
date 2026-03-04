@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Copy,
   Check,
+  Forward,
   Inbox,
   Mail,
   Sparkles,
@@ -19,7 +20,7 @@ interface OnboardingWalkthroughProps {
   open: boolean;
 }
 
-const TOTAL_STEPS = 4;
+const TOTAL_STEPS = 5;
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
   return (
@@ -167,6 +168,46 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
                   3
                 </div>
                 <div>
+                  <h3 className="text-lg font-semibold text-ink">Forward existing newsletters</h3>
+                  <p className="mt-1 text-sm text-ink-muted">
+                    Already getting newsletters in Gmail or another inbox? Set up a filter to automatically forward them to your Readflow address.
+                  </p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-line bg-surface-raised p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Forward className="h-4 w-4 text-accent" />
+                  <p className="text-sm font-medium text-ink">How to set up forwarding in Gmail</p>
+                </div>
+                <ol className="space-y-2 text-sm text-ink-muted pl-6 list-decimal list-outside">
+                  <li>
+                    Open <strong>Gmail Settings &rarr; Forwarding</strong> and add your Readflow email as a forwarding address
+                  </li>
+                  <li>
+                    Confirm the verification email that appears in your <strong>Rack</strong>
+                  </li>
+                  <li>
+                    Go to <strong>Gmail Settings &rarr; Filters</strong> and create a new filter
+                  </li>
+                  <li>
+                    Match newsletters by sender (e.g. <em>from:substack.com</em>) and choose <strong>&ldquo;Forward to&rdquo;</strong> your Readflow address
+                  </li>
+                </ol>
+                <p className="text-xs text-ink-faint">
+                  Works with any email provider that supports filters &amp; forwarding — Outlook, Yahoo, Fastmail, etc. You can also manually forward individual emails at any time.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="space-y-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white text-sm font-bold flex-shrink-0">
+                  4
+                </div>
+                <div>
                   <h3 className="text-lg font-semibold text-ink">Confirm your subscriptions</h3>
                   <p className="mt-1 text-sm text-ink-muted">
                     Verification emails will appear in your <strong>Rack</strong>. Open them and click the confirmation link to activate each subscription.
@@ -201,11 +242,11 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
             </div>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <div className="space-y-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-10 w-10 items-center justify-center rounded-full bg-accent text-white text-sm font-bold flex-shrink-0">
-                  4
+                  5
                 </div>
                 <div>
                   <h3 className="text-lg font-semibold text-ink">You&apos;re all set</h3>
