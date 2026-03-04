@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { Menu } from 'lucide-react';
 import Sidebar from "@/components/Sidebar";
 import MobileBottomNav from '@/components/MobileBottomNav';
+import InstallPrompt from '@/components/InstallPrompt';
 import { GlobalAudioPlayerProvider } from '@/components/GlobalAudioPlayer';
 
 export default function DashboardLayout({
@@ -29,6 +30,7 @@ export default function DashboardLayout({
           {children}
         </main>
         <MobileBottomNav />
+        <InstallPrompt />
       </div>
     </GlobalAudioPlayerProvider>
   );
