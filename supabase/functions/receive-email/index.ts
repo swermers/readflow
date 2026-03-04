@@ -558,39 +558,72 @@ function stripForwardingHeaders(body: string): string {
 
   let cleaned = body;
 
-  // ─── Gmail HTML: remove only the forwarding metadata div ───
-  // Gmail puts "---------- Forwarded message ---------" and the From/Date/
-  // Subject/To lines inside <div class="gmail_attr">. Remove just that div.
+  // ─── Gmail HTML: remove the gmail_attr div AND everything before it ───
+  // When a user manually forwards, Gmail wraps the email as:
+  //   [user's personal message + signature]
+  //   <div class="gmail_attr">---------- Forwarded message ----------</div>
+  //   <div class="gmail_quote">[original newsletter]</div>
+  //
+  // We want to strip both the gmail_attr div AND the forwarder's content
+  // (signature, personal message) that appears before it.
+  const gmailAttrIdx = cleaned.search(/<div[^>]*class="[^"]*gmail_attr[^"]*"/i);
+  if (gmailAttrIdx !== -1) {
+    // Remove the gmail_attr div itself
+    const afterAttrStrip = cleaned.replace(
+      /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*?<\/div>/i,
+      '',
+    );
+    // Now remove everything before where the gmail_attr was — that's the
+    // forwarder's personal content (message + signature).
+    // Find the gmail_quote div which contains the actual newsletter.
+    const quoteMatch = afterAttrStrip.match(
+      /<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>/i,
+    );
+    if (quoteMatch && quoteMatch.index !== undefined) {
+      // Keep only from the gmail_quote div onward
+      cleaned = afterAttrStrip.substring(quoteMatch.index);
+    } else {
+      // No gmail_quote — just strip everything before the original attr position
+      // and use whatever remains
+      cleaned = afterAttrStrip;
+    }
+  }
+
+  // ─── Clean up leading empty HTML elements & whitespace ───
+  // After stripping, there may be leftover empty divs, <br>s, or &nbsp; at the top
   cleaned = cleaned.replace(
-    /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*?<\/div>/i,
+    /^(\s*(<(div|p|br|span)\b[^>]*>\s*(<\/(div|p|span)>)?\s*|&nbsp;|\u00A0)\s*)*/i,
     '',
   );
 
   // ─── Plain-text forwarding markers ───
-  // For non-HTML bodies, strip the marker + header lines.
-  // The header block ends with a double newline before the original content.
+  // For non-HTML bodies, strip the marker + header lines AND everything before them.
+  // The forwarder's message/signature precedes the marker.
   const normalized = cleaned.replace(/\r\n/g, '\n');
 
   // Gmail: "---------- Forwarded message ---------"
-  let stripped = normalized.replace(
-    /-{5,}\s*Forwarded message\s*-{5,}\n(?:.*\n)*?\n/i,
-    '',
-  );
-  if (stripped !== normalized) return stripped.trim();
+  const gmailMarkerIdx = normalized.search(/-{5,}\s*Forwarded message\s*-{5,}/i);
+  if (gmailMarkerIdx !== -1) {
+    const afterMarker = normalized.substring(gmailMarkerIdx);
+    const stripped = afterMarker.replace(/-{5,}\s*Forwarded message\s*-{5,}\n(?:.*\n)*?\n/i, '');
+    return stripped.trim();
+  }
 
   // Apple Mail: "Begin forwarded message:"
-  stripped = normalized.replace(
-    /Begin forwarded message:\n(?:.*\n)*?\n/i,
-    '',
-  );
-  if (stripped !== normalized) return stripped.trim();
+  const appleMarkerIdx = normalized.search(/Begin forwarded message:/i);
+  if (appleMarkerIdx !== -1) {
+    const afterMarker = normalized.substring(appleMarkerIdx);
+    const stripped = afterMarker.replace(/Begin forwarded message:\n(?:.*\n)*?\n/i, '');
+    return stripped.trim();
+  }
 
   // Outlook: "-----Original Message-----"
-  stripped = normalized.replace(
-    /-{5,}\s*Original Message\s*-{5,}\n(?:.*\n)*?\n/i,
-    '',
-  );
-  if (stripped !== normalized) return stripped.trim();
+  const outlookMarkerIdx = normalized.search(/-{5,}\s*Original Message\s*-{5,}/i);
+  if (outlookMarkerIdx !== -1) {
+    const afterMarker = normalized.substring(outlookMarkerIdx);
+    const stripped = afterMarker.replace(/-{5,}\s*Original Message\s*-{5,}\n(?:.*\n)*?\n/i, '');
+    return stripped.trim();
+  }
 
   return cleaned.trim();
 }
