@@ -61,7 +61,7 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
 
   if (ebook.file_type === 'pdf') {
     return (
-      <div ref={containerRef} className="flex flex-1 flex-col bg-surface-overlay">
+      <div ref={containerRef} className="flex min-h-0 flex-1 flex-col bg-surface-overlay">
         {/* PDF toolbar */}
         <div className="flex shrink-0 items-center justify-between border-b border-line bg-surface px-4 py-2">
           <div className="flex items-center gap-2 text-xs text-ink-muted">
@@ -85,13 +85,15 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
           </div>
         </div>
 
-        {/* PDF iframe */}
-        <iframe
-          ref={iframeRef}
-          src={`/api/ebooks/${ebook.id}/file`}
-          className="flex-1 w-full border-0"
-          title={ebook.title}
-        />
+        {/* PDF iframe — wrapped for iOS touch scrolling */}
+        <div className="min-h-0 flex-1 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+          <iframe
+            ref={iframeRef}
+            src={`/api/ebooks/${ebook.id}/file`}
+            className="h-full w-full border-0"
+            title={ebook.title}
+          />
+        </div>
       </div>
     );
   }

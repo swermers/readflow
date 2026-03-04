@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X, Copy, Check, Inbox } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X, Copy, Check, Inbox, Lock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -607,6 +607,55 @@ function SettingsContent() {
     triggerToast('Gmail disconnected. Go through onboarding to reconnect.');
   };
 
+  // Security: change email & password
+  const [newEmail, setNewEmail] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  const handleChangeEmail = async () => {
+    if (!newEmail.trim()) return;
+    setSavingEmail(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      if (error) {
+        triggerToast(error.message);
+      } else {
+        triggerToast('Confirmation sent to your new email. Check both inboxes.');
+        setNewEmail('');
+      }
+    } catch {
+      triggerToast('Could not update email');
+    }
+    setSavingEmail(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 6) {
+      triggerToast('Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      triggerToast('Passwords do not match');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        triggerToast(error.message);
+      } else {
+        triggerToast('Password updated');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch {
+      triggerToast('Could not update password');
+    }
+    setSavingPassword(false);
+  };
+
   const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm' | 'deleting'>('idle');
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
@@ -776,6 +825,74 @@ function SettingsContent() {
           </div>
         </section>
 
+
+        {/* ─── Security ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
+          <div className="md:col-span-4">
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <Lock className="w-5 h-5 text-ink-faint" />
+              Security
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">Update your email address or password.</p>
+          </div>
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6 space-y-8">
+
+            {/* Change email */}
+            <div className="space-y-3">
+              <p className="text-label uppercase text-ink-faint">Change Email</p>
+              <p className="text-xs text-ink-faint">
+                Current: <span className="text-ink">{email}</span>
+              </p>
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="New email address"
+                className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+              />
+              <button
+                onClick={handleChangeEmail}
+                disabled={savingEmail || !newEmail.trim()}
+                className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {savingEmail ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                Update Email
+              </button>
+              <p className="text-xs text-ink-faint">A confirmation link will be sent to both your current and new email.</p>
+            </div>
+
+            <div className="h-px bg-line" />
+
+            {/* Change password */}
+            <div className="space-y-3">
+              <p className="text-label uppercase text-ink-faint">Change Password</p>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password"
+                minLength={6}
+                className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                minLength={6}
+                className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+              />
+              <button
+                onClick={handleChangePassword}
+                disabled={savingPassword || !newPassword || !confirmPassword}
+                className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {savingPassword ? <Loader2 className="w-3 h-3 animate-spin" /> : <Lock className="w-3 h-3" />}
+                Update Password
+              </button>
+            </div>
+          </div>
+        </section>
 
         {/* ─── Token Wallet ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">

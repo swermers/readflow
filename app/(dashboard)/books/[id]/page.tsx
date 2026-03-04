@@ -23,7 +23,7 @@ export default async function EbookPage({ params }: { params: { id: string } }) 
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="fixed inset-0 z-40 flex flex-col bg-surface md:relative md:inset-auto md:z-auto md:h-screen">
       {/* Top bar */}
       <div className="shrink-0 border-b border-line bg-surface/80 backdrop-blur-md">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
