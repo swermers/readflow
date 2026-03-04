@@ -17,11 +17,86 @@ function generateAlias(length = 8): string {
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const code = searchParams.get('code');
+  const token_hash = searchParams.get('token_hash');
+  const type = searchParams.get('type') as
+    | 'signup'
+    | 'magiclink'
+    | 'recovery'
+    | 'email'
+    | null;
   const next = searchParams.get('next') ?? '/';
 
   const requestUrl = new URL(request.url);
   const originFromRequest = requestUrl.origin;
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? originFromRequest;
+
+  // Handle magic link, email signup confirmation, and password recovery tokens
+  if (token_hash && type) {
+    const cookieStore = cookies();
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() {
+            return cookieStore.getAll();
+          },
+          setAll(cookiesToSet: { name: string; value: string; options: any }[]) {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            );
+          },
+        },
+      }
+    );
+
+    const { data, error } = await supabase.auth.verifyOtp({
+      token_hash,
+      type,
+    });
+
+    if (error) {
+      console.error('[Auth Callback] OTP verify error:', error);
+      return NextResponse.redirect(`${siteUrl}/auth/auth-code-error?error=${encodeURIComponent(error.message)}`);
+    }
+
+    if (data.session) {
+      const user = data.session.user;
+
+      // Ensure profile exists for new magic link / email signup users
+      let admin: ReturnType<typeof createAdminClient> | null = null;
+      try {
+        admin = createAdminClient();
+      } catch {
+        console.warn('[Auth Callback] Admin client unavailable, falling back to anon client');
+      }
+      const db = admin || supabase;
+
+      const { data: existing } = await db
+        .from('profiles')
+        .select('id')
+        .eq('id', user.id)
+        .single();
+
+      if (!existing) {
+        const { error: insertErr } = await db.from('profiles').insert({
+          id: user.id,
+          email: user.email,
+          forwarding_alias: generateAlias(),
+        });
+        if (insertErr) {
+          console.error('[Auth Callback] Profile insert failed:', insertErr);
+        }
+      }
+    }
+
+    // Password recovery → redirect to update-password page
+    if (type === 'recovery') {
+      return NextResponse.redirect(`${siteUrl}/auth/update-password`);
+    }
+
+    return NextResponse.redirect(`${siteUrl}${next}`);
+  }
 
   if (code) {
     const cookieStore = cookies();

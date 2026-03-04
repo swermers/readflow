@@ -89,7 +89,43 @@ export default {
       }
     }
 
-    const payload = {
+    // ─── EXTRACT EBOOK ATTACHMENTS (PDF / EPUB) ───
+    const EBOOK_TYPES: Record<string, string> = {
+      'application/pdf': 'pdf',
+      'application/epub+zip': 'epub',
+      'application/x-epub+zip': 'epub',
+    };
+    const MAX_ATTACHMENT_SIZE = 20 * 1024 * 1024; // 20 MB
+
+    const ebookAttachments: Array<{
+      filename: string;
+      file_type: string;
+      content_base64: string;
+      size: number;
+    }> = [];
+
+    if (parsed.attachments) {
+      for (const att of parsed.attachments) {
+        const fileType = EBOOK_TYPES[att.mimeType?.toLowerCase()];
+        if (!fileType) continue;
+        if (!att.content || att.content.byteLength > MAX_ATTACHMENT_SIZE) continue;
+
+        const bytes = new Uint8Array(att.content);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+
+        ebookAttachments.push({
+          filename: att.filename || `ebook.${fileType}`,
+          file_type: fileType,
+          content_base64: btoa(binary),
+          size: bytes.length,
+        });
+      }
+    }
+
+    const payload: Record<string, unknown> = {
       to: toAddress,
       from_email: senderEmail,
       from_name: senderName,
@@ -98,6 +134,10 @@ export default {
       body_text: text,
       message_id: messageId,
     };
+
+    if (ebookAttachments.length > 0) {
+      payload.ebook_attachments = ebookAttachments;
+    }
 
     const response = await fetch(env.WEBHOOK_URL, {
       method: 'POST',

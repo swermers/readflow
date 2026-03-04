@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     let bodyHtml = rawBodyHtml;
     let bodyText = rawBodyText;
 
-    const isForwarded = /^(Fwd|Fw):\s*/i.test(subject);
+    const isForwarded = /^(Fwd|Fw):\s*/i.test(subject) || hasForwardingMarkers(bodyHtml, bodyText);
     console.log('[forward-debug] subject:', JSON.stringify(subject));
     console.log('[forward-debug] isForwarded:', isForwarded);
     console.log('[forward-debug] fromEmail:', fromEmail, 'fromName:', fromName);
@@ -67,7 +67,12 @@ Deno.serve(async (req) => {
     console.log('[forward-debug] bodyHtml first 500:', bodyHtml?.substring(0, 500));
 
     if (isForwarded) {
-      const originalSender = extractForwardedSender(bodyText || bodyHtml);
+      // Try bodyText first, then bodyHtml — forwarding headers may only appear
+      // in one of the two (e.g. Gmail puts them in the HTML gmail_attr div).
+      let originalSender = extractForwardedSender(bodyText);
+      if (!originalSender) {
+        originalSender = extractForwardedSender(bodyHtml);
+      }
       console.log('[forward-debug] extractedSender:', JSON.stringify(originalSender));
       if (originalSender) {
         fromEmail = originalSender.email;
@@ -203,7 +208,13 @@ Deno.serve(async (req) => {
     // ─── 5. SANITIZE HTML (fall back to plain text → HTML) ───
     const cleanHtml = sanitizeHtml(bodyHtml || '') || textToHtml(bodyText || '');
 
-    // ─── 6. INSERT THE ISSUE ───
+    // ─── 6. CLASSIFY & INSERT THE ISSUE ───
+    const signal = classifyIssueSignal({
+      subject,
+      snippet,
+      bodyText: bodyText || '',
+    });
+
     const { data: issue, error: issueError } = await supabase
       .from('issues')
       .insert({
@@ -217,6 +228,8 @@ Deno.serve(async (req) => {
         message_id: messageId,
         received_at: new Date().toISOString(),
         status: 'unread',
+        signal_tier: signal.tier,
+        signal_reason: signal.reason,
       })
       .select()
       .single();
@@ -231,7 +244,91 @@ Deno.serve(async (req) => {
 
     console.log(`Stored issue "${subject}" from ${fromEmail} for user ${userId}`);
 
-    return new Response(JSON.stringify({ success: true, issue_id: issue.id }), {
+    // ─── 7. HANDLE EBOOK ATTACHMENTS ───
+    const ebookAttachments = payload.ebook_attachments as Array<{
+      filename: string;
+      file_type: string;
+      content_base64: string;
+      size: number;
+    }> | undefined;
+
+    const storedEbooks: string[] = [];
+
+    if (ebookAttachments && ebookAttachments.length > 0) {
+      for (const att of ebookAttachments) {
+        try {
+          // Decode base64 to binary
+          const binaryStr = atob(att.content_base64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+
+          // Derive a title from the filename (strip extension)
+          const title = att.filename
+            .replace(/\.(pdf|epub)$/i, '')
+            .replace(/[-_]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim() || subject || 'Untitled';
+
+          // Create the ebook record first to get an ID
+          const { data: ebook, error: ebookInsertError } = await supabase
+            .from('ebooks')
+            .insert({
+              user_id: userId,
+              title,
+              file_path: '', // placeholder, updated after upload
+              file_name: att.filename,
+              file_size: att.size,
+              file_type: att.file_type,
+              sender_email: fromEmail,
+              status: 'unread',
+            })
+            .select()
+            .single();
+
+          if (ebookInsertError || !ebook) {
+            console.error('Error creating ebook record:', ebookInsertError);
+            continue;
+          }
+
+          // Upload to Supabase Storage
+          const storagePath = `${userId}/${ebook.id}.${att.file_type}`;
+          const mimeType = att.file_type === 'pdf' ? 'application/pdf' : 'application/epub+zip';
+
+          const { error: uploadError } = await supabase.storage
+            .from('ebooks')
+            .upload(storagePath, bytes, {
+              contentType: mimeType,
+              upsert: false,
+            });
+
+          if (uploadError) {
+            console.error('Error uploading ebook file:', uploadError);
+            // Clean up the record
+            await supabase.from('ebooks').delete().eq('id', ebook.id);
+            continue;
+          }
+
+          // Update record with the storage path
+          await supabase
+            .from('ebooks')
+            .update({ file_path: storagePath })
+            .eq('id', ebook.id);
+
+          storedEbooks.push(ebook.id);
+          console.log(`Stored ebook "${title}" (${att.file_type}) for user ${userId}`);
+        } catch (ebookErr) {
+          console.error('Error processing ebook attachment:', ebookErr);
+        }
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      issue_id: issue.id,
+      ...(storedEbooks.length > 0 ? { ebook_ids: storedEbooks } : {}),
+    }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
@@ -244,6 +341,64 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+
+// ─── HELPER: Heuristic signal-tier classification ───
+// Mirrors utils/signalSortHeuristics.ts so forwarded emails get categorised
+// the same way as Gmail-synced articles.
+
+type SignalTier = 'high_signal' | 'news' | 'reference' | 'unclassified';
+
+const HIGH_SIGNAL_KEYWORDS = [
+  'playbook', 'strategy', 'framework', 'deep dive', 'analysis',
+  'market map', 'operator', 'benchmark', 'alpha', 'roadmap',
+  'thesis', 'case study', 'signals', 'opportunity', 'fundraising',
+  'pricing', 'growth', 'retention', 'gtm', 'go-to-market',
+];
+
+const NEWS_KEYWORDS = [
+  'daily', 'breaking', 'headlines', 'roundup', 'this week',
+  'today in', 'digest', 'briefing', 'updates', 'news',
+  'recap', 'bulletin', 'morning',
+];
+
+const REFERENCE_KEYWORDS = [
+  'guide', 'tutorial', 'documentation', 'resources', 'cheat sheet',
+  'checklist', 'toolkit', 'template', 'collection', 'library',
+  'best practices', 'evergreen', 'archive',
+];
+
+function countKeywordMatches(haystack: string, needles: string[]) {
+  return needles.reduce((n, kw) => n + (haystack.includes(kw) ? 1 : 0), 0);
+}
+
+function classifyIssueSignal(params: {
+  subject?: string | null;
+  snippet?: string | null;
+  bodyText?: string | null;
+}): { tier: SignalTier; reason: string } {
+  const subj = (params.subject || '').toLowerCase();
+  const snip = (params.snippet || '').toLowerCase();
+  const body = (params.bodyText || '').toLowerCase();
+  const text = `${subj}\n${snip}\n${body}`;
+
+  const hs = countKeywordMatches(text, HIGH_SIGNAL_KEYWORDS)
+    + countKeywordMatches(subj, ['strategy', 'playbook', 'deep dive']) * 2;
+  const ns = countKeywordMatches(text, NEWS_KEYWORDS)
+    + countKeywordMatches(subj, ['daily', 'news', 'roundup']) * 2;
+  const rs = countKeywordMatches(text, REFERENCE_KEYWORDS);
+
+  if (hs === 0 && ns === 0 && rs === 0) {
+    return { tier: 'unclassified', reason: 'No clear signal markers detected yet.' };
+  }
+  if (hs >= ns && hs >= rs) {
+    return { tier: 'high_signal', reason: 'Detected strategy/actionable language.' };
+  }
+  if (ns >= hs && ns >= rs) {
+    return { tier: 'news', reason: 'Detected recap/update newsletter language.' };
+  }
+  return { tier: 'reference', reason: 'Detected evergreen or resource-style language.' };
+}
 
 
 // ─── HELPER: Parse different email provider formats ───
@@ -334,6 +489,23 @@ function sanitizeHtml(html: string): string {
   // Remove onclick and other event handlers
   clean = clean.replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
 
+  // ─── Fix encoding artifacts from email forwarding ───
+
+  // Â + non-breaking space → regular space (double-encoded UTF-8 NBSP)
+  clean = clean.replace(/Â\u00A0/g, ' ');
+  clean = clean.replace(/Â /g, ' ');
+
+  // Common UTF-8 mojibake (UTF-8 bytes misread as Windows-1252)
+  clean = clean.replace(/â€™/g, '\u2019'); // ' right single quote
+  clean = clean.replace(/â€˜/g, '\u2018'); // ' left single quote
+  clean = clean.replace(/â€œ/g, '\u201C'); // " left double quote
+  clean = clean.replace(/â€¦/g, '\u2026'); // … ellipsis
+  clean = clean.replace(/â€"/g, '\u2014'); // — em dash
+  clean = clean.replace(/â€"/g, '\u2013'); // – en dash
+
+  // Replace remaining non-breaking spaces with regular spaces
+  clean = clean.replace(/\u00A0/g, ' ');
+
   return clean;
 }
 
@@ -357,33 +529,85 @@ function textToHtml(text: string): string {
 }
 
 
+// ─── HELPER: Detect forwarding markers in the email body ───
+// Returns true if the body contains common forwarding header blocks,
+// even when the subject doesn't have a Fwd:/Fw: prefix.
+
+function hasForwardingMarkers(bodyHtml: string, bodyText: string): boolean {
+  // Check for Gmail's forwarding div in the raw HTML
+  if (bodyHtml && /<div[^>]*class="[^"]*gmail_attr[^"]*"/i.test(bodyHtml)) {
+    return true;
+  }
+  const text = (bodyText || bodyHtml || '').replace(/<[^>]*>/g, ' ');
+  return /(?:-{5,}\s*Forwarded message\s*-{5,}|Begin forwarded message:|-{5,}\s*Original Message\s*-{5,})/i.test(text);
+}
+
+
 // ─── HELPER: Extract original sender from a forwarded email body ───
-// Looks for common forwarding markers from Gmail, Apple Mail, Outlook
-// and extracts the "From:" line that follows.
+// Uses multiple strategies to find the original "From:" in forwarded
+// emails from Gmail, Apple Mail, Outlook, and other common clients.
 
 function extractForwardedSender(
   body: string,
 ): { email: string; name: string } | null {
   if (!body) return null;
 
-  // Strip HTML tags and decode common HTML entities so the regex can
-  // reliably find "Name <email>" even in Gmail's HTML forwarding block
-  // (which uses &lt; / &gt; around the address).
+  // ─── Strategy 1: Parse Gmail's gmail_attr div directly ───
+  // Gmail wraps the forwarding metadata in <div class="gmail_attr">.
+  // Extracting from this div is more reliable than stripping all HTML first.
+  const gmailAttrMatch = body.match(
+    /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+  );
+  if (gmailAttrMatch) {
+    const attrBlock = gmailAttrMatch[1]
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&nbsp;/g, ' ');
+
+    const fromInAttr = attrBlock.match(
+      /From:\s*(?:"?([^"<]*)"?\s*)?<?\s*([^\s<>\n]+@[^\s<>\n]+)\s*>?/i,
+    );
+    if (fromInAttr) {
+      return {
+        name: (fromInAttr[1] || '').trim(),
+        email: fromInAttr[2],
+      };
+    }
+  }
+
+  // ─── Strategy 2: Strip HTML and try marker-based extraction ───
+  // Handles Gmail plain-text, Apple Mail, Outlook, and others.
   const text = body
+    .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&')
     .replace(/&nbsp;/g, ' ');
 
-  const fromMatch = text.match(
+  // Pattern A: Forwarding marker followed by From: line
+  const markerFromMatch = text.match(
     /(?:Forwarded message|Begin forwarded message|Original Message)[\s\S]{0,500}?From:\s*(?:"?([^"<\n]*)"?\s*)?<?\s*([^\s<>\n]+@[^\s<>\n]+)\s*>?/i,
   );
-
-  if (fromMatch) {
+  if (markerFromMatch) {
     return {
-      name: (fromMatch[1] || '').trim(),
-      email: fromMatch[2],
+      name: (markerFromMatch[1] || '').trim(),
+      email: markerFromMatch[2],
+    };
+  }
+
+  // ─── Strategy 3: From: line near other header fields ───
+  // Catches cases where the forwarding marker is missing or non-standard,
+  // but the body still has a header block (From/Date/Subject/To).
+  const headerBlockMatch = text.match(
+    /From:\s*(?:"?([^"<\n]*)"?\s*)?<?\s*([^\s<>\n]+@[^\s<>\n]+)\s*>?[\s\S]{0,300}?(?:Date:|Subject:|To:|Sent:)/i,
+  );
+  if (headerBlockMatch) {
+    return {
+      name: (headerBlockMatch[1] || '').trim(),
+      email: headerBlockMatch[2],
     };
   }
 
@@ -400,39 +624,59 @@ function stripForwardingHeaders(body: string): string {
 
   let cleaned = body;
 
-  // ─── Gmail HTML: remove only the forwarding metadata div ───
-  // Gmail puts "---------- Forwarded message ---------" and the From/Date/
-  // Subject/To lines inside <div class="gmail_attr">. Remove just that div.
-  cleaned = cleaned.replace(
+  // ─── Gmail HTML: remove everything up through the gmail_attr div ───
+  // When a user manually forwards, Gmail wraps the email as:
+  //   [user's personal message + signature]
+  //   <div class="gmail_attr">---------- Forwarded message ----------
+  //   From: ... Date: ... Subject: ... To: ...</div>
+  //   [actual newsletter content]
+  //
+  // The gmail_attr div is the boundary: everything before and including it
+  // is forwarder content (message, signature, forwarding metadata).
+  // Everything after it is the original newsletter.
+  const gmailAttrMatch = cleaned.match(
     /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*?<\/div>/i,
+  );
+  if (gmailAttrMatch && gmailAttrMatch.index !== undefined) {
+    const endOfAttr = gmailAttrMatch.index + gmailAttrMatch[0].length;
+    cleaned = cleaned.substring(endOfAttr);
+  }
+
+  // ─── Clean up leading empty HTML elements & whitespace ───
+  // After stripping, there may be leftover empty divs, <br>s, or &nbsp; at the top
+  cleaned = cleaned.replace(
+    /^(\s*(<(div|p|br|span)\b[^>]*>\s*(<\/(div|p|span)>)?\s*|&nbsp;|\u00A0)\s*)*/i,
     '',
   );
 
   // ─── Plain-text forwarding markers ───
-  // For non-HTML bodies, strip the marker + header lines.
-  // The header block ends with a double newline before the original content.
+  // For non-HTML bodies, strip the marker + header lines AND everything before them.
+  // The forwarder's message/signature precedes the marker.
   const normalized = cleaned.replace(/\r\n/g, '\n');
 
   // Gmail: "---------- Forwarded message ---------"
-  let stripped = normalized.replace(
-    /-{5,}\s*Forwarded message\s*-{5,}\n(?:.*\n)*?\n/i,
-    '',
-  );
-  if (stripped !== normalized) return stripped.trim();
+  const gmailMarkerIdx = normalized.search(/-{5,}\s*Forwarded message\s*-{5,}/i);
+  if (gmailMarkerIdx !== -1) {
+    const afterMarker = normalized.substring(gmailMarkerIdx);
+    const stripped = afterMarker.replace(/-{5,}\s*Forwarded message\s*-{5,}\n(?:.*\n)*?\n/i, '');
+    return stripped.trim();
+  }
 
   // Apple Mail: "Begin forwarded message:"
-  stripped = normalized.replace(
-    /Begin forwarded message:\n(?:.*\n)*?\n/i,
-    '',
-  );
-  if (stripped !== normalized) return stripped.trim();
+  const appleMarkerIdx = normalized.search(/Begin forwarded message:/i);
+  if (appleMarkerIdx !== -1) {
+    const afterMarker = normalized.substring(appleMarkerIdx);
+    const stripped = afterMarker.replace(/Begin forwarded message:\n(?:.*\n)*?\n/i, '');
+    return stripped.trim();
+  }
 
   // Outlook: "-----Original Message-----"
-  stripped = normalized.replace(
-    /-{5,}\s*Original Message\s*-{5,}\n(?:.*\n)*?\n/i,
-    '',
-  );
-  if (stripped !== normalized) return stripped.trim();
+  const outlookMarkerIdx = normalized.search(/-{5,}\s*Original Message\s*-{5,}/i);
+  if (outlookMarkerIdx !== -1) {
+    const afterMarker = normalized.substring(outlookMarkerIdx);
+    const stripped = afterMarker.replace(/-{5,}\s*Original Message\s*-{5,}\n(?:.*\n)*?\n/i, '');
+    return stripped.trim();
+  }
 
   return cleaned.trim();
 }

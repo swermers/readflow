@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X, Copy, Check, Inbox } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X, Copy, Check, Inbox, Lock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -531,7 +531,6 @@ function SettingsContent() {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback?next=/settings`,
-        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
@@ -606,6 +605,55 @@ function SettingsContent() {
     setSelectedLabels([]);
     setLastSync(null);
     triggerToast('Gmail disconnected. Go through onboarding to reconnect.');
+  };
+
+  // Security: change email & password
+  const [newEmail, setNewEmail] = useState('');
+  const [savingEmail, setSavingEmail] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  const handleChangeEmail = async () => {
+    if (!newEmail.trim()) return;
+    setSavingEmail(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ email: newEmail.trim() });
+      if (error) {
+        triggerToast(error.message);
+      } else {
+        triggerToast('Confirmation sent to your new email. Check both inboxes.');
+        setNewEmail('');
+      }
+    } catch {
+      triggerToast('Could not update email');
+    }
+    setSavingEmail(false);
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword.length < 6) {
+      triggerToast('Password must be at least 6 characters');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      triggerToast('Passwords do not match');
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) {
+        triggerToast(error.message);
+      } else {
+        triggerToast('Password updated');
+        setNewPassword('');
+        setConfirmPassword('');
+      }
+    } catch {
+      triggerToast('Could not update password');
+    }
+    setSavingPassword(false);
   };
 
   const [deleteStep, setDeleteStep] = useState<'idle' | 'confirm' | 'deleting'>('idle');
@@ -777,6 +825,74 @@ function SettingsContent() {
           </div>
         </section>
 
+
+        {/* ─── Security ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
+          <div className="md:col-span-4">
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <Lock className="w-5 h-5 text-ink-faint" />
+              Security
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">Update your email address or password.</p>
+          </div>
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6 space-y-8">
+
+            {/* Change email */}
+            <div className="space-y-3">
+              <p className="text-label uppercase text-ink-faint">Change Email</p>
+              <p className="text-xs text-ink-faint">
+                Current: <span className="text-ink">{email}</span>
+              </p>
+              <input
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="New email address"
+                className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+              />
+              <button
+                onClick={handleChangeEmail}
+                disabled={savingEmail || !newEmail.trim()}
+                className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {savingEmail ? <Loader2 className="w-3 h-3 animate-spin" /> : <Mail className="w-3 h-3" />}
+                Update Email
+              </button>
+              <p className="text-xs text-ink-faint">A confirmation link will be sent to both your current and new email.</p>
+            </div>
+
+            <div className="h-px bg-line" />
+
+            {/* Change password */}
+            <div className="space-y-3">
+              <p className="text-label uppercase text-ink-faint">Change Password</p>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="New password"
+                minLength={6}
+                className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+              />
+              <input
+                type="password"
+                value={confirmPassword}
+                onChange={(e) => setConfirmPassword(e.target.value)}
+                placeholder="Confirm new password"
+                minLength={6}
+                className="w-full border-b border-line py-2 text-ink bg-transparent focus:outline-none focus:border-accent transition-colors"
+              />
+              <button
+                onClick={handleChangePassword}
+                disabled={savingPassword || !newPassword || !confirmPassword}
+                className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {savingPassword ? <Loader2 className="w-3 h-3 animate-spin" /> : <Lock className="w-3 h-3" />}
+                Update Password
+              </button>
+            </div>
+          </div>
+        </section>
 
         {/* ─── Token Wallet ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
@@ -962,196 +1078,32 @@ function SettingsContent() {
             </button>
 
             <p className="text-xs text-ink-faint border-t border-line pt-4">
-              Auto-sync is enabled by default. When Gmail is connected, Readflow automatically syncs new newsletters every 15 minutes when you visit the app. You do not need to press Sync manually — your brief and rack will always reflect the latest content from your selected labels.
+              Your brief is generated from newsletters received at your Readflow email address. Forward emails or subscribe directly to keep your brief up to date.
             </p>
           </div>
         </section>
 
-        {/* ─── Gmail Sync Manager (Optional) ─── */}
+        {/* ─── Gmail Sync (Coming Soon) ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
           <div className="md:col-span-4">
-            <button
-              onClick={() => setGmailSectionOpen(!gmailSectionOpen)}
-              className="text-left w-full"
-            >
-              <h3 className="font-bold text-lg text-ink flex items-center gap-2">
-                <Mail className="w-5 h-5 text-ink-faint" />
-                Gmail Sync
-                <span className="text-[10px] uppercase tracking-wider text-ink-faint border border-line px-1.5 py-0.5 rounded">Optional</span>
-                <ChevronDown className={`w-4 h-4 text-ink-faint transition-transform ${!!gmailSectionOpen ? 'rotate-180' : ''}`} />
-              </h3>
-            </button>
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <Mail className="w-5 h-5 text-ink-faint" />
+              Gmail Sync
+              <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded">Coming Soon</span>
+            </h3>
             <p className="text-sm text-ink-faint mt-1">
-              {gmailConnected
-                ? 'Import newsletters from your existing Gmail account.'
-                : 'Optionally connect Gmail to import existing newsletters.'}
+              Direct Gmail import is coming in a future update.
             </p>
           </div>
-          {!!gmailSectionOpen && <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line">
-            <div className="p-6 space-y-6">
-              {gmailConnected ? (
-                <>
-                  {/* Connected header */}
-                  <div className="flex items-center justify-between pb-4 border-b border-line">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full" />
-                      <span className="text-sm font-bold text-ink">Gmail Connected</span>
-                    </div>
-                    <button
-                      onClick={handleDisconnectGmail}
-                      className="text-xs text-ink-faint hover:text-accent transition-colors"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-
-                  {/* Label selection dropdown */}
-                  <div className="space-y-3">
-                    <label className="text-label uppercase text-ink-faint flex items-center gap-1.5">
-                      <Tag className="w-3 h-3" />
-                      Labels to Sync
-                    </label>
-
-                    {/* Selected labels summary chips */}
-                    {selectedLabels.length > 0 && labels.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedLabels.map(id => {
-                          const label = labels.find(l => l.id === id);
-                          return label ? (
-                            <span
-                              key={id}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-ink/5 border border-line text-xs text-ink"
-                            >
-                              {label.name}
-                              <button
-                                onClick={() => toggleLabel(id)}
-                                className="text-ink-faint hover:text-accent transition-colors"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-                    )}
-
-                    {/* Dropdown trigger */}
-                    <button
-                      onClick={() => setLabelsOpen(!labelsOpen)}
-                      disabled={labelsLoading && labels.length === 0}
-                      className="w-full flex items-center justify-between px-3 py-2.5 border border-line hover:border-line-strong bg-surface text-sm text-ink transition-colors disabled:opacity-50"
-                    >
-                      <span className="text-ink-muted">
-                        {labelsLoading && labels.length === 0
-                          ? 'Loading labels...'
-                          : labels.length === 0
-                            ? 'No labels found'
-                            : `${selectedLabels.length} label${selectedLabels.length !== 1 ? 's' : ''} selected`}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {labelsLoading && <Loader2 className="w-3 h-3 animate-spin text-ink-faint" />}
-                        <ChevronDown className={`w-4 h-4 text-ink-faint transition-transform ${labelsOpen ? 'rotate-180' : ''}`} />
-                      </div>
-                    </button>
-
-                    {/* Dropdown panel */}
-                    {labelsOpen && labels.length > 0 && (
-                      <div className="border border-line bg-surface max-h-56 overflow-y-auto">
-                        {labels.map(label => (
-                          <label
-                            key={label.id}
-                            className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-overlay cursor-pointer transition-colors border-b border-line last:border-0"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedLabels.includes(label.id)}
-                              onChange={() => toggleLabel(label.id)}
-                              className="w-4 h-4 accent-accent"
-                            />
-                            <span className="text-sm text-ink flex-1">{label.name}</span>
-                            {label.type === 'system' && (
-                              <span className="text-[10px] text-ink-faint uppercase tracking-wider">System</span>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Status + Refresh row */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-ink-faint flex items-center gap-1.5">
-                        {labelsSaving ? (
-                          <><Loader2 className="w-3 h-3 animate-spin" /> Saving...</>
-                        ) : (
-                          selectedLabels.length > 0 && <><Save className="w-3 h-3" /> Auto-saved</>
-                        )}
-                      </span>
-                      <button
-                        onClick={() => fetchLabels()}
-                        disabled={labelsLoading}
-                        className="flex items-center gap-1 text-xs text-ink-faint hover:text-ink transition-colors px-3 py-2.5"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${labelsLoading ? 'animate-spin' : ''}`} />
-                        Refresh
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Sync button */}
-                  <div className="space-y-3 pt-4 border-t border-line">
-                    <button
-                      onClick={handleSyncNow}
-                      disabled={syncing || selectedLabels.length === 0}
-                      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50 w-full justify-center"
-                    >
-                      {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                      {syncing ? 'Syncing...' : 'Sync Now'}
-                    </button>
-
-                    {selectedLabels.length === 0 && (
-                      <p className="text-xs text-ink-faint text-center">
-                        Select at least one label above to enable syncing.
-                      </p>
-                    )}
-
-                    {lastSync && (
-                      <p className="text-xs text-ink-faint text-center">
-                        Last synced {formatDistanceToNow(lastSync, { addSuffix: true })}
-                      </p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Not connected state */}
-                  <div className="text-center py-8">
-                    <Mail className="w-10 h-10 text-ink-faint mx-auto mb-4" />
-                    <p className="text-sm font-bold text-ink mb-1">Gmail access required</p>
-                    <p className="text-xs text-ink-faint mb-6">
-                      Sign out and sign back in to grant Gmail read-only access, or click below.
-                    </p>
-
-                    {gmailError && (
-                      <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-left">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                          <p className="text-sm text-red-700 dark:text-red-400">{gmailError}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={handleReconnectGmail}
-                      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors mx-auto"
-                    >
-                      <Mail className="w-3 h-3" />
-                      Grant Gmail Access
-                    </button>
-                  </div>
-                </>
-              )}
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line">
+            <div className="p-6 text-center py-10">
+              <Mail className="w-10 h-10 text-ink-faint/40 mx-auto mb-4" />
+              <p className="text-sm font-bold text-ink mb-1">Gmail Sync — Coming Soon</p>
+              <p className="text-xs text-ink-faint max-w-sm mx-auto">
+                In the meantime, use your Readflow email above to subscribe to newsletters directly, or forward emails to it from any inbox.
+              </p>
             </div>
-          </div>}
+          </div>
         </section>
 
         {/* ─── Danger Zone ─── */}
@@ -1164,21 +1116,6 @@ function SettingsContent() {
             <p className="text-sm text-ink-faint mt-1">Irreversible actions.</p>
           </div>
           <div className="md:col-span-8 rounded-2xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10 p-6 space-y-4">
-
-            {gmailConnected && (
-              <div className="flex items-center justify-between pb-4 border-b border-red-200 dark:border-red-800">
-                <div>
-                  <p className="text-sm font-bold text-ink">Disconnect Gmail</p>
-                  <p className="text-xs text-ink-faint mt-0.5">Remove Gmail tokens and sync labels. You will need to go through onboarding again.</p>
-                </div>
-                <button
-                  onClick={handleDisconnectGmail}
-                  className="px-4 py-2 border border-red-200 dark:border-red-800 text-accent text-label uppercase hover:bg-accent hover:text-white transition-colors"
-                >
-                  Disconnect
-                </button>
-              </div>
-            )}
 
             <div>
               <p className="text-sm font-bold text-ink">Delete All Data &amp; Sign Out</p>
