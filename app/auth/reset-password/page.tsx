@@ -17,7 +17,7 @@ export default function ResetPasswordPage() {
     setError(null);
 
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/update-password`,
+      redirectTo: `${window.location.origin}/auth/callback?type=recovery`,
     });
 
     if (resetError) {
@@ -30,50 +30,56 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-surface p-6">
-      <div className="w-full max-w-sm text-center">
-        <div className="inline-block h-1 w-10 bg-accent mb-8" />
-        <h1 className="text-2xl font-bold tracking-tight text-ink mb-2">Reset password</h1>
-        <p className="text-ink-muted mb-8 text-sm">
-          Enter your email and we&apos;ll send you a link to reset your password.
-        </p>
+      <div className="w-full max-w-sm">
+        {/* Brand */}
+        <div className="text-center mb-10">
+          <div className="inline-block h-1 w-10 bg-accent mb-6 rounded-full" />
+          <h1 className="text-2xl font-bold tracking-tight text-ink">Reset password</h1>
+          <p className="text-ink-muted mt-2 text-sm">
+            Enter your email and we&apos;ll send you a reset link.
+          </p>
+        </div>
 
-        {error && (
-          <div className="mb-4 p-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
-            {error}
-          </div>
-        )}
-
-        {sent ? (
-          <div className="space-y-4">
-            <div className="p-3 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
-              Check your email for a password reset link.
+        {/* Card */}
+        <div className="rounded-2xl border border-line bg-surface-raised p-6 shadow-[0_8px_24px_rgba(15,23,42,0.06)]">
+          {error && (
+            <div className="mb-4 rounded-lg p-3 text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800">
+              {error}
             </div>
-            <Link href="/login" className="text-xs text-ink-muted hover:text-ink">
-              Back to sign in
-            </Link>
-          </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-3">
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full bg-surface border border-line text-ink text-sm p-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
-            />
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full bg-ink text-surface font-medium text-sm p-3.5 hover:bg-accent transition-colors disabled:opacity-50"
-            >
-              {loading ? 'Sending...' : 'Send reset link'}
-            </button>
-            <Link href="/login" className="block text-xs text-ink-muted hover:text-ink mt-4">
-              Back to sign in
-            </Link>
-          </form>
-        )}
+          )}
+
+          {sent ? (
+            <div className="space-y-4 text-center">
+              <div className="rounded-lg p-3 text-xs text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800">
+                Check your email for a password reset link.
+              </div>
+              <Link href="/login" className="block text-xs text-ink-muted hover:text-accent transition-colors">
+                Back to sign in
+              </Link>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-3">
+              <input
+                type="email"
+                placeholder="Email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
+              />
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full rounded-lg bg-ink text-surface font-medium text-sm px-4 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+              >
+                {loading ? 'Sending...' : 'Send reset link'}
+              </button>
+              <Link href="/login" className="block text-center text-xs text-ink-muted hover:text-accent transition-colors pt-1">
+                Back to sign in
+              </Link>
+            </form>
+          )}
+        </div>
       </div>
     </div>
   );
