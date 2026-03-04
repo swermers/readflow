@@ -38,9 +38,8 @@ function ErrorContent() {
             </>
           ) : isGmailScopeError ? (
             <>
-              <li><strong>Gmail API not enabled:</strong> Go to Google Cloud Console &rarr; APIs &amp; Services &rarr; Library, search for &quot;Gmail API&quot;, and enable it.</li>
-              <li><strong>Missing scope:</strong> In your OAuth consent screen, add the scope <code className="bg-gray-200 px-1 text-xs">https://www.googleapis.com/auth/gmail.readonly</code> using &quot;Manually add scopes&quot;.</li>
               <li><strong>Access denied:</strong> You may have clicked &quot;Cancel&quot; on the Google consent screen. Try again and approve the permissions.</li>
+              <li><strong>Try again:</strong> Return to the login page and sign in with Google.</li>
             </>
           ) : (
             <>

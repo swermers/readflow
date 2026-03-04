@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X, Copy, Check, Inbox } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -67,6 +67,10 @@ function SettingsContent() {
   const [briefDeliveryTz, setBriefDeliveryTz] = useState('UTC');
   const [savingBriefPrefs, setSavingBriefPrefs] = useState(false);
   const [hasPromptedTopFive, setHasPromptedTopFive] = useState(false);
+  const [forwardingEmail, setForwardingEmail] = useState<string | null>(null);
+  const [forwardingCopied, setForwardingCopied] = useState(false);
+  const [regeneratingAlias, setRegeneratingAlias] = useState(false);
+  const [gmailSectionOpen, setGmailSectionOpen] = useState<boolean | null>(null);
 
   const supabase = createClient();
   const isFreeTierSourceLimited = false; // Pay-per-use: no source limit
@@ -203,8 +207,47 @@ function SettingsContent() {
   };
 
 
+  const loadForwardingEmail = useCallback(async () => {
+    try {
+      const res = await fetch('/api/profile/forwarding-email', { cache: 'no-store' });
+      if (res.ok) {
+        const data = await res.json();
+        setForwardingEmail(data.email || null);
+      }
+    } catch {
+      // best effort
+    }
+  }, []);
+
+  const handleCopyForwardingEmail = () => {
+    if (!forwardingEmail) return;
+    navigator.clipboard.writeText(forwardingEmail);
+    setForwardingCopied(true);
+    setTimeout(() => setForwardingCopied(false), 2000);
+    triggerToast('Copied to clipboard');
+  };
+
+  const handleRegenerateAlias = async () => {
+    if (!confirm('Regenerate your Readflow email? Newsletters sent to your old address will stop arriving. You will need to re-subscribe with your new address.')) return;
+    setRegeneratingAlias(true);
+    try {
+      const res = await fetch('/api/profile/forwarding-email', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        setForwardingEmail(data.email || null);
+        triggerToast('New Readflow email generated');
+      } else {
+        triggerToast('Could not regenerate email');
+      }
+    } catch {
+      triggerToast('Network error');
+    }
+    setRegeneratingAlias(false);
+  };
+
   useEffect(() => {
     loadProfile();
+    loadForwardingEmail();
     handleGmailCallbackResult();
     handlePurchaseResult();
     void refreshAiUsage();
@@ -245,6 +288,13 @@ function SettingsContent() {
       window.removeEventListener('focus', onFocus);
     };
   }, [refreshAiUsage]);
+
+  // Auto-open Gmail section if Gmail is already connected
+  useEffect(() => {
+    if (!loading && gmailSectionOpen === null) {
+      setGmailSectionOpen(gmailConnected);
+    }
+  }, [loading, gmailConnected, gmailSectionOpen]);
 
   // When gmail appears disconnected, check if tokens are actually valid and auto-restore
   useEffect(() => {
@@ -481,7 +531,6 @@ function SettingsContent() {
       provider: 'google',
       options: {
         redirectTo: `${window.location.origin}/auth/callback?next=/settings`,
-        scopes: 'https://www.googleapis.com/auth/gmail.readonly',
         queryParams: {
           access_type: 'offline',
           prompt: 'consent',
@@ -606,7 +655,7 @@ function SettingsContent() {
       {/* Header */}
       <header className="mb-10">
         <h1 className="text-display-lg text-ink">Control Room.</h1>
-        <p className="text-sm text-ink-muted mt-1">Preferences &amp; Gmail sync.</p>
+        <p className="text-sm text-ink-muted mt-1">Your Readflow email, preferences &amp; sync.</p>
       </header>
 
       <div className="h-px bg-line-strong mb-12" />
@@ -628,6 +677,52 @@ function SettingsContent() {
       </section>
 
       <div className="space-y-16">
+
+        {/* ─── Your Readflow Email ─── */}
+        <section className="grid grid-cols-1 md:grid-cols-12 gap-8">
+          <div className="md:col-span-4">
+            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+              <Inbox className="w-5 h-5 text-ink-faint" />
+              Your Readflow Email
+            </h3>
+            <p className="text-sm text-ink-faint mt-1">
+              Subscribe to newsletters with this address. Emails arrive directly in your Rack.
+            </p>
+          </div>
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6 space-y-4">
+            {forwardingEmail ? (
+              <>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 border border-line bg-surface px-4 py-3 font-mono text-sm text-ink select-all">
+                    {forwardingEmail}
+                  </div>
+                  <button
+                    onClick={handleCopyForwardingEmail}
+                    className="px-4 py-3 border border-line hover:border-line-strong transition-colors"
+                    title="Copy to clipboard"
+                  >
+                    {forwardingCopied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-ink-faint" />}
+                  </button>
+                </div>
+                <div className="space-y-2 text-xs text-ink-muted">
+                  <p>Use this email to sign up for newsletters (Substack, Beehiiv, Ghost, etc). Verification emails will appear in your Rack — click the link to confirm your subscription.</p>
+                  <p>You can also forward emails from Gmail or any other inbox to this address.</p>
+                </div>
+                <button
+                  onClick={handleRegenerateAlias}
+                  disabled={regeneratingAlias}
+                  className="text-xs text-ink-faint hover:text-accent transition-colors disabled:opacity-50"
+                >
+                  {regeneratingAlias ? 'Regenerating...' : 'Regenerate email (if receiving spam)'}
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-sm text-ink-muted">
+                <Loader2 className="w-4 h-4 animate-spin" /> Loading your Readflow email...
+              </div>
+            )}
+          </div>
+        </section>
 
         {/* ─── Profile Section ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8">
@@ -866,187 +961,30 @@ function SettingsContent() {
             </button>
 
             <p className="text-xs text-ink-faint border-t border-line pt-4">
-              Auto-sync is enabled by default. When Gmail is connected, Readflow automatically syncs new newsletters every 15 minutes when you visit the app. You do not need to press Sync manually — your brief and rack will always reflect the latest content from your selected labels.
+              Your brief is generated from newsletters received at your Readflow email address. Forward emails or subscribe directly to keep your brief up to date.
             </p>
           </div>
         </section>
 
-        {/* ─── Gmail Sync Manager ─── */}
+        {/* ─── Gmail Sync (Coming Soon) ─── */}
         <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
           <div className="md:col-span-4">
             <h3 className="font-bold text-lg text-ink flex items-center gap-2">
               <Mail className="w-5 h-5 text-ink-faint" />
-              Sync Manager
+              Gmail Sync
+              <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded">Coming Soon</span>
             </h3>
             <p className="text-sm text-ink-faint mt-1">
-              {gmailConnected
-                ? 'Choose which labels to sync and import newsletters.'
-                : 'Gmail access is needed to sync newsletters.'}
+              Direct Gmail import is coming in a future update.
             </p>
           </div>
           <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line">
-            <div className="p-6 space-y-6">
-              {gmailConnected ? (
-                <>
-                  {/* Connected header */}
-                  <div className="flex items-center justify-between pb-4 border-b border-line">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-green-500 rounded-full" />
-                      <span className="text-sm font-bold text-ink">Gmail Connected</span>
-                    </div>
-                    <button
-                      onClick={handleDisconnectGmail}
-                      className="text-xs text-ink-faint hover:text-accent transition-colors"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-
-                  {/* Label selection dropdown */}
-                  <div className="space-y-3">
-                    <label className="text-label uppercase text-ink-faint flex items-center gap-1.5">
-                      <Tag className="w-3 h-3" />
-                      Labels to Sync
-                    </label>
-
-                    {/* Selected labels summary chips */}
-                    {selectedLabels.length > 0 && labels.length > 0 && (
-                      <div className="flex flex-wrap gap-1.5">
-                        {selectedLabels.map(id => {
-                          const label = labels.find(l => l.id === id);
-                          return label ? (
-                            <span
-                              key={id}
-                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-ink/5 border border-line text-xs text-ink"
-                            >
-                              {label.name}
-                              <button
-                                onClick={() => toggleLabel(id)}
-                                className="text-ink-faint hover:text-accent transition-colors"
-                              >
-                                <X className="w-3 h-3" />
-                              </button>
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-                    )}
-
-                    {/* Dropdown trigger */}
-                    <button
-                      onClick={() => setLabelsOpen(!labelsOpen)}
-                      disabled={labelsLoading && labels.length === 0}
-                      className="w-full flex items-center justify-between px-3 py-2.5 border border-line hover:border-line-strong bg-surface text-sm text-ink transition-colors disabled:opacity-50"
-                    >
-                      <span className="text-ink-muted">
-                        {labelsLoading && labels.length === 0
-                          ? 'Loading labels...'
-                          : labels.length === 0
-                            ? 'No labels found'
-                            : `${selectedLabels.length} label${selectedLabels.length !== 1 ? 's' : ''} selected`}
-                      </span>
-                      <div className="flex items-center gap-2">
-                        {labelsLoading && <Loader2 className="w-3 h-3 animate-spin text-ink-faint" />}
-                        <ChevronDown className={`w-4 h-4 text-ink-faint transition-transform ${labelsOpen ? 'rotate-180' : ''}`} />
-                      </div>
-                    </button>
-
-                    {/* Dropdown panel */}
-                    {labelsOpen && labels.length > 0 && (
-                      <div className="border border-line bg-surface max-h-56 overflow-y-auto">
-                        {labels.map(label => (
-                          <label
-                            key={label.id}
-                            className="flex items-center gap-3 px-3 py-2.5 hover:bg-surface-overlay cursor-pointer transition-colors border-b border-line last:border-0"
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedLabels.includes(label.id)}
-                              onChange={() => toggleLabel(label.id)}
-                              className="w-4 h-4 accent-accent"
-                            />
-                            <span className="text-sm text-ink flex-1">{label.name}</span>
-                            {label.type === 'system' && (
-                              <span className="text-[10px] text-ink-faint uppercase tracking-wider">System</span>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Status + Refresh row */}
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-ink-faint flex items-center gap-1.5">
-                        {labelsSaving ? (
-                          <><Loader2 className="w-3 h-3 animate-spin" /> Saving...</>
-                        ) : (
-                          selectedLabels.length > 0 && <><Save className="w-3 h-3" /> Auto-saved</>
-                        )}
-                      </span>
-                      <button
-                        onClick={() => fetchLabels()}
-                        disabled={labelsLoading}
-                        className="flex items-center gap-1 text-xs text-ink-faint hover:text-ink transition-colors px-3 py-2.5"
-                      >
-                        <RefreshCw className={`w-3 h-3 ${labelsLoading ? 'animate-spin' : ''}`} />
-                        Refresh
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Sync button */}
-                  <div className="space-y-3 pt-4 border-t border-line">
-                    <button
-                      onClick={handleSyncNow}
-                      disabled={syncing || selectedLabels.length === 0}
-                      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors disabled:opacity-50 w-full justify-center"
-                    >
-                      {syncing ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
-                      {syncing ? 'Syncing...' : 'Sync Now'}
-                    </button>
-
-                    {selectedLabels.length === 0 && (
-                      <p className="text-xs text-ink-faint text-center">
-                        Select at least one label above to enable syncing.
-                      </p>
-                    )}
-
-                    {lastSync && (
-                      <p className="text-xs text-ink-faint text-center">
-                        Last synced {formatDistanceToNow(lastSync, { addSuffix: true })}
-                      </p>
-                    )}
-                  </div>
-                </>
-              ) : (
-                <>
-                  {/* Not connected state */}
-                  <div className="text-center py-8">
-                    <Mail className="w-10 h-10 text-ink-faint mx-auto mb-4" />
-                    <p className="text-sm font-bold text-ink mb-1">Gmail access required</p>
-                    <p className="text-xs text-ink-faint mb-6">
-                      Sign out and sign back in to grant Gmail read-only access, or click below.
-                    </p>
-
-                    {gmailError && (
-                      <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-left">
-                        <div className="flex items-start gap-2">
-                          <AlertTriangle className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                          <p className="text-sm text-red-700 dark:text-red-400">{gmailError}</p>
-                        </div>
-                      </div>
-                    )}
-
-                    <button
-                      onClick={handleReconnectGmail}
-                      className="flex items-center gap-2 text-label uppercase bg-ink text-surface px-6 py-3 hover:bg-accent transition-colors mx-auto"
-                    >
-                      <Mail className="w-3 h-3" />
-                      Grant Gmail Access
-                    </button>
-                  </div>
-                </>
-              )}
+            <div className="p-6 text-center py-10">
+              <Mail className="w-10 h-10 text-ink-faint/40 mx-auto mb-4" />
+              <p className="text-sm font-bold text-ink mb-1">Gmail Sync — Coming Soon</p>
+              <p className="text-xs text-ink-faint max-w-sm mx-auto">
+                In the meantime, use your Readflow email above to subscribe to newsletters directly, or forward emails to it from any inbox.
+              </p>
             </div>
           </div>
         </section>
@@ -1061,21 +999,6 @@ function SettingsContent() {
             <p className="text-sm text-ink-faint mt-1">Irreversible actions.</p>
           </div>
           <div className="md:col-span-8 rounded-2xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10 p-6 space-y-4">
-
-            {gmailConnected && (
-              <div className="flex items-center justify-between pb-4 border-b border-red-200 dark:border-red-800">
-                <div>
-                  <p className="text-sm font-bold text-ink">Disconnect Gmail</p>
-                  <p className="text-xs text-ink-faint mt-0.5">Remove Gmail tokens and sync labels. You will need to go through onboarding again.</p>
-                </div>
-                <button
-                  onClick={handleDisconnectGmail}
-                  className="px-4 py-2 border border-red-200 dark:border-red-800 text-accent text-label uppercase hover:bg-accent hover:text-white transition-colors"
-                >
-                  Disconnect
-                </button>
-              </div>
-            )}
 
             <div>
               <p className="text-sm font-bold text-ink">Delete All Data &amp; Sign Out</p>

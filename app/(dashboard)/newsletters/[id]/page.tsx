@@ -7,6 +7,14 @@ import HighlightableContent from '@/components/HighlightableContent';
 import AISummaryCard from '@/components/AISummaryCard';
 import BackNavButton from '@/components/BackNavButton';
 
+/** Convert plain text to basic HTML with clickable links (used when body_html is empty) */
+function textToHtml(text: string): string {
+  if (!text) return '';
+  const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const linked = escaped.replace(/(https?:\/\/[^\s)]+)/g, '<a href="$1" target="_blank" rel="noopener noreferrer">$1</a>');
+  return `<div style="white-space:pre-wrap">${linked}</div>`;
+}
+
 export default async function NewsletterPage({ params }: { params: { id: string } }) {
   const supabase = await createClient();
 
@@ -78,7 +86,7 @@ export default async function NewsletterPage({ params }: { params: { id: string 
         <AISummaryCard issueId={email.id} articleText={email.body_text || ""} articleSubject={email.subject || "Newsletter"} />
 
         {/* Newsletter Content */}
-        <HighlightableContent issueId={email.id} bodyHtml={email.body_html || ''} />
+        <HighlightableContent issueId={email.id} bodyHtml={email.body_html || textToHtml(email.body_text)} />
 
         {/* Footer Actions */}
         <IssueActions

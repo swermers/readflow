@@ -1,5 +1,5 @@
 # dependencies
-/node_modules
+node_modules
 
 # next.js
 /.next/
@@ -11,6 +11,7 @@
 # misc
 .DS_Store
 *.pem
+supabase/.temp/
 
 # debug
 npm-debug.log*

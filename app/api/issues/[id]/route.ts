@@ -18,10 +18,10 @@ export async function PATCH(
   const body = await request.json();
   const { status } = body;
 
-  const validStatuses = ['unread', 'read', 'archived'];
+  const validStatuses = ['unread', 'read', 'archived', 'queued'];
   if (!status || !validStatuses.includes(status)) {
     return NextResponse.json(
-      { error: 'Invalid status. Must be: unread, read, or archived' },
+      { error: 'Invalid status. Must be: unread, read, archived, or queued' },
       { status: 400 }
     );
   }
@@ -34,7 +34,7 @@ export async function PATCH(
   } else if (status === 'archived') {
     updateData.archived_at = new Date().toISOString();
     updateData.read_at = new Date().toISOString();
-  } else if (status === 'unread') {
+  } else if (status === 'unread' || status === 'queued') {
     updateData.read_at = null;
     updateData.archived_at = null;
   }

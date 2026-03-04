@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { Trash2, PauseCircle, PlayCircle, Loader2, AlertCircle, Rss } from 'lucide-react';
+import { Trash2, PauseCircle, PlayCircle, Loader2, AlertCircle, Rss, MailX } from 'lucide-react';
 import { triggerToast } from '@/components/Toast';
 import { refreshSidebar } from '@/components/Sidebar';
+import { useRouter } from 'next/navigation';
 
 export default function SourcesPage() {
   const [senders, setSenders] = useState<any[]>([]);
@@ -13,6 +14,7 @@ export default function SourcesPage() {
   const [planTier, setPlanTier] = useState<'free' | 'pro' | 'elite'>('free');
   const [unlimitedAiAccess, setUnlimitedAiAccess] = useState(false);
   const supabase = createClient();
+  const router = useRouter();
   const FREE_TIER_ACTIVE_SOURCE_LIMIT = 5;
 
   useEffect(() => {
@@ -92,6 +94,46 @@ export default function SourcesPage() {
     } else {
       triggerToast(`Removed ${name}`);
       refreshSidebar();
+    }
+  };
+
+  const unsubscribeSender = async (id: string, senderEmail: string, name: string) => {
+    if (!confirm(`Unsubscribe from ${name}?\n\nThis will:\n1. Block future emails from this sender\n2. Open their latest email so you can click the unsubscribe link`)) return;
+
+    // Block the sender
+    const prevSenders = senders;
+    setSenders((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, status: 'blocked' } : s))
+    );
+
+    const { error: blockError } = await supabase
+      .from('senders')
+      .update({ status: 'blocked' })
+      .eq('id', id);
+
+    if (blockError) {
+      setSenders(prevSenders);
+      triggerToast('Failed to block sender');
+      return;
+    }
+
+    triggerToast(`Blocked ${name}. Opening latest email to unsubscribe...`);
+    refreshSidebar();
+
+    // Find the most recent issue from this sender to show the unsubscribe link
+    const { data: latestIssue } = await supabase
+      .from('issues')
+      .select('id')
+      .eq('sender_id', id)
+      .is('deleted_at', null)
+      .order('received_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (latestIssue) {
+      router.push(`/newsletters/${latestIssue.id}`);
+    } else {
+      triggerToast('No emails found from this sender. They are now blocked.');
     }
   };
 
@@ -184,6 +226,15 @@ export default function SourcesPage() {
                     >
                       {isActive ? <PauseCircle className="w-4 h-4" /> : <PlayCircle className="w-4 h-4" />}
                     </button>
+                    {isActive && (
+                      <button
+                        onClick={() => unsubscribeSender(sender.id, sender.email, sender.name)}
+                        className="p-2 hover:bg-orange-50 dark:hover:bg-orange-900/20 border border-transparent hover:border-orange-200 dark:hover:border-orange-800 rounded-lg text-ink-faint hover:text-orange-600 dark:hover:text-orange-400 transition-all"
+                        title="Unsubscribe"
+                      >
+                        <MailX className="w-4 h-4" />
+                      </button>
+                    )}
                     <button
                       onClick={() => deleteSender(sender.id, sender.name)}
                       className="p-2 hover:bg-red-50 dark:hover:bg-red-900/20 border border-transparent hover:border-red-200 dark:hover:border-red-800 rounded-lg text-ink-faint hover:text-accent transition-all"
