@@ -11,6 +11,7 @@ node_modules
 # misc
 .DS_Store
 *.pem
+supabase/.temp/
 
 # debug
 npm-debug.log*
