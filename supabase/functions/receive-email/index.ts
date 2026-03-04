@@ -58,7 +58,7 @@ Deno.serve(async (req) => {
     let bodyHtml = rawBodyHtml;
     let bodyText = rawBodyText;
 
-    const isForwarded = /^(Fwd|Fw):\s*/i.test(subject);
+    const isForwarded = /^(Fwd|Fw):\s*/i.test(subject) || hasForwardingMarkers(bodyHtml, bodyText);
     console.log('[forward-debug] subject:', JSON.stringify(subject));
     console.log('[forward-debug] isForwarded:', isForwarded);
     console.log('[forward-debug] fromEmail:', fromEmail, 'fromName:', fromName);
@@ -67,7 +67,12 @@ Deno.serve(async (req) => {
     console.log('[forward-debug] bodyHtml first 500:', bodyHtml?.substring(0, 500));
 
     if (isForwarded) {
-      const originalSender = extractForwardedSender(bodyText || bodyHtml);
+      // Try bodyText first, then bodyHtml — forwarding headers may only appear
+      // in one of the two (e.g. Gmail puts them in the HTML gmail_attr div).
+      let originalSender = extractForwardedSender(bodyText);
+      if (!originalSender) {
+        originalSender = extractForwardedSender(bodyHtml);
+      }
       console.log('[forward-debug] extractedSender:', JSON.stringify(originalSender));
       if (originalSender) {
         fromEmail = originalSender.email;
@@ -357,33 +362,85 @@ function textToHtml(text: string): string {
 }
 
 
+// ─── HELPER: Detect forwarding markers in the email body ───
+// Returns true if the body contains common forwarding header blocks,
+// even when the subject doesn't have a Fwd:/Fw: prefix.
+
+function hasForwardingMarkers(bodyHtml: string, bodyText: string): boolean {
+  // Check for Gmail's forwarding div in the raw HTML
+  if (bodyHtml && /<div[^>]*class="[^"]*gmail_attr[^"]*"/i.test(bodyHtml)) {
+    return true;
+  }
+  const text = (bodyText || bodyHtml || '').replace(/<[^>]*>/g, ' ');
+  return /(?:-{5,}\s*Forwarded message\s*-{5,}|Begin forwarded message:|-{5,}\s*Original Message\s*-{5,})/i.test(text);
+}
+
+
 // ─── HELPER: Extract original sender from a forwarded email body ───
-// Looks for common forwarding markers from Gmail, Apple Mail, Outlook
-// and extracts the "From:" line that follows.
+// Uses multiple strategies to find the original "From:" in forwarded
+// emails from Gmail, Apple Mail, Outlook, and other common clients.
 
 function extractForwardedSender(
   body: string,
 ): { email: string; name: string } | null {
   if (!body) return null;
 
-  // Strip HTML tags and decode common HTML entities so the regex can
-  // reliably find "Name <email>" even in Gmail's HTML forwarding block
-  // (which uses &lt; / &gt; around the address).
+  // ─── Strategy 1: Parse Gmail's gmail_attr div directly ───
+  // Gmail wraps the forwarding metadata in <div class="gmail_attr">.
+  // Extracting from this div is more reliable than stripping all HTML first.
+  const gmailAttrMatch = body.match(
+    /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>([\s\S]*?)<\/div>/i,
+  );
+  if (gmailAttrMatch) {
+    const attrBlock = gmailAttrMatch[1]
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&')
+      .replace(/&nbsp;/g, ' ');
+
+    const fromInAttr = attrBlock.match(
+      /From:\s*(?:"?([^"<]*)"?\s*)?<?\s*([^\s<>\n]+@[^\s<>\n]+)\s*>?/i,
+    );
+    if (fromInAttr) {
+      return {
+        name: (fromInAttr[1] || '').trim(),
+        email: fromInAttr[2],
+      };
+    }
+  }
+
+  // ─── Strategy 2: Strip HTML and try marker-based extraction ───
+  // Handles Gmail plain-text, Apple Mail, Outlook, and others.
   const text = body
+    .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<[^>]*>/g, ' ')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&amp;/g, '&')
     .replace(/&nbsp;/g, ' ');
 
-  const fromMatch = text.match(
+  // Pattern A: Forwarding marker followed by From: line
+  const markerFromMatch = text.match(
     /(?:Forwarded message|Begin forwarded message|Original Message)[\s\S]{0,500}?From:\s*(?:"?([^"<\n]*)"?\s*)?<?\s*([^\s<>\n]+@[^\s<>\n]+)\s*>?/i,
   );
-
-  if (fromMatch) {
+  if (markerFromMatch) {
     return {
-      name: (fromMatch[1] || '').trim(),
-      email: fromMatch[2],
+      name: (markerFromMatch[1] || '').trim(),
+      email: markerFromMatch[2],
+    };
+  }
+
+  // ─── Strategy 3: From: line near other header fields ───
+  // Catches cases where the forwarding marker is missing or non-standard,
+  // but the body still has a header block (From/Date/Subject/To).
+  const headerBlockMatch = text.match(
+    /From:\s*(?:"?([^"<\n]*)"?\s*)?<?\s*([^\s<>\n]+@[^\s<>\n]+)\s*>?[\s\S]{0,300}?(?:Date:|Subject:|To:|Sent:)/i,
+  );
+  if (headerBlockMatch) {
+    return {
+      name: (headerBlockMatch[1] || '').trim(),
+      email: headerBlockMatch[2],
     };
   }
 
