@@ -4,13 +4,16 @@ import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
+type AuthMode = 'signin' | 'signup' | 'magic-link';
+
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [showMagicLink, setShowMagicLink] = useState(false);
+  const [mode, setMode] = useState<AuthMode>('signin');
   const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const supabase = createClient();
   const router = useRouter();
 
@@ -23,6 +26,12 @@ export default function LoginPage() {
       }
     });
   }, []);
+
+  const switchMode = (next: AuthMode) => {
+    setMode(next);
+    setError(null);
+    setSuccess(null);
+  };
 
   const handleGoogleLogin = async () => {
     setLoading(true);
@@ -45,23 +54,53 @@ export default function LoginPage() {
     }
   };
 
-  const handleMagicLink = async (e: React.FormEvent) => {
+  const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setSuccess(null);
 
-    const { error: otpError } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
-    });
+    if (mode === 'magic-link') {
+      const { error: otpError } = await supabase.auth.signInWithOtp({
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (otpError) {
+        setError(otpError.message);
+      } else {
+        setSuccess('Check your email for a sign-in link.');
+      }
+      setLoading(false);
+      return;
+    }
 
-    if (otpError) {
-      setError(otpError.message);
+    if (mode === 'signup') {
+      const { error: signUpError } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      });
+      if (signUpError) {
+        setError(signUpError.message);
+      } else {
+        setSuccess('Check your email to confirm your account.');
+      }
+      setLoading(false);
+      return;
+    }
+
+    const { error: signInError } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (signInError) {
+      setError(signInError.message);
     } else {
-      setSuccess('Check your email for a sign-in link.');
+      router.replace('/');
     }
     setLoading(false);
   };
@@ -101,13 +140,13 @@ export default function LoginPage() {
             </div>
           )}
 
-          {/* Primary: Google */}
+          {/* Google button */}
           <button
             onClick={handleGoogleLogin}
             disabled={loading}
-            className="w-full flex items-center justify-center gap-3 rounded-xl bg-ink text-surface font-semibold text-sm px-4 py-3.5 hover:bg-accent transition-colors disabled:opacity-50"
+            className="w-full flex items-center justify-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-ink hover:bg-surface-overlay transition-colors disabled:opacity-50"
           >
-            <svg className="h-4.5 w-4.5" viewBox="0 0 24 24" aria-hidden="true">
+            <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" aria-hidden="true">
               <path
                 d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
                 fill="#4285F4"
@@ -125,55 +164,92 @@ export default function LoginPage() {
                 fill="#EA4335"
               />
             </svg>
-            {loading && !showMagicLink ? 'Connecting...' : 'Continue with Google'}
+            {loading ? 'Connecting...' : 'Continue with Google'}
           </button>
 
-          <p className="text-center text-[11px] text-ink-faint mt-3">
-            Syncs your newsletter labels automatically.
-          </p>
-
           {/* Divider */}
-          <div className="flex items-center gap-3 my-6">
+          <div className="flex items-center gap-3 my-5">
             <div className="flex-1 h-px bg-line" />
             <span className="text-[10px] uppercase tracking-[0.12em] text-ink-faint">or</span>
             <div className="flex-1 h-px bg-line" />
           </div>
 
-          {/* Secondary: Magic link */}
-          {!showMagicLink ? (
-            <button
-              onClick={() => { setShowMagicLink(true); setError(null); setSuccess(null); }}
-              className="w-full rounded-xl border border-line bg-surface px-4 py-3 text-sm font-medium text-ink hover:border-accent hover:text-accent transition-colors"
-            >
-              Sign in with email link
-            </button>
-          ) : (
-            <form onSubmit={handleMagicLink} className="space-y-3">
+          {/* Email form */}
+          <form onSubmit={handleEmailAuth} className="space-y-3">
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
+            />
+
+            {mode !== 'magic-link' && (
               <input
-                type="email"
-                placeholder="you@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
                 required
-                autoFocus
-                className="w-full rounded-xl bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
+                minLength={6}
+                className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
               />
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full rounded-xl border border-line bg-surface px-4 py-3 text-sm font-medium text-ink hover:border-accent hover:text-accent transition-colors disabled:opacity-50"
-              >
-                {loading ? 'Sending...' : 'Send magic link'}
-              </button>
-              <button
-                type="button"
-                onClick={() => { setShowMagicLink(false); setError(null); setSuccess(null); }}
-                className="w-full text-[11px] text-ink-faint hover:text-ink transition-colors"
-              >
-                Back
-              </button>
-            </form>
-          )}
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full rounded-lg bg-ink text-surface font-medium text-sm px-4 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+            >
+              {loading
+                ? 'Loading...'
+                : mode === 'signup'
+                  ? 'Create account'
+                  : mode === 'magic-link'
+                    ? 'Send magic link'
+                    : 'Sign in'}
+            </button>
+          </form>
+
+          {/* Links */}
+          <div className="mt-4 space-y-2 text-center text-xs text-ink-muted">
+            {mode === 'signin' && (
+              <>
+                <p>
+                  <a href="/auth/reset-password" className="text-accent hover:underline">
+                    Forgot password?
+                  </a>
+                </p>
+                <p>
+                  <button onClick={() => switchMode('magic-link')} className="text-ink-muted hover:text-accent transition-colors">
+                    Sign in with magic link
+                  </button>
+                </p>
+                <p className="pt-1 text-ink-faint">
+                  Don&apos;t have an account?{' '}
+                  <button onClick={() => switchMode('signup')} className="text-accent hover:underline">
+                    Sign up
+                  </button>
+                </p>
+              </>
+            )}
+            {mode === 'signup' && (
+              <p>
+                Already have an account?{' '}
+                <button onClick={() => switchMode('signin')} className="text-accent hover:underline">
+                  Sign in
+                </button>
+              </p>
+            )}
+            {mode === 'magic-link' && (
+              <p>
+                <button onClick={() => switchMode('signin')} className="text-ink-muted hover:text-accent transition-colors">
+                  Sign in with password instead
+                </button>
+              </p>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
