@@ -32,9 +32,37 @@ export default {
     let subject = parsed.subject || '(No Subject)';
     let html = parsed.html || '';
     let text = parsed.text || '';
-    let senderEmail = extractEmail(fromAddress);
-    let senderName = extractName(fromAddress);
     let messageId = parsed.messageId || message.headers.get('message-id') || '';
+
+    // Prefer the MIME From header over the envelope sender.
+    // Gmail auto-forwards (label/filter) rewrite the envelope sender to
+    // user+caf_=dest@gmail.com but preserve the original From header.
+    let senderEmail = parsed.from?.address || extractEmail(fromAddress);
+    let senderName = parsed.from?.name || extractName(fromAddress);
+
+    // ─── HANDLE GMAIL AUTO-FORWARDS (label/filter) ───
+    // Gmail rewrites the envelope sender to user+caf_=dest@gmail.com.
+    // If the MIME From also got rewritten (DMARC), try Reply-To or
+    // X-Original-Sender as fallback sources for the real sender.
+    if (/\+caf_=/i.test(fromAddress)) {
+      const replyTo = parsed.headers?.find(
+        (h: any) => h.key === 'reply-to',
+      )?.value;
+      const xOrigSender = parsed.headers?.find(
+        (h: any) => h.key === 'x-original-sender',
+      )?.value;
+
+      // If the parsed From still looks like the user's own address, override
+      if (senderEmail === extractEmail(fromAddress) || /\+caf_=/i.test(senderEmail)) {
+        if (xOrigSender) {
+          senderEmail = extractEmail(xOrigSender);
+          senderName = extractName(xOrigSender) || senderName;
+        } else if (replyTo) {
+          senderEmail = extractEmail(replyTo);
+          senderName = extractName(replyTo) || senderName;
+        }
+      }
+    }
 
     // ─── HANDLE FORWARDED EMAILS ───
     // Check for message/rfc822 attachment (email forwarded as attachment).

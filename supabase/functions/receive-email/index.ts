@@ -157,6 +157,7 @@ Deno.serve(async (req) => {
     }
 
     // ─── 3. DEDUPLICATION CHECK ───
+    // 3a. Exact message-id dedup
     if (messageId) {
       const { data: existing } = await supabase
         .from('issues')
@@ -167,6 +168,29 @@ Deno.serve(async (req) => {
 
       if (existing) {
         return new Response(JSON.stringify({ message: 'Duplicate, skipped' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+    }
+
+    // 3b. Subject-based dedup — catches the same newsletter arriving via
+    //     both the Gmail label/filter path and the manual forward path.
+    //     Same subject + same user within 24 hours → duplicate.
+    if (subject) {
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: subjectDup } = await supabase
+        .from('issues')
+        .select('id')
+        .eq('user_id', userId)
+        .eq('subject', subject)
+        .gte('received_at', oneDayAgo)
+        .limit(1)
+        .single();
+
+      if (subjectDup) {
+        console.log(`Subject-dedup: "${subject}" already exists for user ${userId}, skipping`);
+        return new Response(JSON.stringify({ message: 'Duplicate subject, skipped' }), {
           status: 200,
           headers: { 'Content-Type': 'application/json' },
         });
