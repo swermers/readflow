@@ -2,7 +2,7 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, X, Copy, Check, Inbox, Lock } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, ChevronRight, X, Copy, Check, Inbox, Lock } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -71,6 +71,22 @@ function SettingsContent() {
   const [forwardingCopied, setForwardingCopied] = useState(false);
   const [regeneratingAlias, setRegeneratingAlias] = useState(false);
   const [gmailSectionOpen, setGmailSectionOpen] = useState<boolean | null>(null);
+
+  const COLLAPSIBLE_SECTIONS = ['profile', 'security', 'brief-schedule', 'gmail-sync', 'danger-zone'] as const;
+  const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
+
+  const toggleSection = (section: string) => {
+    setCollapsedSections((prev) => {
+      const next = new Set(prev);
+      if (next.has(section)) next.delete(section);
+      else next.add(section);
+      return next;
+    });
+  };
+
+  const collapseAll = () => setCollapsedSections(new Set(COLLAPSIBLE_SECTIONS));
+  const expandAll = () => setCollapsedSections(new Set());
+  const allCollapsed = COLLAPSIBLE_SECTIONS.every((s) => collapsedSections.has(s));
 
   const supabase = createClient();
   const isFreeTierSourceLimited = false; // Pay-per-use: no source limit
@@ -709,6 +725,16 @@ function SettingsContent() {
 
       <div className="h-px bg-line-strong mb-12" />
 
+      <div className="flex justify-end mb-6">
+        <button
+          onClick={allCollapsed ? expandAll : collapseAll}
+          className="text-xs text-ink-faint hover:text-ink transition-colors flex items-center gap-1"
+        >
+          {allCollapsed ? 'Expand All' : 'Collapse All'}
+          <ChevronDown className={`w-3 h-3 transition-transform ${allCollapsed ? '' : 'rotate-180'}`} />
+        </button>
+      </div>
+
       <section className="mb-10 rounded-2xl border border-line bg-surface-raised p-5 md:p-6">
         <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div>
@@ -774,14 +800,19 @@ function SettingsContent() {
         </section>
 
         {/* ─── Profile Section ─── */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-8">
-          <div className="md:col-span-4">
-            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
-              <User className="w-5 h-5 text-ink-faint" />
-              Profile
-            </h3>
-            <p className="text-sm text-ink-faint mt-1">How you appear in the app.</p>
-          </div>
+        <section>
+          <button onClick={() => toggleSection('profile')} className="w-full text-left grid grid-cols-1 md:grid-cols-12 gap-8">
+            <div className="md:col-span-4">
+              <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+                {collapsedSections.has('profile') ? <ChevronRight className="w-5 h-5 text-ink-faint" /> : <ChevronDown className="w-5 h-5 text-ink-faint" />}
+                <User className="w-5 h-5 text-ink-faint" />
+                Profile
+              </h3>
+              <p className="text-sm text-ink-faint mt-1 ml-7">How you appear in the app.</p>
+            </div>
+          </button>
+          {!collapsedSections.has('profile') && <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mt-8">
+          <div className="md:col-span-4" />
           <div className="md:col-span-8 space-y-6 rounded-2xl bg-surface-raised p-6 border border-line">
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
@@ -823,18 +854,24 @@ function SettingsContent() {
               Save Changes
             </button>
           </div>
+        </div>}
         </section>
 
 
         {/* ─── Security ─── */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
-          <div className="md:col-span-4">
-            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
-              <Lock className="w-5 h-5 text-ink-faint" />
-              Security
-            </h3>
-            <p className="text-sm text-ink-faint mt-1">Update your email address or password.</p>
-          </div>
+        <section className="pt-12 border-t border-line">
+          <button onClick={() => toggleSection('security')} className="w-full text-left grid grid-cols-1 md:grid-cols-12 gap-8">
+            <div className="md:col-span-4">
+              <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+                {collapsedSections.has('security') ? <ChevronRight className="w-5 h-5 text-ink-faint" /> : <ChevronDown className="w-5 h-5 text-ink-faint" />}
+                <Lock className="w-5 h-5 text-ink-faint" />
+                Security
+              </h3>
+              <p className="text-sm text-ink-faint mt-1 ml-7">Update your email address or password.</p>
+            </div>
+          </button>
+          {!collapsedSections.has('security') && <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mt-8">
+          <div className="md:col-span-4" />
           <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6 space-y-8">
 
             {/* Change email */}
@@ -892,6 +929,7 @@ function SettingsContent() {
               </button>
             </div>
           </div>
+        </div>}
         </section>
 
         {/* ─── Token Wallet ─── */}
@@ -1003,16 +1041,21 @@ function SettingsContent() {
           </div>
         </section>
 
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
-          <div className="md:col-span-4">
-            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
-              <CalendarClock className="w-5 h-5 text-ink-faint" />
-              Brief Schedule
-            </h3>
-            <p className="text-sm text-ink-faint mt-1">
-              Choose delivery days and time for your elite weekly brief package (high-signal reads + synthesis).
-            </p>
-          </div>
+        <section className="pt-12 border-t border-line">
+          <button onClick={() => toggleSection('brief-schedule')} className="w-full text-left grid grid-cols-1 md:grid-cols-12 gap-8">
+            <div className="md:col-span-4">
+              <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+                {collapsedSections.has('brief-schedule') ? <ChevronRight className="w-5 h-5 text-ink-faint" /> : <ChevronDown className="w-5 h-5 text-ink-faint" />}
+                <CalendarClock className="w-5 h-5 text-ink-faint" />
+                Brief Schedule
+              </h3>
+              <p className="text-sm text-ink-faint mt-1 ml-7">
+                Choose delivery days and time for your elite weekly brief package (high-signal reads + synthesis).
+              </p>
+            </div>
+          </button>
+          {!collapsedSections.has('brief-schedule') && <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mt-8">
+          <div className="md:col-span-4" />
           <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6 space-y-6">
             <div>
               <p className="text-label uppercase text-ink-faint mb-3">Delivery Days</p>
@@ -1081,20 +1124,26 @@ function SettingsContent() {
               Your brief is generated from newsletters received at your Readflow email address. Forward emails or subscribe directly to keep your brief up to date.
             </p>
           </div>
+        </div>}
         </section>
 
         {/* ─── Gmail Sync (Coming Soon) ─── */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
-          <div className="md:col-span-4">
-            <h3 className="font-bold text-lg text-ink flex items-center gap-2">
-              <Mail className="w-5 h-5 text-ink-faint" />
-              Gmail Sync
-              <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded">Coming Soon</span>
-            </h3>
-            <p className="text-sm text-ink-faint mt-1">
-              Direct Gmail import is coming in a future update.
-            </p>
-          </div>
+        <section className="pt-12 border-t border-line">
+          <button onClick={() => toggleSection('gmail-sync')} className="w-full text-left grid grid-cols-1 md:grid-cols-12 gap-8">
+            <div className="md:col-span-4">
+              <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+                {collapsedSections.has('gmail-sync') ? <ChevronRight className="w-5 h-5 text-ink-faint" /> : <ChevronDown className="w-5 h-5 text-ink-faint" />}
+                <Mail className="w-5 h-5 text-ink-faint" />
+                Gmail Sync
+                <span className="text-[10px] uppercase tracking-wider text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-700 px-1.5 py-0.5 rounded">Coming Soon</span>
+              </h3>
+              <p className="text-sm text-ink-faint mt-1 ml-7">
+                Direct Gmail import is coming in a future update.
+              </p>
+            </div>
+          </button>
+          {!collapsedSections.has('gmail-sync') && <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mt-8">
+          <div className="md:col-span-4" />
           <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line">
             <div className="p-6 text-center py-10">
               <Mail className="w-10 h-10 text-ink-faint/40 mx-auto mb-4" />
@@ -1104,17 +1153,23 @@ function SettingsContent() {
               </p>
             </div>
           </div>
+        </div>}
         </section>
 
         {/* ─── Danger Zone ─── */}
-        <section className="grid grid-cols-1 md:grid-cols-12 gap-8 pt-12 border-t border-line">
-          <div className="md:col-span-4">
-            <h3 className="font-bold text-lg text-accent flex items-center gap-2">
-              <ShieldAlert className="w-5 h-5" />
-              Danger Zone
-            </h3>
-            <p className="text-sm text-ink-faint mt-1">Irreversible actions.</p>
-          </div>
+        <section className="pt-12 border-t border-line">
+          <button onClick={() => toggleSection('danger-zone')} className="w-full text-left grid grid-cols-1 md:grid-cols-12 gap-8">
+            <div className="md:col-span-4">
+              <h3 className="font-bold text-lg text-accent flex items-center gap-2">
+                {collapsedSections.has('danger-zone') ? <ChevronRight className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
+                <ShieldAlert className="w-5 h-5" />
+                Danger Zone
+              </h3>
+              <p className="text-sm text-ink-faint mt-1 ml-7">Irreversible actions.</p>
+            </div>
+          </button>
+          {!collapsedSections.has('danger-zone') && <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mt-8">
+          <div className="md:col-span-4" />
           <div className="md:col-span-8 rounded-2xl border border-red-200 dark:border-red-800 bg-red-50/50 dark:bg-red-900/10 p-6 space-y-4">
 
             <div>
@@ -1169,6 +1224,7 @@ function SettingsContent() {
               )}
             </div>
           </div>
+        </div>}
         </section>
       </div>
     </div>
