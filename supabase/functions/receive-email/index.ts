@@ -208,7 +208,13 @@ Deno.serve(async (req) => {
     // ─── 5. SANITIZE HTML (fall back to plain text → HTML) ───
     const cleanHtml = sanitizeHtml(bodyHtml || '') || textToHtml(bodyText || '');
 
-    // ─── 6. INSERT THE ISSUE ───
+    // ─── 6. CLASSIFY & INSERT THE ISSUE ───
+    const signal = classifyIssueSignal({
+      subject,
+      snippet,
+      bodyText: bodyText || '',
+    });
+
     const { data: issue, error: issueError } = await supabase
       .from('issues')
       .insert({
@@ -222,6 +228,8 @@ Deno.serve(async (req) => {
         message_id: messageId,
         received_at: new Date().toISOString(),
         status: 'unread',
+        signal_tier: signal.tier,
+        signal_reason: signal.reason,
       })
       .select()
       .single();
@@ -333,6 +341,64 @@ Deno.serve(async (req) => {
     });
   }
 });
+
+
+// ─── HELPER: Heuristic signal-tier classification ───
+// Mirrors utils/signalSortHeuristics.ts so forwarded emails get categorised
+// the same way as Gmail-synced articles.
+
+type SignalTier = 'high_signal' | 'news' | 'reference' | 'unclassified';
+
+const HIGH_SIGNAL_KEYWORDS = [
+  'playbook', 'strategy', 'framework', 'deep dive', 'analysis',
+  'market map', 'operator', 'benchmark', 'alpha', 'roadmap',
+  'thesis', 'case study', 'signals', 'opportunity', 'fundraising',
+  'pricing', 'growth', 'retention', 'gtm', 'go-to-market',
+];
+
+const NEWS_KEYWORDS = [
+  'daily', 'breaking', 'headlines', 'roundup', 'this week',
+  'today in', 'digest', 'briefing', 'updates', 'news',
+  'recap', 'bulletin', 'morning',
+];
+
+const REFERENCE_KEYWORDS = [
+  'guide', 'tutorial', 'documentation', 'resources', 'cheat sheet',
+  'checklist', 'toolkit', 'template', 'collection', 'library',
+  'best practices', 'evergreen', 'archive',
+];
+
+function countKeywordMatches(haystack: string, needles: string[]) {
+  return needles.reduce((n, kw) => n + (haystack.includes(kw) ? 1 : 0), 0);
+}
+
+function classifyIssueSignal(params: {
+  subject?: string | null;
+  snippet?: string | null;
+  bodyText?: string | null;
+}): { tier: SignalTier; reason: string } {
+  const subj = (params.subject || '').toLowerCase();
+  const snip = (params.snippet || '').toLowerCase();
+  const body = (params.bodyText || '').toLowerCase();
+  const text = `${subj}\n${snip}\n${body}`;
+
+  const hs = countKeywordMatches(text, HIGH_SIGNAL_KEYWORDS)
+    + countKeywordMatches(subj, ['strategy', 'playbook', 'deep dive']) * 2;
+  const ns = countKeywordMatches(text, NEWS_KEYWORDS)
+    + countKeywordMatches(subj, ['daily', 'news', 'roundup']) * 2;
+  const rs = countKeywordMatches(text, REFERENCE_KEYWORDS);
+
+  if (hs === 0 && ns === 0 && rs === 0) {
+    return { tier: 'unclassified', reason: 'No clear signal markers detected yet.' };
+  }
+  if (hs >= ns && hs >= rs) {
+    return { tier: 'high_signal', reason: 'Detected strategy/actionable language.' };
+  }
+  if (ns >= hs && ns >= rs) {
+    return { tier: 'news', reason: 'Detected recap/update newsletter language.' };
+  }
+  return { tier: 'reference', reason: 'Detected evergreen or resource-style language.' };
+}
 
 
 // ─── HELPER: Parse different email provider formats ───
