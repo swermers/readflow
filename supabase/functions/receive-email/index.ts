@@ -558,35 +558,22 @@ function stripForwardingHeaders(body: string): string {
 
   let cleaned = body;
 
-  // ─── Gmail HTML: remove the gmail_attr div AND everything before it ───
+  // ─── Gmail HTML: remove everything up through the gmail_attr div ───
   // When a user manually forwards, Gmail wraps the email as:
   //   [user's personal message + signature]
-  //   <div class="gmail_attr">---------- Forwarded message ----------</div>
-  //   <div class="gmail_quote">[original newsletter]</div>
+  //   <div class="gmail_attr">---------- Forwarded message ----------
+  //   From: ... Date: ... Subject: ... To: ...</div>
+  //   [actual newsletter content]
   //
-  // We want to strip both the gmail_attr div AND the forwarder's content
-  // (signature, personal message) that appears before it.
-  const gmailAttrIdx = cleaned.search(/<div[^>]*class="[^"]*gmail_attr[^"]*"/i);
-  if (gmailAttrIdx !== -1) {
-    // Remove the gmail_attr div itself
-    const afterAttrStrip = cleaned.replace(
-      /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*?<\/div>/i,
-      '',
-    );
-    // Now remove everything before where the gmail_attr was — that's the
-    // forwarder's personal content (message + signature).
-    // Find the gmail_quote div which contains the actual newsletter.
-    const quoteMatch = afterAttrStrip.match(
-      /<div[^>]*class="[^"]*gmail_quote[^"]*"[^>]*>/i,
-    );
-    if (quoteMatch && quoteMatch.index !== undefined) {
-      // Keep only from the gmail_quote div onward
-      cleaned = afterAttrStrip.substring(quoteMatch.index);
-    } else {
-      // No gmail_quote — just strip everything before the original attr position
-      // and use whatever remains
-      cleaned = afterAttrStrip;
-    }
+  // The gmail_attr div is the boundary: everything before and including it
+  // is forwarder content (message, signature, forwarding metadata).
+  // Everything after it is the original newsletter.
+  const gmailAttrMatch = cleaned.match(
+    /<div[^>]*class="[^"]*gmail_attr[^"]*"[^>]*>[\s\S]*?<\/div>/i,
+  );
+  if (gmailAttrMatch && gmailAttrMatch.index !== undefined) {
+    const endOfAttr = gmailAttrMatch.index + gmailAttrMatch[0].length;
+    cleaned = cleaned.substring(endOfAttr);
   }
 
   // ─── Clean up leading empty HTML elements & whitespace ───
