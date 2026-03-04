@@ -5,6 +5,29 @@ import DOMPurify from 'dompurify';
 import HighlightToolbar from './HighlightToolbar';
 import HighlightPopover from './HighlightPopover';
 
+/** Fix encoding artifacts common in forwarded newsletter emails */
+function fixEncoding(html: string): string {
+  let s = html;
+
+  // Â + non-breaking space → regular space
+  // (UTF-8 \xC2\xA0 for NBSP gets double-encoded during email forwarding)
+  s = s.replace(/Â\u00A0/g, ' ');
+  s = s.replace(/Â /g, ' ');
+
+  // Common UTF-8 mojibake (UTF-8 bytes misread as Windows-1252)
+  s = s.replace(/â€™/g, '\u2019'); // ' right single quote
+  s = s.replace(/â€˜/g, '\u2018'); // ' left single quote
+  s = s.replace(/â€œ/g, '\u201C'); // " left double quote
+  s = s.replace(/â€¦/g, '\u2026'); // … ellipsis
+  s = s.replace(/â€"/g, '\u2014'); // — em dash
+  s = s.replace(/â€"/g, '\u2013'); // – en dash
+
+  // Replace remaining non-breaking spaces with regular spaces
+  s = s.replace(/\u00A0/g, ' ');
+
+  return s;
+}
+
 type Highlight = {
   id: string;
   issue_id: string;
@@ -450,7 +473,7 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
     // Always rehydrate from clean HTML so marks stay in sync after refreshes,
     // edits, migrations, and "jump to paragraph" deep-links.
     // Client-side DOMPurify as defense-in-depth (server already sanitizes on ingest).
-    container.innerHTML = DOMPurify.sanitize(bodyHtml || '', {
+    container.innerHTML = DOMPurify.sanitize(fixEncoding(bodyHtml || ''), {
       FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'applet', 'form', 'input', 'button', 'select', 'textarea'],
       FORBID_ATTR: ['onerror', 'onload', 'onclick', 'onmouseover', 'onfocus', 'onblur'],
       ADD_ATTR: ['target'],

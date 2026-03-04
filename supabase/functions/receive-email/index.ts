@@ -339,6 +339,23 @@ function sanitizeHtml(html: string): string {
   // Remove onclick and other event handlers
   clean = clean.replace(/\s+on\w+\s*=\s*["'][^"']*["']/gi, '');
 
+  // ─── Fix encoding artifacts from email forwarding ───
+
+  // Â + non-breaking space → regular space (double-encoded UTF-8 NBSP)
+  clean = clean.replace(/Â\u00A0/g, ' ');
+  clean = clean.replace(/Â /g, ' ');
+
+  // Common UTF-8 mojibake (UTF-8 bytes misread as Windows-1252)
+  clean = clean.replace(/â€™/g, '\u2019'); // ' right single quote
+  clean = clean.replace(/â€˜/g, '\u2018'); // ' left single quote
+  clean = clean.replace(/â€œ/g, '\u201C'); // " left double quote
+  clean = clean.replace(/â€¦/g, '\u2026'); // … ellipsis
+  clean = clean.replace(/â€"/g, '\u2014'); // — em dash
+  clean = clean.replace(/â€"/g, '\u2013'); // – en dash
+
+  // Replace remaining non-breaking spaces with regular spaces
+  clean = clean.replace(/\u00A0/g, ' ');
+
   return clean;
 }
 
