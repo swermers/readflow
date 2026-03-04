@@ -4,14 +4,14 @@ import { createClient } from '@/utils/supabase/client';
 import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 
-type AuthMode = 'signin' | 'signup' | 'magic-link';
+type AuthMode = 'magic-link' | 'signin' | 'signup';
 
 export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [checkingSession, setCheckingSession] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [mode, setMode] = useState<AuthMode>('signin');
+  const [mode, setMode] = useState<AuthMode>('magic-link');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const supabase = createClient();
@@ -174,48 +174,79 @@ export default function LoginPage() {
             <div className="flex-1 h-px bg-line" />
           </div>
 
-          {/* Email form */}
-          <form onSubmit={handleEmailAuth} className="space-y-3">
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
-            />
+          {/* Magic link (default) */}
+          {mode === 'magic-link' && (
+            <>
+              <form onSubmit={handleEmailAuth} className="space-y-3">
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
+                />
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-3 rounded-lg border border-line bg-surface px-4 py-3 text-sm font-medium text-ink hover:bg-surface-overlay transition-colors disabled:opacity-50"
+                >
+                  <svg className="h-[18px] w-[18px] shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <rect x="2" y="4" width="20" height="16" rx="2" />
+                    <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7" />
+                  </svg>
+                  {loading ? 'Sending...' : 'Continue with Email'}
+                </button>
+              </form>
 
-            {mode !== 'magic-link' && (
-              <input
-                type="password"
-                placeholder="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
-              />
-            )}
+              {/* Traditional login below */}
+              <div className="mt-5 space-y-2 text-center text-xs text-ink-muted">
+                <p>
+                  <button onClick={() => switchMode('signin')} className="text-ink-muted hover:text-accent transition-colors">
+                    Sign in with password
+                  </button>
+                </p>
+                <p className="text-ink-faint">
+                  Don&apos;t have an account?{' '}
+                  <button onClick={() => switchMode('signup')} className="text-accent hover:underline">
+                    Sign up
+                  </button>
+                </p>
+              </div>
+            </>
+          )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full rounded-lg bg-ink text-surface font-medium text-sm px-4 py-3 hover:bg-accent transition-colors disabled:opacity-50"
-            >
-              {loading
-                ? 'Loading...'
-                : mode === 'signup'
-                  ? 'Create account'
-                  : mode === 'magic-link'
-                    ? 'Send magic link'
-                    : 'Sign in'}
-            </button>
-          </form>
+          {/* Sign in with password */}
+          {mode === 'signin' && (
+            <>
+              <form onSubmit={handleEmailAuth} className="space-y-3">
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
+                />
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-lg bg-ink text-surface font-medium text-sm px-4 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Loading...' : 'Sign in'}
+                </button>
+              </form>
 
-          {/* Links */}
-          <div className="mt-4 space-y-2 text-center text-xs text-ink-muted">
-            {mode === 'signin' && (
-              <>
+              <div className="mt-4 space-y-2 text-center text-xs text-ink-muted">
                 <p>
                   <a href="/auth/reset-password" className="text-accent hover:underline">
                     Forgot password?
@@ -232,24 +263,50 @@ export default function LoginPage() {
                     Sign up
                   </button>
                 </p>
-              </>
-            )}
-            {mode === 'signup' && (
-              <p>
-                Already have an account?{' '}
-                <button onClick={() => switchMode('signin')} className="text-accent hover:underline">
-                  Sign in
+              </div>
+            </>
+          )}
+
+          {/* Sign up */}
+          {mode === 'signup' && (
+            <>
+              <form onSubmit={handleEmailAuth} className="space-y-3">
+                <input
+                  type="email"
+                  placeholder="Email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
+                />
+                <input
+                  type="password"
+                  placeholder="Password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  className="w-full rounded-lg bg-surface border border-line text-ink text-sm px-4 py-3 focus:outline-none focus:border-accent placeholder:text-ink-faint"
+                />
+                <button
+                  type="submit"
+                  disabled={loading}
+                  className="w-full rounded-lg bg-ink text-surface font-medium text-sm px-4 py-3 hover:bg-accent transition-colors disabled:opacity-50"
+                >
+                  {loading ? 'Loading...' : 'Create account'}
                 </button>
-              </p>
-            )}
-            {mode === 'magic-link' && (
-              <p>
-                <button onClick={() => switchMode('signin')} className="text-ink-muted hover:text-accent transition-colors">
-                  Sign in with password instead
-                </button>
-              </p>
-            )}
-          </div>
+              </form>
+
+              <div className="mt-4 text-center text-xs text-ink-muted">
+                <p>
+                  Already have an account?{' '}
+                  <button onClick={() => switchMode('signin')} className="text-accent hover:underline">
+                    Sign in
+                  </button>
+                </p>
+              </div>
+            </>
+          )}
         </div>
 
         {/* Footer */}
