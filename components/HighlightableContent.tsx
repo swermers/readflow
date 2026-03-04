@@ -344,7 +344,39 @@ export default function HighlightableContent({ issueId, bodyHtml }: { issueId: s
         usedRanges.push({ start, end });
         return true;
       } catch {
-        return false;
+        // surroundContents fails when the range spans multiple elements.
+        // Fall back to wrapping each text node individually.
+        const textNodes = getTextNodesInRange(range, container);
+        if (textNodes.length === 0) return false;
+
+        textNodes.forEach((node) => {
+          const nodeStart = node === range.startContainer ? range.startOffset : 0;
+          const nodeEnd = node === range.endContainer ? range.endOffset : node.textContent?.length ?? 0;
+
+          if (nodeEnd <= nodeStart) return;
+
+          try {
+            const nodeRange = document.createRange();
+            nodeRange.setStart(node, nodeStart);
+            nodeRange.setEnd(node, nodeEnd);
+
+            const segmentMark = document.createElement('mark');
+            segmentMark.className = 'readflow-highlight';
+            segmentMark.dataset.highlightId = id;
+            const hasNote = !!note?.trim();
+            segmentMark.dataset.hasNote = hasNote ? 'true' : 'false';
+            if (hasNote) {
+              segmentMark.setAttribute('title', note!.trim());
+              segmentMark.setAttribute('aria-label', `Highlight note: ${note!.trim()}`);
+            }
+            nodeRange.surroundContents(segmentMark);
+          } catch {
+            // no-op for individual node failures
+          }
+        });
+
+        usedRanges.push({ start, end });
+        return true;
       }
     };
 
