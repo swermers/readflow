@@ -236,7 +236,91 @@ Deno.serve(async (req) => {
 
     console.log(`Stored issue "${subject}" from ${fromEmail} for user ${userId}`);
 
-    return new Response(JSON.stringify({ success: true, issue_id: issue.id }), {
+    // ─── 7. HANDLE EBOOK ATTACHMENTS ───
+    const ebookAttachments = payload.ebook_attachments as Array<{
+      filename: string;
+      file_type: string;
+      content_base64: string;
+      size: number;
+    }> | undefined;
+
+    const storedEbooks: string[] = [];
+
+    if (ebookAttachments && ebookAttachments.length > 0) {
+      for (const att of ebookAttachments) {
+        try {
+          // Decode base64 to binary
+          const binaryStr = atob(att.content_base64);
+          const bytes = new Uint8Array(binaryStr.length);
+          for (let i = 0; i < binaryStr.length; i++) {
+            bytes[i] = binaryStr.charCodeAt(i);
+          }
+
+          // Derive a title from the filename (strip extension)
+          const title = att.filename
+            .replace(/\.(pdf|epub)$/i, '')
+            .replace(/[-_]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim() || subject || 'Untitled';
+
+          // Create the ebook record first to get an ID
+          const { data: ebook, error: ebookInsertError } = await supabase
+            .from('ebooks')
+            .insert({
+              user_id: userId,
+              title,
+              file_path: '', // placeholder, updated after upload
+              file_name: att.filename,
+              file_size: att.size,
+              file_type: att.file_type,
+              sender_email: fromEmail,
+              status: 'unread',
+            })
+            .select()
+            .single();
+
+          if (ebookInsertError || !ebook) {
+            console.error('Error creating ebook record:', ebookInsertError);
+            continue;
+          }
+
+          // Upload to Supabase Storage
+          const storagePath = `${userId}/${ebook.id}.${att.file_type}`;
+          const mimeType = att.file_type === 'pdf' ? 'application/pdf' : 'application/epub+zip';
+
+          const { error: uploadError } = await supabase.storage
+            .from('ebooks')
+            .upload(storagePath, bytes, {
+              contentType: mimeType,
+              upsert: false,
+            });
+
+          if (uploadError) {
+            console.error('Error uploading ebook file:', uploadError);
+            // Clean up the record
+            await supabase.from('ebooks').delete().eq('id', ebook.id);
+            continue;
+          }
+
+          // Update record with the storage path
+          await supabase
+            .from('ebooks')
+            .update({ file_path: storagePath })
+            .eq('id', ebook.id);
+
+          storedEbooks.push(ebook.id);
+          console.log(`Stored ebook "${title}" (${att.file_type}) for user ${userId}`);
+        } catch (ebookErr) {
+          console.error('Error processing ebook attachment:', ebookErr);
+        }
+      }
+    }
+
+    return new Response(JSON.stringify({
+      success: true,
+      issue_id: issue.id,
+      ...(storedEbooks.length > 0 ? { ebook_ids: storedEbooks } : {}),
+    }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });

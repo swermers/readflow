@@ -2,13 +2,13 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Archive, BookMarked, Compass, Newspaper, StickyNote } from 'lucide-react';
+import { Archive, BookMarked, BookOpen, Compass, Newspaper, StickyNote } from 'lucide-react';
 
 const navItems = [
   { href: '/rack', label: 'Rack', icon: Newspaper },
   { href: '/briefing', label: 'Brief', icon: Compass },
   { href: '/library', label: 'Library', icon: BookMarked },
-  { href: '/archive', label: 'Archive', icon: Archive },
+  { href: '/books', label: 'Books', icon: BookOpen },
   { href: '/notes', label: 'Notes', icon: StickyNote },
 ];
 
