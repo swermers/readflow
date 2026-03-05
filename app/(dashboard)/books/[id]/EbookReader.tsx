@@ -85,12 +85,12 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
           </div>
         </div>
 
-        {/* PDF iframe — wrapped for iOS touch scrolling */}
-        <div className="min-h-0 flex-1 overflow-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        {/* PDF iframe — use relative/absolute so it fills the flex slot on mobile */}
+        <div className="relative min-h-0 flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
           <iframe
             ref={iframeRef}
             src={`/api/ebooks/${ebook.id}/file`}
-            className="h-full w-full border-0"
+            className="absolute inset-0 h-full w-full border-0"
             title={ebook.title}
           />
         </div>
