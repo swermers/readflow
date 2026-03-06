@@ -70,7 +70,7 @@ export default {
     // edge function which detects the prefix, extracts the original sender,
     // and strips forwarding headers from the body.
     const rfc822Attachment = parsed.attachments?.find(
-      (a: any) => a.contentType === 'message/rfc822',
+      (a: any) => a.mimeType === 'message/rfc822',
     );
 
     // Track inner attachments from forwarded emails so ebook extraction
