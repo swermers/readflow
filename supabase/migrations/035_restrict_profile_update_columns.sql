@@ -30,5 +30,5 @@ CREATE POLICY "Users can update own profile"
     AND billing_cycle = (SELECT p.billing_cycle FROM profiles p WHERE p.id = auth.uid())
     AND gmail_access_token = (SELECT p.gmail_access_token FROM profiles p WHERE p.id = auth.uid())
     AND gmail_refresh_token = (SELECT p.gmail_refresh_token FROM profiles p WHERE p.id = auth.uid())
-    AND gmail_token_expiry = (SELECT p.gmail_token_expiry FROM profiles p WHERE p.id = auth.uid())
+    AND gmail_token_expires_at = (SELECT p.gmail_token_expires_at FROM profiles p WHERE p.id = auth.uid())
   );
