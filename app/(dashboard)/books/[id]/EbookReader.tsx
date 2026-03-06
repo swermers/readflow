@@ -1,7 +1,12 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { BookOpen, ChevronLeft, ChevronRight, Maximize2, Minimize2 } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { BookOpen, Maximize2, Minimize2 } from 'lucide-react';
+import { Document, Page, pdfjs } from 'react-pdf';
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
 
 type Ebook = {
   id: string;
@@ -14,10 +19,12 @@ type Ebook = {
 };
 
 export default function EbookReader({ ebook }: { ebook: Ebook }) {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [numPages, setNumPages] = useState<number | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [hasMarkedReading, setHasMarkedReading] = useState(ebook.status !== 'unread');
+  const [containerWidth, setContainerWidth] = useState<number>(0);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   // Mark as "reading" on first view
   useEffect(() => {
@@ -30,6 +37,19 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
       setHasMarkedReading(true);
     }
   }, [ebook.id, ebook.status, hasMarkedReading]);
+
+  // Track container width for responsive page sizing
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    const update = () => setContainerWidth(el.clientWidth);
+    update();
+
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
 
   const toggleFullscreen = () => {
     if (!containerRef.current) return;
@@ -59,6 +79,13 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
     });
   };
 
+  const onDocumentLoadSuccess = useCallback(({ numPages: n }: { numPages: number }) => {
+    setNumPages(n);
+  }, []);
+
+  // Page width: fill container minus padding, capped at 900px for readability
+  const pageWidth = containerWidth > 0 ? Math.min(containerWidth - 32, 900) : undefined;
+
   if (ebook.file_type === 'pdf') {
     return (
       <div ref={containerRef} className="flex min-h-0 flex-1 flex-col bg-surface-overlay">
@@ -66,7 +93,10 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
         <div className="flex shrink-0 items-center justify-between border-b border-line bg-surface px-4 py-2">
           <div className="flex items-center gap-2 text-xs text-ink-muted">
             <BookOpen className="h-3.5 w-3.5" />
-            <span>PDF Reader</span>
+            <span>
+              PDF Reader
+              {numPages && <span className="ml-1 text-ink-faint">({numPages} pages)</span>}
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -85,14 +115,46 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
           </div>
         </div>
 
-        {/* PDF iframe — use relative/absolute so it fills the flex slot on mobile */}
-        <div className="relative min-h-0 flex-1" style={{ WebkitOverflowScrolling: 'touch' }}>
-          <iframe
-            ref={iframeRef}
-            src={`/api/ebooks/${ebook.id}/file`}
-            className="absolute inset-0 h-full w-full border-0"
-            title={ebook.title}
-          />
+        {/* Scrollable PDF pages */}
+        <div
+          ref={scrollRef}
+          className="min-h-0 flex-1 overflow-y-auto"
+          style={{ WebkitOverflowScrolling: 'touch' }}
+        >
+          <Document
+            file={`/api/ebooks/${ebook.id}/file`}
+            onLoadSuccess={onDocumentLoadSuccess}
+            loading={
+              <div className="flex items-center justify-center py-20 text-sm text-ink-muted">
+                Loading PDF...
+              </div>
+            }
+            error={
+              <div className="flex flex-col items-center justify-center gap-3 py-20 text-sm text-ink-muted">
+                <p>Unable to display PDF.</p>
+                <a
+                  href={`/api/ebooks/${ebook.id}/file`}
+                  download={ebook.title}
+                  className="rounded-xl bg-accent px-4 py-2 text-sm font-bold text-white hover:bg-accent-hover"
+                >
+                  Download instead
+                </a>
+              </div>
+            }
+          >
+            {numPages &&
+              Array.from({ length: numPages }, (_, i) => (
+                <div key={i} className="flex justify-center py-2 first:pt-4 last:pb-4">
+                  <Page
+                    pageNumber={i + 1}
+                    width={pageWidth}
+                    className="shadow-lg"
+                    renderAnnotationLayer
+                    renderTextLayer
+                  />
+                </div>
+              ))}
+          </Document>
         </div>
       </div>
     );
