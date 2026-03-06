@@ -15,6 +15,7 @@ type PlayOptions = {
 
 type GlobalAudioPlayerContextValue = {
   playAudio: (url: string, options?: PlayOptions) => Promise<void>;
+  swapAudioSource: (newUrl: string) => void;
   isCurrentUrl: (url: string | null | undefined) => boolean;
 };
 
@@ -69,6 +70,18 @@ export function GlobalAudioPlayerProvider({ children }: { children: React.ReactN
       await audioRef.current.play();
     } catch {
       // fallback to manual controls in player UI
+    }
+  };
+
+  const swapAudioSource = (newUrl: string) => {
+    if (!audioRef.current) return;
+    const wasPlaying = !audioRef.current.paused;
+    const savedTime = audioRef.current.currentTime;
+    audioRef.current.src = newUrl;
+    setCurrentUrl(newUrl);
+    audioRef.current.currentTime = savedTime;
+    if (wasPlaying) {
+      void audioRef.current.play();
     }
   };
 
@@ -208,6 +221,7 @@ export function GlobalAudioPlayerProvider({ children }: { children: React.ReactN
   const value = useMemo<GlobalAudioPlayerContextValue>(
     () => ({
       playAudio,
+      swapAudioSource,
       isCurrentUrl: (url) => Boolean(url && currentUrl === url),
     }),
     [currentUrl]
