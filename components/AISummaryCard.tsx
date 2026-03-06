@@ -127,11 +127,13 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
   const [nowTick, setNowTick] = useState(Date.now());
 
   const [creditsMeta, setCreditsMeta] = useState<{ remaining: number; limit: number; tier: string; unlimited?: boolean } | null>(null);
-  const { playAudio, isCurrentUrl } = useGlobalAudioPlayer();
+  const { playAudio, swapAudioSource, isCurrentUrl } = useGlobalAudioPlayer();
 
   const audioChapters = useMemo(() => buildAudioChapters(articleText, articleSubject), [articleText, articleSubject]);
   const estimatedWaitSeconds = useMemo(() => estimateAudioWaitSeconds(articleText), [articleText]);
   const readyToastShownRef = useRef(false);
+  const userInitiatedRef = useRef(false);
+  const previewAutoPlayedRef = useRef(false);
 
   const setGlobalAudioPendingIssue = () => {
     if (typeof window === 'undefined') return;
@@ -147,6 +149,8 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
   useEffect(() => {
     readyToastShownRef.current = false;
+    userInitiatedRef.current = false;
+    previewAutoPlayedRef.current = false;
   }, [issueId]);
 
   const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
@@ -230,6 +234,31 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     const interval = setInterval(() => setNowTick(Date.now()), 1000);
     return () => clearInterval(interval);
   }, [audioStatus]);
+
+  // Auto-play preview chunk as soon as it becomes available
+  useEffect(() => {
+    if (!previewAudioUrl) return;
+    if (previewAutoPlayedRef.current) return;
+    if (!userInitiatedRef.current) return;
+    if (audioStatus !== 'queued' && audioStatus !== 'processing') return;
+
+    previewAutoPlayedRef.current = true;
+    void playAudio(previewAudioUrl, {
+      title: articleSubject ? `${articleSubject} digest` : 'Newsletter digest',
+      chapters: audioChapters,
+    });
+  }, [previewAudioUrl, audioStatus]);
+
+  // Seamlessly swap to full audio when ready (preserving playback position)
+  useEffect(() => {
+    if (audioStatus !== 'ready' || !audioUrl) return;
+    if (!userInitiatedRef.current) return;
+
+    // If preview is currently playing, swap to full audio seamlessly
+    if (previewAutoPlayedRef.current && isCurrentUrl(previewAudioUrl)) {
+      swapAudioSource(audioUrl);
+    }
+  }, [audioStatus, audioUrl]);
 
   useEffect(() => {
     if (audioStatus !== 'queued' && audioStatus !== 'processing') return;
@@ -316,6 +345,8 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     setAudioQueuedAt(Date.now());
     setAudioHints([]);
     readyToastShownRef.current = false;
+    previewAutoPlayedRef.current = false;
+    userInitiatedRef.current = true;
     setGlobalAudioPendingIssue();
 
     try {

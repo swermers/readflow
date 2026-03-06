@@ -7,6 +7,8 @@ import { generateAudioDigest } from '@/utils/audioDigest';
 
 const MAX_CHUNK_CHARS = 2500;
 const FIRST_CHUNK_CHARS = 420;
+const TTS_FETCH_TIMEOUT_MS = 30_000; // 30s timeout per TTS API call
+const TTS_PARALLEL_BATCH_SIZE = 3;   // Process up to 3 chunks in parallel
 
 function truncateAtSignoff(text: string) {
   const lines = text
@@ -83,14 +85,26 @@ async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: st
   let lastStatus = 0;
   let lastError = '';
   for (const model of models) {
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${openaiApiKey}`,
-      },
-      body: JSON.stringify({ model, input, voice, response_format: 'mp3' }),
-    });
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), TTS_FETCH_TIMEOUT_MS);
+    let res: Response;
+    try {
+      res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${openaiApiKey}`,
+        },
+        body: JSON.stringify({ model, input, voice, response_format: 'mp3' }),
+        signal: controller.signal,
+      });
+    } catch (fetchErr) {
+      clearTimeout(timeout);
+      lastStatus = 0;
+      lastError = fetchErr instanceof Error ? fetchErr.message : 'fetch failed';
+      continue;
+    }
+    clearTimeout(timeout);
 
     if (res.ok) {
       const audioBuffer = await res.arrayBuffer();
@@ -239,10 +253,11 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   const audioChunks: Buffer[] = [];
   let usedModel = preferredModel;
 
-  for (let i = 0; i < chunks.length; i += 1) {
-    const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[i], voice, preferredModel);
+  // Process first chunk separately (needed for preview / first_chunk_base64)
+  {
+    const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[0], voice, preferredModel);
     if (!tts.ok) {
-      const failReason = `Audio provider failed on chunk ${i + 1}/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`;
+      const failReason = `Audio provider failed on chunk 1/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`;
       await setAudioStatus(supabase, userId, issueId, 'failed', preferredModel);
       await safeRecordMetric(supabase, 'audio_generation_failed', 1, failReason);
       throw new Error(failReason);
@@ -252,16 +267,35 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     const chunkBuffer = Buffer.from(tts.audioBuffer);
     audioChunks.push(chunkBuffer);
 
-    if (i === 0) {
-      const firstChunkReadyAt = new Date();
-      await setAudioStatus(supabase, userId, issueId, 'processing', usedModel, {
-        first_chunk_base64: chunkBuffer.toString('base64'),
-        first_chunk_ready_at: firstChunkReadyAt.toISOString(),
-        audio_hash: audioHash,
-      });
+    const firstChunkReadyAt = new Date();
+    await setAudioStatus(supabase, userId, issueId, 'processing', usedModel, {
+      first_chunk_base64: chunkBuffer.toString('base64'),
+      first_chunk_ready_at: firstChunkReadyAt.toISOString(),
+      audio_hash: audioHash,
+    });
 
-      const firstChunkLatency = latencyMs(generationStartedAt, firstChunkReadyAt);
-      if (firstChunkLatency !== null) await safeRecordMetric(supabase, 'audio_first_chunk_latency_ms', firstChunkLatency);
+    const firstChunkLatency = latencyMs(generationStartedAt, firstChunkReadyAt);
+    if (firstChunkLatency !== null) await safeRecordMetric(supabase, 'audio_first_chunk_latency_ms', firstChunkLatency);
+  }
+
+  // Process remaining chunks in parallel batches for faster generation
+  for (let i = 1; i < chunks.length; i += TTS_PARALLEL_BATCH_SIZE) {
+    const batch = chunks.slice(i, i + TTS_PARALLEL_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map((chunkText) => requestTtsAudio(endpoint, openaiApiKey, chunkText, voice, preferredModel)),
+    );
+
+    for (let j = 0; j < results.length; j += 1) {
+      const tts = results[j];
+      const chunkIdx = i + j;
+      if (!tts.ok) {
+        const failReason = `Audio provider failed on chunk ${chunkIdx + 1}/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`;
+        await setAudioStatus(supabase, userId, issueId, 'failed', preferredModel);
+        await safeRecordMetric(supabase, 'audio_generation_failed', 1, failReason);
+        throw new Error(failReason);
+      }
+      usedModel = tts.model;
+      audioChunks.push(Buffer.from(tts.audioBuffer));
     }
   }
 

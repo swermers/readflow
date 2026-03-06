@@ -214,6 +214,19 @@ async function handleSync() {
     const deletedIds = new Set((deletedIssueRows || []).map((i) => i.message_id));
     const newMessageIds = messageIds.filter((id) => !existingIds.has(id) && !deletedIds.has(id));
 
+    // Also fetch recent subjects for cross-path dedup (Gmail sync vs email forwarding
+    // use different message_id formats, so message_id dedup alone isn't sufficient).
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const { data: recentSubjects } = await db
+      .from('issues')
+      .select('subject')
+      .eq('user_id', user.id)
+      .gte('received_at', oneDayAgo);
+
+    const recentSubjectSet = new Set(
+      (recentSubjects || []).map((i) => i.subject?.toLowerCase().trim()).filter(Boolean)
+    );
+
     console.log(`[Sync] Dedup check user=${user.id}: total=${messageIds.length} existing=${existingIds.size} deleted=${deletedIds.size} new=${newMessageIds.length}`);
 
     if (newMessageIds.length === 0) {
@@ -258,6 +271,14 @@ async function handleSync() {
 
         try {
           const parsed = await parseGmailMessage(gmailMessage);
+
+          // Subject-based cross-path dedup: skip if the same subject was already
+          // imported via the email forwarding path (or a prior sync) within 24h.
+          const normalizedSubject = parsed.subject?.toLowerCase().trim();
+          if (normalizedSubject && recentSubjectSet.has(normalizedSubject)) {
+            console.log(`[Sync] Subject-dedup: "${parsed.subject}" already exists for user=${user.id}, skipping`);
+            continue;
+          }
 
           // Find or create sender
           let { data: sender, error: senderQueryErr } = await db
@@ -329,6 +350,10 @@ async function handleSync() {
             skippedErrors++;
           } else {
             imported++;
+            // Track this subject so later messages in the same batch are also deduped
+            if (normalizedSubject) {
+              recentSubjectSet.add(normalizedSubject);
+            }
           }
         } catch (msgError) {
           const errMsg = msgError instanceof Error ? msgError.message : String(msgError);
