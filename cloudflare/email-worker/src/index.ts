@@ -73,6 +73,10 @@ export default {
       (a: any) => a.contentType === 'message/rfc822',
     );
 
+    // Track inner attachments from forwarded emails so ebook extraction
+    // can find attachments that live inside an rfc822 forwarded message.
+    let allAttachments = parsed.attachments || [];
+
     if (rfc822Attachment) {
       // The original email is attached — parse it for the real content & sender
       const innerParser = new PostalMime();
@@ -86,6 +90,11 @@ export default {
       if (inner.from) {
         senderEmail = inner.from.address || senderEmail;
         senderName = inner.from.name || senderName;
+      }
+
+      // Include inner attachments so ebooks inside forwarded emails are found
+      if (inner.attachments && inner.attachments.length > 0) {
+        allAttachments = [...allAttachments, ...inner.attachments];
       }
     }
 
@@ -104,8 +113,8 @@ export default {
       size: number;
     }> = [];
 
-    if (parsed.attachments) {
-      for (const att of parsed.attachments) {
+    if (allAttachments.length > 0) {
+      for (const att of allAttachments) {
         const fileType = EBOOK_TYPES[att.mimeType?.toLowerCase()];
         if (!fileType) continue;
         if (!att.content || att.content.byteLength > MAX_ATTACHMENT_SIZE) continue;

@@ -1,6 +1,8 @@
 import { ANTHROPIC_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
 import { sanitizeForSpeech } from '@/utils/audioScriptEngine';
 
+const AI_FETCH_TIMEOUT_MS = 45_000; // 45s timeout for AI summarization calls
+
 /**
  * Generate a structured audio digest of a newsletter article using Anthropic Claude.
  * Targets 350-500 words (~2000-3000 chars) for a 2-3 minute listen.
@@ -42,6 +44,8 @@ async function generateWithAnthropic(subject: string, articleText: string): Prom
 
   for (const model of ANTHROPIC_MODEL_CANDIDATES) {
     try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), AI_FETCH_TIMEOUT_MS);
       const res = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -56,7 +60,9 @@ async function generateWithAnthropic(subject: string, articleText: string): Prom
           system: DIGEST_SYSTEM_PROMPT,
           messages: [{ role: 'user', content: prompt }],
         }),
+        signal: controller.signal,
       });
+      clearTimeout(timeout);
 
       if (!res.ok) {
         const details = await res.text();
@@ -88,6 +94,8 @@ async function generateWithOpenAI(subject: string, articleText: string): Promise
   const snippet = articleText.slice(0, 16000);
 
   try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), AI_FETCH_TIMEOUT_MS);
     const res = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -103,7 +111,9 @@ async function generateWithOpenAI(subject: string, articleText: string): Promise
         ],
         max_tokens: 800,
       }),
+      signal: controller.signal,
     });
+    clearTimeout(timeout);
 
     if (!res.ok) return null;
 
