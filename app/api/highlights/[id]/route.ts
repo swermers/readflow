@@ -2,14 +2,16 @@ import { createClient } from '@/utils/supabase/server';
 import { deriveAutoTags } from '@/utils/noteTags';
 import { NextRequest, NextResponse } from 'next/server';
 
-function isMissingSelectionColumnError(error: { code?: string; message?: string } | null) {
+function isMissingColumnError(error: { code?: string; message?: string } | null) {
   if (!error) return false;
   const message = (error.message || '').toLowerCase();
   return (
     error.code === '42703' ||
     error.code === 'PGRST204' ||
     message.includes('selection_start') ||
-    message.includes('selection_end')
+    message.includes('selection_end') ||
+    message.includes('ebook_id') ||
+    message.includes('page_number')
   );
 }
 
@@ -43,10 +45,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
     .update({ note: note?.trim() || null, auto_tags: deriveAutoTags(existing.highlighted_text, note) })
     .eq('id', params.id)
     .eq('user_id', user.id)
-    .select('id, issue_id, highlighted_text, note, selection_start, selection_end, auto_tags, created_at')
+    .select('id, issue_id, ebook_id, highlighted_text, note, selection_start, selection_end, page_number, auto_tags, created_at')
     .single();
 
-  if (error && isMissingSelectionColumnError(error)) {
+  if (error && isMissingColumnError(error)) {
     ({ data, error } = await supabase
       .from('highlights')
       .update({ note: note?.trim() || null, auto_tags: deriveAutoTags(existing.highlighted_text, note) })

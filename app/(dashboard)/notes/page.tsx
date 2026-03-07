@@ -2,13 +2,15 @@
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { NotebookPen, Search, Trash2, AlertCircle, Download, Copy, Sparkles } from 'lucide-react';
+import { NotebookPen, Search, Trash2, AlertCircle, Download, Copy, Sparkles, BookOpen } from 'lucide-react';
 
 type Highlight = {
   id: string;
-  issue_id: string;
+  issue_id: string | null;
+  ebook_id?: string | null;
   highlighted_text: string;
   note: string | null;
+  page_number?: number | null;
   auto_tags?: string[];
   created_at: string;
   issues?: {
@@ -18,9 +20,14 @@ type Highlight = {
       email?: string;
     };
   };
+  ebooks?: {
+    title?: string;
+    author?: string;
+  };
 };
 
 type SearchMode = 'all' | 'notes' | 'highlights';
+type SourceType = 'all' | 'newsletters' | 'ebooks';
 
 export default function NotesPage() {
   const [highlights, setHighlights] = useState<Highlight[]>([]);
@@ -29,6 +36,7 @@ export default function NotesPage() {
   const [search, setSearch] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [searchMode, setSearchMode] = useState<SearchMode>('all');
+  const [sourceType, setSourceType] = useState<SourceType>('all');
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedSource, setSelectedSource] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
@@ -66,8 +74,13 @@ export default function NotesPage() {
   const sourceCounts = useMemo(() => {
     const counts = new Map<string, number>();
     highlights.forEach((highlight) => {
-      const source = highlight.issues?.senders?.name || 'Unknown Sender';
-      counts.set(source, (counts.get(source) || 0) + 1);
+      if (highlight.ebook_id) {
+        const source = highlight.ebooks?.title || 'Untitled Book';
+        counts.set(source, (counts.get(source) || 0) + 1);
+      } else {
+        const source = highlight.issues?.senders?.name || 'Unknown Sender';
+        counts.set(source, (counts.get(source) || 0) + 1);
+      }
     });
 
     return Array.from(counts.entries())
@@ -93,22 +106,28 @@ export default function NotesPage() {
       if (searchMode === 'notes' && !highlight.note?.trim()) return false;
       if (searchMode === 'highlights' && !!highlight.note?.trim()) return false;
 
+      if (sourceType === 'newsletters' && highlight.ebook_id) return false;
+      if (sourceType === 'ebooks' && !highlight.ebook_id) return false;
+
       if (selectedTag && !(highlight.auto_tags || []).includes(selectedTag)) return false;
 
       if (selectedSource) {
-        const source = highlight.issues?.senders?.name || 'Unknown Sender';
+        const source = highlight.ebook_id
+          ? (highlight.ebooks?.title || 'Untitled Book')
+          : (highlight.issues?.senders?.name || 'Unknown Sender');
         if (source !== selectedSource) return false;
       }
 
       return true;
     });
-  }, [highlights, searchMode, selectedTag, selectedSource]);
+  }, [highlights, searchMode, sourceType, selectedTag, selectedSource]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, Highlight[]>();
 
     filteredHighlights.forEach((highlight) => {
-      const key = highlight.issue_id;
+      // Group by ebook_id or issue_id
+      const key = highlight.ebook_id || highlight.issue_id || 'unknown';
       const existing = map.get(key) || [];
       existing.push(highlight);
       map.set(key, existing);
@@ -168,6 +187,10 @@ export default function NotesPage() {
     }
   };
 
+  // Count ebook vs newsletter highlights
+  const ebookHighlightCount = highlights.filter((h) => h.ebook_id).length;
+  const newsletterHighlightCount = highlights.filter((h) => !h.ebook_id).length;
+
   if (loading) {
     return <div className="p-12 text-ink-muted animate-pulse">Loading notes...</div>;
   }
@@ -194,7 +217,10 @@ export default function NotesPage() {
         <div>
           <h1 className="text-display-lg text-ink">Notes.</h1>
           <p className="mt-1 text-sm text-ink-muted">
-            {filteredHighlights.length} saved {filteredHighlights.length === 1 ? 'highlight' : 'highlights'}.
+            {filteredHighlights.length} saved {filteredHighlights.length === 1 ? 'highlight' : 'highlights'}
+            {sourceType === 'all' && ebookHighlightCount > 0 && newsletterHighlightCount > 0 && (
+              <span className="text-ink-faint"> · {newsletterHighlightCount} from newsletters · {ebookHighlightCount} from books</span>
+            )}
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -244,6 +270,26 @@ export default function NotesPage() {
                 {mode}
               </button>
             ))}
+          </div>
+
+          {/* Source type filter */}
+          <div className="mt-4">
+            <p className="text-[10px] uppercase tracking-[0.12em] text-ink-faint">Source Type</p>
+            <div className="mt-2 grid grid-cols-3 gap-2 text-[10px] uppercase tracking-[0.08em]">
+              {([
+                { key: 'all', label: 'All' },
+                { key: 'newsletters', label: 'Letters' },
+                { key: 'ebooks', label: 'Books' },
+              ] as { key: SourceType; label: string }[]).map(({ key, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setSourceType(key)}
+                  className={`rounded-lg border px-2 py-1.5 ${sourceType === key ? 'border-accent text-accent bg-accent/5' : 'border-line text-ink-faint hover:text-ink'}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="mt-5">
@@ -296,31 +342,55 @@ export default function NotesPage() {
             <div className="border border-dashed border-line bg-surface-raised py-20 text-center">
               <NotebookPen className="mx-auto mb-4 h-10 w-10 text-ink-faint" />
               <p className="font-medium text-ink-muted">No notes yet.</p>
-              <p className="text-sm text-ink-faint">Highlight text in any newsletter to start your knowledge trail.</p>
+              <p className="text-sm text-ink-faint">Highlight text in any newsletter or e-book to start your knowledge trail.</p>
             </div>
           ) : (
             <div className="space-y-6 md:space-y-8">
-              {grouped.map(([issueId, entries]) => {
+              {grouped.map(([groupId, entries]) => {
                 const first = entries[0];
+                const isEbook = !!first.ebook_id;
                 const sectionTags = Array.from(new Set(entries.flatMap((entry) => entry.auto_tags || []))).slice(0, 8);
                 return (
-                  <section key={issueId} className="rounded-2xl border border-line bg-surface-raised p-4 md:p-5 space-y-4">
+                  <section key={groupId} className="rounded-2xl border border-line bg-surface-raised p-4 md:p-5 space-y-4">
                     <div className="lg:sticky lg:top-16 z-[1] -mx-1 border-b border-line bg-surface-raised/95 px-1 pb-3 pt-1 backdrop-blur">
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <div>
-                          <p className="text-xs uppercase tracking-[0.12em] text-accent">{first.issues?.senders?.name || 'Unknown Sender'}</p>
-                          <h2 className="text-lg md:text-xl font-semibold text-ink">{first.issues?.subject || 'Untitled Issue'}</h2>
+                          {isEbook ? (
+                            <>
+                              <p className="flex items-center gap-1.5 text-xs uppercase tracking-[0.12em] text-yellow-600">
+                                <BookOpen className="h-3 w-3" />
+                                Book
+                              </p>
+                              <h2 className="text-lg md:text-xl font-semibold text-ink">
+                                {first.ebooks?.title || 'Untitled Book'}
+                              </h2>
+                              {first.ebooks?.author && (
+                                <p className="text-xs text-ink-faint">by {first.ebooks.author}</p>
+                              )}
+                            </>
+                          ) : (
+                            <>
+                              <p className="text-xs uppercase tracking-[0.12em] text-accent">{first.issues?.senders?.name || 'Unknown Sender'}</p>
+                              <h2 className="text-lg md:text-xl font-semibold text-ink">{first.issues?.subject || 'Untitled Issue'}</h2>
+                            </>
+                          )}
                         </div>
-                        <Link href={`/newsletters/${issueId}`} className="text-xs uppercase tracking-[0.1em] text-ink-faint hover:text-accent">
-                          Open issue
-                        </Link>
+                        {isEbook ? (
+                          <Link href={`/books/${groupId}`} className="text-xs uppercase tracking-[0.1em] text-ink-faint hover:text-accent">
+                            Open book
+                          </Link>
+                        ) : (
+                          <Link href={`/newsletters/${groupId}`} className="text-xs uppercase tracking-[0.1em] text-ink-faint hover:text-accent">
+                            Open issue
+                          </Link>
+                        )}
                       </div>
 
                       {!!sectionTags.length && (
                         <div className="mt-2 flex flex-wrap gap-2">
                           {sectionTags.map((tag) => (
                             <button
-                              key={`${issueId}-${tag}`}
+                              key={`${groupId}-${tag}`}
                               onClick={() => setSelectedTag((current) => (current === tag ? null : tag))}
                               className="rounded-full border border-line bg-surface px-2 py-0.5 text-[10px] uppercase tracking-[0.08em] text-ink-faint hover:text-ink"
                             >
@@ -342,6 +412,10 @@ export default function NotesPage() {
                             {highlight.highlighted_text}
                           </blockquote>
 
+                          {highlight.page_number && (
+                            <p className="mt-1 text-[10px] text-ink-faint">Page {highlight.page_number}</p>
+                          )}
+
                           {highlight.note?.trim() && (
                             <div className="mt-3 rounded-lg border border-line bg-surface-raised px-3 py-2">
                               <p className="text-[10px] uppercase tracking-[0.08em] text-accent">My Thought</p>
@@ -352,9 +426,15 @@ export default function NotesPage() {
                           <div className="mt-3 flex flex-col gap-2 text-xs text-ink-faint sm:flex-row sm:items-center sm:justify-between">
                             <span>{new Date(highlight.created_at).toLocaleString()}</span>
                             <div className="flex flex-wrap items-center gap-3">
-                              <Link href={`/newsletters/${issueId}?h=${highlight.id}`} className="uppercase tracking-[0.08em] hover:text-accent">
-                                Jump to paragraph
-                              </Link>
+                              {isEbook ? (
+                                <Link href={`/books/${groupId}`} className="uppercase tracking-[0.08em] hover:text-accent">
+                                  Open in reader
+                                </Link>
+                              ) : (
+                                <Link href={`/newsletters/${groupId}?h=${highlight.id}`} className="uppercase tracking-[0.08em] hover:text-accent">
+                                  Jump to paragraph
+                                </Link>
+                              )}
                               <button onClick={() => copyHighlight(highlight)} className="inline-flex items-center gap-1 hover:text-ink">
                                 <Copy className="h-3.5 w-3.5" />
                                 {copiedId === highlight.id ? 'Copied' : 'Copy'}
