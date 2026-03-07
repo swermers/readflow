@@ -176,67 +176,92 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
     return () => clearTimeout(timer);
   }, [numPages, highlights, applyHighlightsToPage, containerWidth]);
 
-  // Handle text selection in the PDF
-  const handleMouseUp = useCallback(() => {
-    const selection = window.getSelection();
-    if (!selection || selection.isCollapsed || !selection.toString().trim()) {
-      return;
+  // Clamp position so toolbar/popover stays within the viewport
+  const clampPosition = useCallback((rect: DOMRect, popoverWidth: number) => {
+    const scrollY = window.scrollY || window.pageYOffset;
+    const scrollX = window.scrollX || window.pageXOffset;
+    const viewportH = window.innerHeight;
+    const viewportW = window.innerWidth;
+
+    let top = rect.bottom + scrollY + 8;
+    let left = rect.left + scrollX;
+
+    // If it would go below the viewport, show above the selection instead
+    if (rect.bottom + 300 > viewportH) {
+      top = rect.top + scrollY - 8;
     }
 
-    const text = selection.toString().trim();
-    if (text.length < 2) return;
+    // Keep within horizontal bounds
+    left = Math.max(8, Math.min(left, viewportW - popoverWidth - 8));
 
-    // Find which page the selection is in
-    const anchorNode = selection.anchorNode;
-    let pageEl = anchorNode instanceof HTMLElement ? anchorNode : anchorNode?.parentElement;
-    while (pageEl && !pageEl.dataset.pageNumber) {
-      pageEl = pageEl.parentElement;
-    }
-    const pageNum = pageEl?.dataset.pageNumber ? parseInt(pageEl.dataset.pageNumber, 10) : null;
+    return { top, left };
+  }, []);
 
-    // Check if clicking on an existing highlight
-    const target = anchorNode instanceof HTMLElement ? anchorNode : anchorNode?.parentElement;
-    if (target && target instanceof HTMLElement && target.dataset.highlightId && text === selection.toString().trim()) {
-      const existing = highlights.find((h) => h.id === target.dataset.highlightId);
-      if (existing) {
-        const rect = target.getBoundingClientRect();
-        setActiveHighlight(existing);
-        setDraftNote(existing.note || '');
-        setEditingNote(false);
-        setPopoverPos({ top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 340) });
-        selection.removeAllRanges();
+  // Handle text selection in the PDF (works for both mouse and touch)
+  const handleSelectionEnd = useCallback(() => {
+    // Small delay for touch devices — the selection isn't always ready immediately
+    setTimeout(() => {
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || !selection.toString().trim()) {
         return;
       }
-    }
 
-    const range = selection.getRangeAt(0);
-    const rect = range.getBoundingClientRect();
+      const text = selection.toString().trim();
+      if (text.length < 2) return;
 
-    setSelectedText(text);
-    setSelectedPageNumber(pageNum);
-    setNoteMode(false);
-    setNoteText('');
-    setToolbarPos({
-      top: rect.bottom + 8,
-      left: Math.min(rect.left, window.innerWidth - 300),
-    });
-  }, [highlights]);
+      // Find which page the selection is in
+      const anchorNode = selection.anchorNode;
+      let pageEl = anchorNode instanceof HTMLElement ? anchorNode : anchorNode?.parentElement;
+      while (pageEl && !pageEl.dataset.pageNumber) {
+        pageEl = pageEl.parentElement;
+      }
+      const pageNum = pageEl?.dataset.pageNumber ? parseInt(pageEl.dataset.pageNumber, 10) : null;
 
-  // Listen for mouseup on the scroll container
+      // Check if clicking on an existing highlight
+      const target = anchorNode instanceof HTMLElement ? anchorNode : anchorNode?.parentElement;
+      if (target && target instanceof HTMLElement && target.dataset.highlightId) {
+        const existing = highlights.find((h) => h.id === target.dataset.highlightId);
+        if (existing) {
+          const rect = target.getBoundingClientRect();
+          setActiveHighlight(existing);
+          setDraftNote(existing.note || '');
+          setEditingNote(false);
+          setPopoverPos(clampPosition(rect, 320));
+          selection.removeAllRanges();
+          return;
+        }
+      }
+
+      const range = selection.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+
+      setSelectedText(text);
+      setSelectedPageNumber(pageNum);
+      setNoteMode(false);
+      setNoteText('');
+      setToolbarPos(clampPosition(rect, 280));
+    }, 10);
+  }, [highlights, clampPosition]);
+
+  // Listen for mouseup AND touchend on the scroll container
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    el.addEventListener('mouseup', handleMouseUp);
-    return () => el.removeEventListener('mouseup', handleMouseUp);
-  }, [handleMouseUp]);
+    el.addEventListener('mouseup', handleSelectionEnd);
+    el.addEventListener('touchend', handleSelectionEnd);
+    return () => {
+      el.removeEventListener('mouseup', handleSelectionEnd);
+      el.removeEventListener('touchend', handleSelectionEnd);
+    };
+  }, [handleSelectionEnd]);
 
-  // Listen for clicks on existing highlights
+  // Listen for taps on existing highlights (touch + click)
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
 
-    const handleClick = (e: MouseEvent) => {
+    const handleTapHighlight = (e: MouseEvent | TouchEvent) => {
       const target = e.target as HTMLElement;
       if (target.dataset.highlightId) {
         const existing = highlights.find((h) => h.id === target.dataset.highlightId);
@@ -245,37 +270,39 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
           setActiveHighlight(existing);
           setDraftNote(existing.note || '');
           setEditingNote(false);
-          setPopoverPos({ top: rect.bottom + 8, left: Math.min(rect.left, window.innerWidth - 340) });
+          setPopoverPos(clampPosition(rect, 320));
         }
       }
     };
 
-    el.addEventListener('click', handleClick);
-    return () => el.removeEventListener('click', handleClick);
-  }, [highlights]);
+    el.addEventListener('click', handleTapHighlight);
+    return () => el.removeEventListener('click', handleTapHighlight);
+  }, [highlights, clampPosition]);
 
-  // Close toolbar/popover on outside click
+  // Close toolbar/popover on outside click or tap
   useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
+    const handleDismiss = (e: MouseEvent | TouchEvent) => {
       const target = e.target as HTMLElement;
-      if (toolbarPos && !target.closest('.fixed.z-50')) {
+      if (toolbarPos && !target.closest('[data-highlight-toolbar]')) {
         setToolbarPos(null);
         setSelectedText('');
       }
-      if (popoverPos && !target.closest('.fixed.z-50')) {
+      if (popoverPos && !target.closest('[data-highlight-popover]')) {
         setPopoverPos(null);
         setActiveHighlight(null);
       }
     };
 
-    // Delay to avoid closing immediately on the same click
+    // Delay to avoid closing immediately on the same interaction
     const timer = setTimeout(() => {
-      document.addEventListener('mousedown', handleClickOutside);
+      document.addEventListener('mousedown', handleDismiss);
+      document.addEventListener('touchstart', handleDismiss);
     }, 100);
 
     return () => {
       clearTimeout(timer);
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('mousedown', handleDismiss);
+      document.removeEventListener('touchstart', handleDismiss);
     };
   }, [toolbarPos, popoverPos]);
 
