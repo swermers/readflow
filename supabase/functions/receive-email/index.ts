@@ -215,6 +215,9 @@ Deno.serve(async (req) => {
       bodyText: bodyText || '',
     });
 
+    const receivedAt = new Date().toISOString();
+    const contentHash = await computeContentHash(subject || '(No Subject)', fromEmail, receivedAt);
+
     const { data: issue, error: issueError } = await supabase
       .from('issues')
       .insert({
@@ -225,16 +228,25 @@ Deno.serve(async (req) => {
         body_html: cleanHtml,
         body_text: bodyText || '',
         from_email: fromEmail,
-        message_id: messageId,
-        received_at: new Date().toISOString(),
+        message_id: messageId || null,
+        received_at: receivedAt,
         status: 'unread',
         signal_tier: signal.tier,
         signal_reason: signal.reason,
+        content_hash: contentHash,
       })
       .select()
       .single();
 
     if (issueError) {
+      // Unique constraint violation = duplicate, treat as success
+      if (issueError.code === '23505') {
+        console.log(`Duplicate detected by DB constraint for user ${userId}, skipping`);
+        return new Response(JSON.stringify({ message: 'Duplicate, skipped' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
       console.error('Error inserting issue:', issueError);
       return new Response(JSON.stringify({ error: 'Failed to store email' }), {
         status: 500,
@@ -679,4 +691,19 @@ function stripForwardingHeaders(body: string): string {
   }
 
   return cleaned.trim();
+}
+
+
+// ─── HELPER: Compute a content hash for cross-path deduplication ───
+// Uses subject + sender email + date (not time) so the same newsletter
+// arriving via email forwarding and Gmail sync produces the same hash
+// even though they have different message_id formats.
+
+async function computeContentHash(subject: string, fromEmail: string, receivedAt: string): Promise<string> {
+  const datePart = receivedAt.slice(0, 10); // YYYY-MM-DD only
+  const raw = `${subject}|${fromEmail}|${datePart}`;
+  const encoded = new TextEncoder().encode(raw);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');
 }

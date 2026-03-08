@@ -260,8 +260,21 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     }
   }, [audioStatus, audioUrl]);
 
+  // SSE stream for real-time status updates. Opens once when audio is first
+  // queued and stays open until the job reaches a terminal state or the stream
+  // times out. If the stream errors or closes while the job is still in
+  // progress, the regular polling interval (above) will keep checking.
+  const sseOpenedRef = useRef(false);
+
   useEffect(() => {
-    if (audioStatus !== 'queued' && audioStatus !== 'processing') return;
+    if (audioStatus !== 'queued' && audioStatus !== 'processing') {
+      sseOpenedRef.current = false;
+      return;
+    }
+
+    // Only open one SSE connection per generation attempt
+    if (sseOpenedRef.current) return;
+    sseOpenedRef.current = true;
 
     const source = new EventSource(`/api/ai/listen/stream?issueId=${encodeURIComponent(issueId)}`);
     source.addEventListener('status', (event) => {
@@ -292,6 +305,12 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         // no-op
       }
     });
+
+    // If the SSE stream errors out, allow re-opening on next status change
+    source.onerror = () => {
+      source.close();
+      sseOpenedRef.current = false;
+    };
 
     return () => {
       source.close();

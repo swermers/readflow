@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
-const STREAM_TIMEOUT_MS = 25_000;
+const STREAM_TIMEOUT_MS = 180_000;
 const POLL_MS = 1200;
 
 async function loadAudioState(issueId: string, userId: string) {
