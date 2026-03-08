@@ -7,7 +7,7 @@ import { generateAudioDigest } from '@/utils/audioDigest';
 
 const MAX_CHUNK_CHARS = 2500;
 const FIRST_CHUNK_CHARS = 420;
-const TTS_FETCH_TIMEOUT_MS = 30_000; // 30s timeout per TTS API call
+const TTS_FETCH_TIMEOUT_MS = 60_000; // 60s timeout per TTS API call
 const TTS_PARALLEL_BATCH_SIZE = 3;   // Process up to 3 chunks in parallel
 
 function truncateAtSignoff(text: string) {

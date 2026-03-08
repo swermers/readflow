@@ -219,6 +219,15 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     void checkAudioStatus();
     const interval = setInterval(() => {
       if (audioStatus === 'queued' || audioStatus === 'processing') {
+        // Safety: if we've been polling for over 6 minutes without resolution,
+        // show a failure state instead of spinning forever.
+        if (audioQueuedAt && Date.now() - audioQueuedAt > 6 * 60 * 1000) {
+          setAudioStatus('failed');
+          setAudioError('Audio generation timed out. Please try again.');
+          setAudioQueuedAt(null);
+          clearGlobalAudioPendingIssue();
+          return;
+        }
         void checkAudioStatus();
       }
     }, POLL_INTERVAL_MS);
@@ -227,7 +236,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       cancelled = true;
       clearInterval(interval);
     };
-  }, [audioStatus, issueId]);
+  }, [audioStatus, issueId, audioQueuedAt]);
 
   useEffect(() => {
     if (audioStatus !== 'queued' && audioStatus !== 'processing') return;
