@@ -11,6 +11,9 @@ type Props = {
   articleSubject?: string;
 };
 
+// Module-level in-memory cache so summaries persist across navigation
+const summaryCache = new Map<string, SummaryResponse>();
+
 type SummaryResponse = {
   provider: string;
   summary: string;
@@ -113,7 +116,7 @@ function buildAudioChapters(articleText?: string, articleSubject?: string): Audi
 export default function AISummaryCard({ issueId, articleText, articleSubject }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<SummaryResponse | null>(null);
+  const [data, setData] = useState<SummaryResponse | null>(() => summaryCache.get(issueId) || null);
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -151,6 +154,30 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     readyToastShownRef.current = false;
     userInitiatedRef.current = false;
     previewAutoPlayedRef.current = false;
+
+    // Restore from client cache or prefetch from DB cache on mount / issue change
+    const cached = summaryCache.get(issueId);
+    if (cached) {
+      setData(cached);
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/ai/summarize?issueId=${encodeURIComponent(issueId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload?.cached) return;
+        const summary: SummaryResponse = {
+          provider: payload.provider,
+          summary: payload.summary,
+          takeaways: payload.takeaways,
+        };
+        summaryCache.set(issueId, summary);
+        setData(summary);
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
   }, [issueId]);
 
   const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
@@ -351,7 +378,13 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       }
 
       const payload = await res.json();
-      setData(payload);
+      const summary: SummaryResponse = {
+        provider: payload.provider,
+        summary: payload.summary,
+        takeaways: payload.takeaways,
+      };
+      summaryCache.set(issueId, summary);
+      setData(summary);
       setSummaryCollapsed(false);
       void trackEvent('tldr_generated');
       const bal = payload.tokensRemaining ?? payload.tokenBalance ?? payload.creditsRemaining;

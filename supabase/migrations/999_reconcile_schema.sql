@@ -213,7 +213,8 @@ CREATE TABLE IF NOT EXISTS public.issue_audio_cache (
 
 ALTER TABLE public.issue_audio_cache
   ADD COLUMN IF NOT EXISTS credits_charged INTEGER NOT NULL DEFAULT 0,
-  ADD COLUMN IF NOT EXISTS credits_charged_at TIMESTAMPTZ;
+  ADD COLUMN IF NOT EXISTS credits_charged_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS digest_text TEXT;
 
 ALTER TABLE public.issue_audio_cache ENABLE ROW LEVEL SECURITY;
 
