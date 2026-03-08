@@ -5,9 +5,16 @@ import { refreshAccessToken, listMessageIdsByLabel, getMessage } from '@/utils/g
 import { parseGmailMessage } from '@/utils/emailParser';
 import { classifyIssueSignal } from '@/utils/signalSortHeuristics';
 import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
+import { createHash } from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+/** Hash subject + sender + date for cross-path dedup (email forward vs Gmail sync). */
+function computeContentHash(subject: string, fromEmail: string, receivedAt: string): string {
+  const datePart = receivedAt.slice(0, 10); // YYYY-MM-DD
+  return createHash('sha256').update(`${subject}|${fromEmail}|${datePart}`).digest('hex');
+}
 
 // Accept GET as well — some domain/CDN redirects (301) convert POST to GET.
 export async function GET() {
@@ -329,7 +336,8 @@ async function handleSync() {
             bodyText: parsed.body_text,
           });
 
-          // Insert the issue
+          // Insert the issue with content_hash for cross-path dedup
+          const contentHash = computeContentHash(parsed.subject || '', parsed.from_email || '', parsed.received_at || '');
           const { error: insertError } = await db.from('issues').insert({
             user_id: user.id,
             sender_id: sender.id,
@@ -343,11 +351,17 @@ async function handleSync() {
             status: 'unread',
             signal_tier: signal.tier,
             signal_reason: signal.reason,
+            content_hash: contentHash,
           });
 
           if (insertError) {
-            console.error(`[Sync] Issue insert error user=${user.id} msgId=${msgId}: ${insertError.message}`);
-            skippedErrors++;
+            // Unique constraint violation = duplicate, skip silently
+            if (insertError.code === '23505') {
+              console.log(`[Sync] Duplicate detected by DB constraint user=${user.id} msgId=${msgId}, skipping`);
+            } else {
+              console.error(`[Sync] Issue insert error user=${user.id} msgId=${msgId}: ${insertError.message}`);
+              skippedErrors++;
+            }
           } else {
             imported++;
             // Track this subject so later messages in the same batch are also deduped

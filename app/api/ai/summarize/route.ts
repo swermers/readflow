@@ -217,6 +217,43 @@ async function summarizeWithGrok(input: string, expectedLanguageCode: string) {
   throw lastError || new Error('Grok request failed for all configured models');
 }
 
+/**
+ * GET /api/ai/summarize?issueId=...
+ * Check for a cached summary without generating or consuming tokens.
+ */
+export async function GET(request: NextRequest) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  const issueId = request.nextUrl.searchParams.get('issueId');
+  if (!issueId) {
+    return NextResponse.json({ error: 'issueId is required' }, { status: 400 });
+  }
+
+  const { data: cached } = await supabase
+    .from('issue_summaries')
+    .select('summary, takeaways, provider')
+    .eq('issue_id', issueId)
+    .maybeSingle();
+
+  if (cached?.summary && Array.isArray(cached.takeaways)) {
+    return NextResponse.json({
+      provider: cached.provider || 'cached',
+      summary: cached.summary,
+      takeaways: cached.takeaways,
+      cached: true,
+    });
+  }
+
+  return NextResponse.json({ cached: false });
+}
+
 export async function POST(request: NextRequest) {
   const supabase = await createClient();
   const {

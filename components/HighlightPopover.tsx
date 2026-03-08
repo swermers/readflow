@@ -29,6 +29,7 @@ export default function HighlightPopover({
 }: HighlightPopoverProps) {
   return (
     <div
+      data-highlight-popover
       className="fixed z-50 w-[min(320px,calc(100vw-16px))] rounded-xl border border-line bg-surface-raised p-3 shadow-xl animate-fade-in"
       style={{ top: position.top, left: position.left }}
     >

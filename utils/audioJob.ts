@@ -7,7 +7,7 @@ import { generateAudioDigest } from '@/utils/audioDigest';
 
 const MAX_CHUNK_CHARS = 2500;
 const FIRST_CHUNK_CHARS = 420;
-const TTS_FETCH_TIMEOUT_MS = 30_000; // 30s timeout per TTS API call
+const TTS_FETCH_TIMEOUT_MS = 60_000; // 60s timeout per TTS API call
 const TTS_PARALLEL_BATCH_SIZE = 3;   // Process up to 3 chunks in parallel
 
 function truncateAtSignoff(text: string) {
@@ -187,13 +187,25 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     throw new Error('OPENAI_API_KEY missing');
   }
 
-  // Always generate a digest — never send the raw article to TTS.
-  // This produces a 350-500 word narration (~2-3 min audio) that covers
-  // all sections, themes, key data, and takeaways.
-  const digestText = await generateAudioDigest(
-    issue.subject || 'Newsletter article',
-    contentWithoutSignoff || articleText,
-  );
+  // Check for a previously cached digest script (e.g. from a canceled generation)
+  const { data: existingCache } = await supabase
+    .from('issue_audio_cache')
+    .select('digest_text')
+    .eq('issue_id', issueId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  let digestText = existingCache?.digest_text || null;
+
+  if (!digestText) {
+    // Generate a digest — never send the raw article to TTS.
+    // This produces a 350-500 word narration (~2-3 min audio) that covers
+    // all sections, themes, key data, and takeaways.
+    digestText = await generateAudioDigest(
+      issue.subject || 'Newsletter article',
+      contentWithoutSignoff || articleText,
+    );
+  }
 
   // If AI digest generation fails, fall back to a cleaned-up excerpt
   const scriptBody = digestText || sanitizeForSpeech(
@@ -272,6 +284,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       first_chunk_base64: chunkBuffer.toString('base64'),
       first_chunk_ready_at: firstChunkReadyAt.toISOString(),
       audio_hash: audioHash,
+      digest_text: digestText || null,
     });
 
     const firstChunkLatency = latencyMs(generationStartedAt, firstChunkReadyAt);
@@ -344,6 +357,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       status: 'ready',
       mime_type: 'audio/mpeg',
       audio_base64: audioBase64,
+      digest_text: digestText || null,
       provider: 'openai',
       model: usedModel,
       credits_charged: chargedCredits,

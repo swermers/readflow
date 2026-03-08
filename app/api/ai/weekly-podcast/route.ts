@@ -71,6 +71,26 @@ export async function GET(request: NextRequest) {
   const { data } = await query.maybeSingle();
   const row = (data || null) as PodcastRow | null;
 
+  // Stale job detection: if a job has been "processing" for over 5 minutes,
+  // mark it as failed so the user can retry instead of waiting forever.
+  if (row && row.status === 'processing' && row.updated_at) {
+    const ageMs = Date.now() - new Date(row.updated_at).getTime();
+    if (Number.isFinite(ageMs) && ageMs > 5 * 60 * 1000) {
+      const keyFilter = row.delivery_key
+        ? { delivery_key: row.delivery_key }
+        : { week_start: row.week_start, week_end: row.week_end };
+
+      await supabase.from('weekly_podcast_cache').update({
+        status: 'failed',
+        last_error: 'Generation timed out. Please try again.',
+        updated_at: new Date().toISOString(),
+      }).eq('user_id', user.id).match(keyFilter);
+
+      row.status = 'failed';
+      row.last_error = 'Generation timed out. Please try again.';
+    }
+  }
+
   return NextResponse.json({
     podcast: row
       ? {

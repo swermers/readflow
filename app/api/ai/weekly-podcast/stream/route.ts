@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
-const STREAM_TIMEOUT_MS = 25_000;
+const STREAM_TIMEOUT_MS = 180_000;
 const POLL_MS = 1200;
 
 async function loadPodcastState(
@@ -72,7 +72,7 @@ export async function GET(request: NextRequest) {
         const state = await loadPodcastState(user.id, { deliveryKey, weekStart, weekEnd });
         send('status', state || { status: 'missing', audioAvailable: false, audioUrl: null, previewAudioUrl: null });
 
-        if (!state || state.status === 'ready' || state.status === 'failed') break;
+        if (!state || state.status === 'ready' || state.status === 'failed' || state.status === 'canceled' || state.status === 'missing') break;
 
         await new Promise((resolve) => setTimeout(resolve, POLL_MS));
       }

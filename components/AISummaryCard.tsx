@@ -11,6 +11,9 @@ type Props = {
   articleSubject?: string;
 };
 
+// Module-level in-memory cache so summaries persist across navigation
+const summaryCache = new Map<string, SummaryResponse>();
+
 type SummaryResponse = {
   provider: string;
   summary: string;
@@ -113,7 +116,7 @@ function buildAudioChapters(articleText?: string, articleSubject?: string): Audi
 export default function AISummaryCard({ issueId, articleText, articleSubject }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<SummaryResponse | null>(null);
+  const [data, setData] = useState<SummaryResponse | null>(() => summaryCache.get(issueId) || null);
   const [summaryCollapsed, setSummaryCollapsed] = useState(false);
 
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
@@ -151,6 +154,30 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     readyToastShownRef.current = false;
     userInitiatedRef.current = false;
     previewAutoPlayedRef.current = false;
+
+    // Restore from client cache or prefetch from DB cache on mount / issue change
+    const cached = summaryCache.get(issueId);
+    if (cached) {
+      setData(cached);
+      return;
+    }
+
+    let cancelled = false;
+    fetch(`/api/ai/summarize?issueId=${encodeURIComponent(issueId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload) => {
+        if (cancelled || !payload?.cached) return;
+        const summary: SummaryResponse = {
+          provider: payload.provider,
+          summary: payload.summary,
+          takeaways: payload.takeaways,
+        };
+        summaryCache.set(issueId, summary);
+        setData(summary);
+      })
+      .catch(() => {});
+
+    return () => { cancelled = true; };
   }, [issueId]);
 
   const trackEvent = async (eventType: string, metadata?: Record<string, unknown>) => {
@@ -219,6 +246,15 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     void checkAudioStatus();
     const interval = setInterval(() => {
       if (audioStatus === 'queued' || audioStatus === 'processing') {
+        // Safety: if we've been polling for over 6 minutes without resolution,
+        // show a failure state instead of spinning forever.
+        if (audioQueuedAt && Date.now() - audioQueuedAt > 6 * 60 * 1000) {
+          setAudioStatus('failed');
+          setAudioError('Audio generation timed out. Please try again.');
+          setAudioQueuedAt(null);
+          clearGlobalAudioPendingIssue();
+          return;
+        }
         void checkAudioStatus();
       }
     }, POLL_INTERVAL_MS);
@@ -227,7 +263,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       cancelled = true;
       clearInterval(interval);
     };
-  }, [audioStatus, issueId]);
+  }, [audioStatus, issueId, audioQueuedAt]);
 
   useEffect(() => {
     if (audioStatus !== 'queued' && audioStatus !== 'processing') return;
@@ -260,8 +296,21 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     }
   }, [audioStatus, audioUrl]);
 
+  // SSE stream for real-time status updates. Opens once when audio is first
+  // queued and stays open until the job reaches a terminal state or the stream
+  // times out. If the stream errors or closes while the job is still in
+  // progress, the regular polling interval (above) will keep checking.
+  const sseOpenedRef = useRef(false);
+
   useEffect(() => {
-    if (audioStatus !== 'queued' && audioStatus !== 'processing') return;
+    if (audioStatus !== 'queued' && audioStatus !== 'processing') {
+      sseOpenedRef.current = false;
+      return;
+    }
+
+    // Only open one SSE connection per generation attempt
+    if (sseOpenedRef.current) return;
+    sseOpenedRef.current = true;
 
     const source = new EventSource(`/api/ai/listen/stream?issueId=${encodeURIComponent(issueId)}`);
     source.addEventListener('status', (event) => {
@@ -293,6 +342,12 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       }
     });
 
+    // If the SSE stream errors out, allow re-opening on next status change
+    source.onerror = () => {
+      source.close();
+      sseOpenedRef.current = false;
+    };
+
     return () => {
       source.close();
     };
@@ -323,7 +378,13 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
       }
 
       const payload = await res.json();
-      setData(payload);
+      const summary: SummaryResponse = {
+        provider: payload.provider,
+        summary: payload.summary,
+        takeaways: payload.takeaways,
+      };
+      summaryCache.set(issueId, summary);
+      setData(summary);
       setSummaryCollapsed(false);
       void trackEvent('tldr_generated');
       const bal = payload.tokensRemaining ?? payload.tokenBalance ?? payload.creditsRemaining;

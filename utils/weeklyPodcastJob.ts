@@ -18,7 +18,7 @@ type BriefTheme = {
 
 const MAX_CHUNK_CHARS = 2500;
 const FIRST_CHUNK_CHARS = 420;
-const TTS_FETCH_TIMEOUT_MS = 30_000;
+const TTS_FETCH_TIMEOUT_MS = 60_000;
 const TTS_PARALLEL_BATCH_SIZE = 3;
 
 function splitIntoSpeechChunks(input: string) {
