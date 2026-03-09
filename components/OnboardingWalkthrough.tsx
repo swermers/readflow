@@ -99,18 +99,18 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
                   <p className="text-sm font-medium text-ink">Your address</p>
                 </div>
                 {forwardingEmail ? (
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1 border border-line bg-surface px-3 py-2.5 font-mono text-sm text-ink select-all rounded-lg">
-                      {forwardingEmail}
-                    </div>
-                    <button
-                      onClick={handleCopy}
-                      className="px-3 py-2.5 border border-line hover:border-line-strong transition-colors rounded-lg"
-                      title="Copy to clipboard"
-                    >
-                      {copied ? <Check className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4 text-ink-faint" />}
-                    </button>
-                  </div>
+                  <button
+                    onClick={handleCopy}
+                    className="flex w-full items-center justify-between gap-2 rounded-lg border border-line bg-surface px-3 py-2.5 text-left transition-colors hover:border-line-strong"
+                    title="Copy to clipboard"
+                  >
+                    <span className="min-w-0 truncate font-mono text-sm text-ink">{forwardingEmail}</span>
+                    {copied ? (
+                      <span className="inline-flex flex-shrink-0 items-center gap-1 text-xs text-green-500"><Check className="h-3.5 w-3.5" /> Copied</span>
+                    ) : (
+                      <span className="inline-flex flex-shrink-0 items-center gap-1 text-xs text-ink-faint"><Copy className="h-3.5 w-3.5" /> Copy</span>
+                    )}
+                  </button>
                 ) : (
                   <p className="text-sm text-ink-faint">Loading your email address...</p>
                 )}
