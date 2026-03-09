@@ -63,8 +63,8 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-2xl rounded-2xl border border-line bg-surface p-6 md:p-8 shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 p-0 sm:p-4">
+      <div className="w-full max-w-2xl max-h-[100dvh] sm:max-h-[90dvh] overflow-y-auto rounded-t-2xl sm:rounded-2xl border border-line bg-surface p-6 md:p-8 shadow-xl">
         {/* Header */}
         <div className="mb-6 flex items-start justify-between gap-4">
           <div>
@@ -78,7 +78,7 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
         </div>
 
         {/* Step content */}
-        <div className="min-h-[280px]">
+        <div className="min-h-0 sm:min-h-[280px]">
           {step === 0 && (
             <div className="space-y-4">
               <div className="flex items-start gap-3">
@@ -289,7 +289,7 @@ export default function OnboardingWalkthrough({ open }: OnboardingWalkthroughPro
         </div>
 
         {/* Navigation */}
-        <div className="mt-6 flex items-center justify-between">
+        <div className="mt-6 flex items-center justify-between pb-[env(safe-area-inset-bottom)] sm:pb-0">
           <div>
             {step > 0 && (
               <button
