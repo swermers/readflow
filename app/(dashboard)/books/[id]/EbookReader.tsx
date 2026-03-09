@@ -121,60 +121,86 @@ export default function EbookReader({ ebook }: { ebook: Ebook }) {
     setNumPages(n);
   }, []);
 
+  // Normalize whitespace so PDF text-layer quirks don't break matching
+  const normalizeWs = (s: string) => s.replace(/\s+/g, ' ').trim();
+
   // Apply highlights to rendered PDF text layer
   const applyHighlightsToPage = useCallback((pageNumber: number) => {
-    const pageHighlights = highlights.filter((h) => h.page_number === pageNumber);
-    if (pageHighlights.length === 0) return;
-
     const pageContainer = scrollRef.current?.querySelector(`[data-page-number="${pageNumber}"]`);
     if (!pageContainer) return;
 
     const textLayer = pageContainer.querySelector('.react-pdf__Page__textContent');
     if (!textLayer) return;
 
-    // Walk through text spans and mark highlights
-    const spans = textLayer.querySelectorAll('span');
-    const fullText = Array.from(spans).map((s) => s.textContent || '').join('');
+    const spans = Array.from(textLayer.querySelectorAll('span'));
+
+    // Clear any previous highlight styling first
+    spans.forEach((span) => {
+      if (span.dataset.highlightId) {
+        span.style.backgroundColor = '';
+        span.style.borderRadius = '';
+        span.style.cursor = '';
+        delete span.dataset.highlightId;
+      }
+    });
+
+    const pageHighlights = highlights.filter((h) => h.page_number === pageNumber);
+    if (pageHighlights.length === 0) return;
+
+    // Build a mapping from normalized-text offset → span + local offset.
+    // PDF.js splits text into spans unpredictably, so we join with spaces
+    // to mirror what the browser selection API returns.
+    const pieces: { span: HTMLSpanElement; text: string; normStart: number }[] = [];
+    let normOffset = 0;
+    spans.forEach((span) => {
+      const raw = span.textContent || '';
+      if (!raw) return;
+      if (normOffset > 0) normOffset += 1; // space between spans
+      pieces.push({ span, text: raw, normStart: normOffset });
+      normOffset += raw.length;
+    });
+
+    const fullTextNorm = pieces.map((p) => p.text).join(' ');
 
     pageHighlights.forEach((highlight) => {
-      const idx = fullText.indexOf(highlight.highlighted_text);
+      const needle = normalizeWs(highlight.highlighted_text);
+      if (!needle) return;
+
+      // Try exact match first, then normalized match
+      let idx = fullTextNorm.indexOf(needle);
+      if (idx === -1) {
+        // Fallback: case-insensitive match
+        idx = fullTextNorm.toLowerCase().indexOf(needle.toLowerCase());
+      }
       if (idx === -1) return;
 
-      // Find which spans contain this text and apply highlight styling
-      let charCount = 0;
-      spans.forEach((span) => {
-        const spanText = span.textContent || '';
-        const spanStart = charCount;
-        const spanEnd = charCount + spanText.length;
-        charCount = spanEnd;
+      const highlightEnd = idx + needle.length;
 
-        const highlightStart = idx;
-        const highlightEnd = idx + highlight.highlighted_text.length;
+      // Mark overlapping spans
+      pieces.forEach((piece) => {
+        const spanStart = piece.normStart;
+        const spanEnd = spanStart + piece.text.length;
 
-        // Check if this span overlaps with the highlight
-        if (spanStart < highlightEnd && spanEnd > highlightStart) {
-          span.style.backgroundColor = 'rgba(250, 204, 21, 0.3)';
-          span.style.borderRadius = '2px';
-          span.dataset.highlightId = highlight.id;
-          span.style.cursor = 'pointer';
+        if (spanStart < highlightEnd && spanEnd > idx) {
+          piece.span.style.backgroundColor = 'rgba(250, 204, 21, 0.3)';
+          piece.span.style.borderRadius = '2px';
+          piece.span.dataset.highlightId = highlight.id;
+          piece.span.style.cursor = 'pointer';
         }
       });
     });
   }, [highlights]);
 
-  // Re-apply highlights whenever pages render
+  // Re-apply highlights whenever highlights change (add/edit/delete)
+  // The onRenderTextLayerSuccess callback handles initial page renders,
+  // but we also need to re-apply when highlights are mutated after render.
   useEffect(() => {
-    if (!numPages || highlights.length === 0) return;
+    if (!numPages) return;
 
-    // Small delay to let text layers render
-    const timer = setTimeout(() => {
-      for (let i = 1; i <= numPages; i++) {
-        applyHighlightsToPage(i);
-      }
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [numPages, highlights, applyHighlightsToPage, containerWidth]);
+    for (let i = 1; i <= numPages; i++) {
+      applyHighlightsToPage(i);
+    }
+  }, [numPages, highlights, applyHighlightsToPage]);
 
   // Clamp position so toolbar/popover stays within the viewport
   const clampPosition = useCallback((rect: DOMRect, popoverWidth: number) => {
