@@ -373,3 +373,203 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   if (totalLatency !== null) await safeRecordMetric(supabase, 'audio_total_generation_latency_ms', totalLatency);
   await safeRecordMetric(supabase, 'audio_generation_succeeded');
 }
+
+
+/**
+ * Pre-generate audio digest for an issue at ingest time.
+ * Produces digest text + TTS audio and stores with status 'pregenerated'.
+ * Credits are NOT charged here — they are charged when the user first plays.
+ * If audio already exists (ready or pregenerated), this is a no-op.
+ */
+export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId: string, issueId: string) {
+  // Skip if audio is already generated or in progress
+  const { data: existing } = await supabase
+    .from('issue_audio_cache')
+    .select('status')
+    .eq('issue_id', issueId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (existing?.status && ['ready', 'pregenerated', 'processing', 'queued'].includes(existing.status)) {
+    return;
+  }
+
+  const { data: issue } = await supabase
+    .from('issues')
+    .select('id, subject, body_text, body_html, from_email, received_at, senders(name)')
+    .eq('id', issueId)
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .maybeSingle();
+
+  if (!issue) return; // Issue not found, skip silently
+
+  const articleText = (
+    issue.body_text?.trim() ||
+    extractReadableTextFromHtml(issue.body_html || '') ||
+    stripHtmlForSpeech(issue.body_html || '')
+  ).trim();
+
+  if (!articleText) return; // No text to generate audio for
+
+  const contentWithoutSignoff = truncateAtSignoff(articleText);
+
+  const openaiApiKey = process.env.OPENAI_API_KEY;
+  if (!openaiApiKey) return; // No API key, skip silently
+
+  // Mark as processing for pregeneration
+  await setAudioStatus(supabase, userId, issueId, 'processing', undefined, {
+    generation_started_at: new Date().toISOString(),
+  });
+
+  // Step 1: Generate digest text (the AI "cliff notes" summary)
+  let digestText: string | null = null;
+  try {
+    digestText = await generateAudioDigest(
+      issue.subject || 'Newsletter article',
+      contentWithoutSignoff || articleText,
+    );
+  } catch {
+    // AI generation failed, fall back to extractive summary
+  }
+
+  const scriptBody = digestText || sanitizeForSpeech(
+    (contentWithoutSignoff || articleText).slice(0, 3000),
+  );
+  const fullScript = `${issue.subject || 'Newsletter article'}. ${scriptBody}`;
+
+  // Build hash for global cache dedup
+  const normalizedBody = normalizeAudioText(contentWithoutSignoff || articleText);
+  const senderName = Array.isArray(issue.senders)
+    ? String(issue.senders[0]?.name || '')
+    : String((issue.senders as { name?: string } | null)?.name || '');
+  const publishDate = issue.received_at ? new Date(issue.received_at).toISOString().slice(0, 10) : '';
+
+  const audioHash = buildAudioHash([
+    issue.subject || '',
+    senderName || issue.from_email || '',
+    publishDate,
+    normalizedBody,
+    'digest',
+  ]);
+
+  // Check global cache first — another user may have already generated this
+  let globalHit: Awaited<ReturnType<typeof getGlobalAudioCache>> = null;
+  try {
+    globalHit = await getGlobalAudioCache(supabase, audioHash, 'article');
+  } catch {}
+
+  if (globalHit?.audio_base64) {
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: userId,
+        status: 'pregenerated',
+        mime_type: globalHit.mime_type || 'audio/mpeg',
+        audio_base64: globalHit.audio_base64,
+        provider: globalHit.provider || 'openai',
+        model: globalHit.model,
+        audio_hash: audioHash,
+        digest_text: digestText || null,
+        generation_completed_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' },
+    );
+    return;
+  }
+
+  // Step 2: Generate TTS audio
+  const preferredModel = process.env.OPENAI_TTS_MODEL || 'tts-1';
+  const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
+  const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
+
+  const chunks = splitIntoSpeechChunks(fullScript);
+  const audioChunks: Buffer[] = [];
+  let usedModel = preferredModel;
+
+  // Generate all chunks (first chunk separately for preview support)
+  {
+    const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[0], voice, preferredModel);
+    if (!tts.ok) {
+      // Store the digest text even if TTS fails — so on-demand generation can skip AI step
+      await supabase.from('issue_audio_cache').upsert(
+        {
+          issue_id: issueId,
+          user_id: userId,
+          status: 'missing',
+          digest_text: digestText || null,
+          audio_hash: audioHash,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'issue_id,user_id' },
+      );
+      return;
+    }
+
+    usedModel = tts.model;
+    audioChunks.push(Buffer.from(tts.audioBuffer));
+  }
+
+  // Remaining chunks in parallel batches
+  for (let i = 1; i < chunks.length; i += TTS_PARALLEL_BATCH_SIZE) {
+    const batch = chunks.slice(i, i + TTS_PARALLEL_BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map((chunkText) => requestTtsAudio(endpoint, openaiApiKey, chunkText, voice, preferredModel)),
+    );
+
+    for (let j = 0; j < results.length; j += 1) {
+      const tts = results[j];
+      if (!tts.ok) {
+        // Partial failure — store digest text for faster on-demand fallback
+        await supabase.from('issue_audio_cache').upsert(
+          {
+            issue_id: issueId,
+            user_id: userId,
+            status: 'missing',
+            digest_text: digestText || null,
+            audio_hash: audioHash,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'issue_id,user_id' },
+        );
+        return;
+      }
+      usedModel = tts.model;
+      audioChunks.push(Buffer.from(tts.audioBuffer));
+    }
+  }
+
+  const audioBase64 = Buffer.concat(audioChunks).toString('base64');
+
+  // Store in global cache for cross-user dedup
+  try {
+    await upsertGlobalAudioCache(supabase, {
+      audioHash,
+      contentType: 'article',
+      mimeType: 'audio/mpeg',
+      audioBase64,
+      scriptText: fullScript,
+      provider: 'openai',
+      model: usedModel,
+    });
+  } catch {}
+
+  // Store as 'pregenerated' — credits NOT charged yet
+  await supabase.from('issue_audio_cache').upsert(
+    {
+      issue_id: issueId,
+      user_id: userId,
+      status: 'pregenerated',
+      mime_type: 'audio/mpeg',
+      audio_base64: audioBase64,
+      digest_text: digestText || null,
+      provider: 'openai',
+      model: usedModel,
+      audio_hash: audioHash,
+      generation_completed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'issue_id,user_id' },
+  );
+}

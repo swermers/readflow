@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
-import { checkEntitlement, format402Payload } from '@/utils/aiEntitlements';
+import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
 import { enqueueJob } from '@/utils/jobs';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { processAudioRequestedJob } from '@/utils/audioJob';
@@ -11,7 +11,7 @@ import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
 const STALE_PROCESSING_MS = 5 * 60 * 1000;
 
-type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'canceled';
+type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'pregenerated' | 'canceled';
 type UserSupabase = Awaited<ReturnType<typeof createClient>>;
 
 function stripHtml(html: string) {
@@ -164,7 +164,7 @@ export async function GET(request: NextRequest) {
 
   const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
 
-  const isReady = Boolean(cachedAudio?.audio_base64 && cachedAudio?.status === 'ready');
+  const isReady = Boolean(cachedAudio?.audio_base64 && (cachedAudio?.status === 'ready' || cachedAudio?.status === 'pregenerated'));
   const hasPreviewChunk = Boolean(cachedAudio?.first_chunk_base64 && ['queued', 'processing'].includes(cachedAudio?.status || ''));
 
   if (shouldRequeue(cachedAudio?.status, cachedAudio?.updated_at)) {
@@ -193,9 +193,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // For pregenerated audio, report as 'pregenerated' so the client knows
+  // credits haven't been charged yet (play will trigger POST to charge).
+  const reportedStatus: AudioStatus = isReady
+    ? (cachedAudio?.status === 'pregenerated' ? 'pregenerated' : 'ready')
+    : (cachedAudio?.status || 'missing') as AudioStatus;
+
   return NextResponse.json(
     {
-      status: (isReady ? 'ready' : cachedAudio?.status || 'missing') as AudioStatus,
+      status: reportedStatus,
       audioAvailable: isReady,
       audioUrl: isReady ? `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}` : null,
       previewAudioUrl: hasPreviewChunk ? `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}&preview=1` : null,
@@ -214,7 +220,7 @@ export async function HEAD(request: NextRequest) {
   if (!issueId) return new NextResponse(null, { status: 400 });
 
   const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
-  if (!cachedAudio?.audio_base64 || cachedAudio.status !== 'ready') {
+  if (!cachedAudio?.audio_base64 || (cachedAudio.status !== 'ready' && cachedAudio.status !== 'pregenerated')) {
     return new NextResponse(null, { status: 404 });
   }
 
@@ -270,6 +276,36 @@ export async function POST(request: NextRequest) {
   const entitlement = await checkEntitlement(supabase, user.id, 'listen');
   if (!entitlement.allowed) {
     return NextResponse.json(format402Payload(entitlement), { status: 402 });
+  }
+
+  // Pre-generated audio is ready — charge credits and serve instantly
+  if (cachedAudio?.audio_base64 && cachedAudio.status === 'pregenerated') {
+    const client = getAdminOrUserClient(supabase);
+    const consumeResult = await consumeTokensAtomic(client, user.id, 10, 'Audio digest');
+    if (!consumeResult.allowed) {
+      return NextResponse.json(format402Payload(entitlement), { status: 402 });
+    }
+
+    await client.from('issue_audio_cache').update({
+      status: 'ready',
+      credits_charged: 10,
+      credits_charged_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('issue_id', issueId)
+    .eq('user_id', user.id);
+
+    return NextResponse.json(
+      {
+        status: 'ready' as AudioStatus,
+        audioUrl: `/api/ai/listen/audio?issueId=${encodeURIComponent(issueId)}`,
+        tokensRemaining: entitlement.available - 10,
+        tokensLimit: entitlement.limit,
+        planTier: entitlement.tier,
+        unlimitedAiAccess: entitlement.unlimitedAiAccess || false,
+      },
+      { status: 200 },
+    );
   }
 
   await supabase.from('issue_audio_cache').upsert(
