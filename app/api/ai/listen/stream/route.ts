@@ -18,7 +18,7 @@ async function loadAudioState(issueId: string, userId: string) {
 
   if (!data) return null;
 
-  const isReady = data.status === 'ready' && Boolean(data.audio_base64);
+  const isReady = (data.status === 'ready' || data.status === 'pregenerated') && Boolean(data.audio_base64);
   const hasPreview = ['queued', 'processing'].includes(data.status || '') && Boolean(data.first_chunk_base64);
 
   return {
@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
         const state = await loadAudioState(issueId, user.id);
         send('status', state || { status: 'missing', audioAvailable: false, audioUrl: null, previewAudioUrl: null });
 
-        if (!state || state.status === 'ready' || state.status === 'failed' || state.status === 'canceled') {
+        if (!state || state.status === 'ready' || state.status === 'pregenerated' || state.status === 'failed' || state.status === 'canceled') {
           break;
         }
 

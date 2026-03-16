@@ -19,7 +19,7 @@ type GlobalAudioPlayerContextValue = {
   isCurrentUrl: (url: string | null | undefined) => boolean;
 };
 
-type PendingAudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'canceled';
+type PendingAudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'pregenerated' | 'canceled';
 
 const GlobalAudioPlayerContext = createContext<GlobalAudioPlayerContextValue | null>(null);
 
@@ -190,7 +190,7 @@ export function GlobalAudioPlayerProvider({ children }: { children: React.ReactN
         setPendingStatus(status);
         setPendingUpdatedAt(payload.updatedAt || null);
 
-        if (status === 'ready' || status === 'failed' || status === 'canceled' || status === 'missing') {
+        if (status === 'ready' || status === 'pregenerated' || status === 'failed' || status === 'canceled' || status === 'missing') {
           const current = window.localStorage.getItem('readflow_active_listen_issue');
           if (current === pendingIssueId) window.localStorage.removeItem('readflow_active_listen_issue');
           setPendingIssueId(null);

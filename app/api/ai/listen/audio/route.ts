@@ -30,7 +30,7 @@ async function getAudio(issueId: string, userId: string, preview: boolean) {
     };
   }
 
-  if (cachedAudio.status !== 'ready') return null;
+  if (cachedAudio.status !== 'ready' && cachedAudio.status !== 'pregenerated') return null;
 
   return {
     audioBase64: cachedAudio.audio_base64,

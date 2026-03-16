@@ -32,7 +32,7 @@ type ErrorResponse = {
   unlimitedAiAccess?: boolean;
 };
 
-type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'canceled';
+type AudioStatus = 'missing' | 'queued' | 'processing' | 'failed' | 'ready' | 'pregenerated' | 'canceled';
 
 const POLL_INTERVAL_MS = 4000;
 
@@ -228,11 +228,11 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         if (payload.audioAvailable && payload.audioUrl) {
           setAudioUrl(payload.audioUrl);
           setPreviewAudioUrl(null);
-          if (nextStatus === 'ready') {
+          if (nextStatus === 'ready' || nextStatus === 'pregenerated') {
             setAudioQueuedAt(null);
             clearGlobalAudioPendingIssue();
-            void trackEvent('listen_completed');
-            if (!readyToastShownRef.current) {
+            if (nextStatus === 'ready') void trackEvent('listen_completed');
+            if (!readyToastShownRef.current && nextStatus === 'ready') {
               triggerToast('Audio digest is ready — tap play to listen.');
               readyToastShownRef.current = true;
             }
@@ -287,7 +287,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
 
   // Seamlessly swap to full audio when ready (preserving playback position)
   useEffect(() => {
-    if (audioStatus !== 'ready' || !audioUrl) return;
+    if ((audioStatus !== 'ready' && audioStatus !== 'pregenerated') || !audioUrl) return;
     if (!userInitiatedRef.current) return;
 
     // If preview is currently playing, swap to full audio seamlessly
@@ -325,7 +325,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         if (payload.status) {
           setAudioStatus(payload.status);
           if (payload.status === 'queued' || payload.status === 'processing') setGlobalAudioPendingIssue();
-          if (payload.status === 'ready' || payload.status === 'failed' || payload.status === 'canceled') clearGlobalAudioPendingIssue();
+          if (payload.status === 'ready' || payload.status === 'pregenerated' || payload.status === 'failed' || payload.status === 'canceled') clearGlobalAudioPendingIssue();
         }
         if (payload.updatedAt) setAudioUpdatedAt(payload.updatedAt);
         if (payload.previewAudioUrl) setPreviewAudioUrl(payload.previewAudioUrl);
@@ -398,8 +398,63 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
     }
   };
 
+  const activatePregenerated = async () => {
+    // For pregenerated audio: POST charges credits and flips to ready instantly
+    setAudioLoading(true);
+    setAudioError(null);
+    userInitiatedRef.current = true;
+
+    try {
+      const res = await fetch('/api/ai/listen', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ issueId }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as ErrorResponse | null;
+        setAudioError(body?.error || 'Could not activate audio.');
+        return;
+      }
+
+      const body = (await res.json().catch(() => null)) as {
+        audioUrl?: string | null;
+        status?: AudioStatus;
+        tokensRemaining?: number;
+        planTier?: string;
+        unlimitedAiAccess?: boolean;
+      } | null;
+
+      if (body?.audioUrl && body?.status === 'ready') {
+        setAudioUrl(body.audioUrl);
+        setAudioStatus('ready');
+        void trackEvent('listen_completed');
+
+        // Auto-play immediately — this is the YouTube-like experience
+        void playAudio(body.audioUrl, {
+          title: articleSubject ? `${articleSubject} digest` : 'Newsletter digest',
+          chapters: audioChapters,
+        });
+      }
+
+      const bal = body?.tokensRemaining;
+      if (typeof bal === 'number') {
+        setCreditsMeta({ remaining: bal, limit: bal, tier: body?.planTier || 'free', unlimited: body?.unlimitedAiAccess || false });
+      }
+    } catch {
+      setAudioError('Could not activate audio right now.');
+    } finally {
+      setAudioLoading(false);
+    }
+  };
+
   const generateListenAudio = async () => {
     if (audioStatus === 'queued' || audioStatus === 'processing' || audioStatus === 'ready') return;
+
+    // If audio is pre-generated, activate it instantly (charge credits + play)
+    if (audioStatus === 'pregenerated' && audioUrl) {
+      return activatePregenerated();
+    }
 
     setAudioLoading(true);
     setAudioError(null);
@@ -536,6 +591,16 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
             <Headphones className="h-3.5 w-3.5" />
             {audioLoading ? 'Working...' : 'Audio Digest'}
           </button>
+        ) : audioStatus === 'pregenerated' ? (
+          <button
+            type="button"
+            onClick={generateListenAudio}
+            disabled={audioLoading}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-accent/40 bg-accent/5 px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink hover:border-accent hover:bg-accent/10 disabled:opacity-60"
+          >
+            <Play className="h-3.5 w-3.5" />
+            {audioLoading ? 'Loading...' : 'Play Digest'}
+          </button>
         ) : (
           <div className="inline-flex items-center justify-center rounded-lg border border-line bg-surface px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-ink-faint">
             Digest Ready
@@ -583,7 +648,7 @@ export default function AISummaryCard({ issueId, articleText, articleSubject }: 
         </div>
       )}
 
-      {(audioStatus === 'ready' || ((audioStatus === 'queued' || audioStatus === 'processing') && Boolean(previewAudioUrl))) && !audioError && (
+      {(audioStatus === 'ready' || audioStatus === 'pregenerated' || ((audioStatus === 'queued' || audioStatus === 'processing') && Boolean(previewAudioUrl))) && !audioError && (
         <div className="mt-3 rounded-lg border border-line bg-surface px-3 py-2">
           <button
             type="button"
