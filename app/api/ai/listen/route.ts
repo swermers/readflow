@@ -48,7 +48,7 @@ async function getUserIssue(supabase: UserSupabase, issueId: string, userId: str
 async function getCachedAudio(supabase: UserSupabase, issueId: string, userId: string) {
   const { data: cachedAudio } = await supabase
     .from('issue_audio_cache')
-    .select('audio_base64, first_chunk_base64, mime_type, status, updated_at')
+    .select('audio_base64, audio_storage_path, first_chunk_base64, first_chunk_storage_path, mime_type, status, updated_at')
     .eq('issue_id', issueId)
     .eq('user_id', userId)
     .maybeSingle();
@@ -164,8 +164,8 @@ export async function GET(request: NextRequest) {
 
   const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
 
-  const isReady = Boolean(cachedAudio?.audio_base64 && (cachedAudio?.status === 'ready' || cachedAudio?.status === 'pregenerated'));
-  const hasPreviewChunk = Boolean(cachedAudio?.first_chunk_base64 && ['queued', 'processing'].includes(cachedAudio?.status || ''));
+  const isReady = Boolean((cachedAudio?.audio_base64 || cachedAudio?.audio_storage_path) && (cachedAudio?.status === 'ready' || cachedAudio?.status === 'pregenerated'));
+  const hasPreviewChunk = Boolean((cachedAudio?.first_chunk_base64 || cachedAudio?.first_chunk_storage_path) && ['queued', 'processing'].includes(cachedAudio?.status || ''));
 
   if (shouldRequeue(cachedAudio?.status, cachedAudio?.updated_at)) {
     await supabase.from('issue_audio_cache').upsert(
@@ -220,7 +220,7 @@ export async function HEAD(request: NextRequest) {
   if (!issueId) return new NextResponse(null, { status: 400 });
 
   const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
-  if (!cachedAudio?.audio_base64 || (cachedAudio.status !== 'ready' && cachedAudio.status !== 'pregenerated')) {
+  if ((!cachedAudio?.audio_base64 && !cachedAudio?.audio_storage_path) || (cachedAudio.status !== 'ready' && cachedAudio.status !== 'pregenerated')) {
     return new NextResponse(null, { status: 404 });
   }
 
@@ -263,7 +263,7 @@ export async function POST(request: NextRequest) {
 
   const cachedAudio = await getCachedAudio(supabase, issueId, user.id);
 
-  if (cachedAudio?.audio_base64 && cachedAudio.status === 'ready') {
+  if ((cachedAudio?.audio_base64 || cachedAudio?.audio_storage_path) && cachedAudio.status === 'ready') {
     return NextResponse.json(
       {
         status: 'ready' as AudioStatus,
@@ -279,7 +279,7 @@ export async function POST(request: NextRequest) {
   }
 
   // Pre-generated audio is ready — charge credits and serve instantly
-  if (cachedAudio?.audio_base64 && cachedAudio.status === 'pregenerated') {
+  if ((cachedAudio?.audio_base64 || cachedAudio?.audio_storage_path) && cachedAudio.status === 'pregenerated') {
     const client = getAdminOrUserClient(supabase);
     const consumeResult = await consumeTokensAtomic(client, user.id, 10, 'Audio digest');
     if (!consumeResult.allowed) {

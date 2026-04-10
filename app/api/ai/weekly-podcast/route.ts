@@ -11,7 +11,9 @@ type PodcastRow = {
   status: string;
   mime_type: string | null;
   audio_base64: string | null;
+  audio_storage_path: string | null;
   first_chunk_base64: string | null;
+  first_chunk_storage_path: string | null;
   first_chunk_ready_at: string | null;
   created_at: string;
   updated_at: string;
@@ -57,7 +59,7 @@ export async function GET(request: NextRequest) {
 
   let query = supabase
     .from('weekly_podcast_cache')
-    .select('status, mime_type, audio_base64, first_chunk_base64, first_chunk_ready_at, created_at, updated_at, last_error, delivery_key, week_start, week_end')
+    .select('status, mime_type, audio_base64, audio_storage_path, first_chunk_base64, first_chunk_storage_path, first_chunk_ready_at, created_at, updated_at, last_error, delivery_key, week_start, week_end')
     .eq('user_id', user.id)
     .order('created_at', { ascending: false })
     .limit(1);
@@ -96,8 +98,10 @@ export async function GET(request: NextRequest) {
       ? {
           status: row.status,
           mimeType: row.mime_type,
-          audioBase64: row.audio_base64,
-          firstChunkBase64: row.first_chunk_base64,
+          audioBase64: row.audio_base64 || null,
+          audioStoragePath: row.audio_storage_path || null,
+          firstChunkBase64: row.first_chunk_base64 || null,
+          firstChunkStoragePath: row.first_chunk_storage_path || null,
           firstChunkReadyAt: row.first_chunk_ready_at,
           createdAt: row.created_at,
           updatedAt: row.updated_at,
@@ -110,7 +114,7 @@ export async function GET(request: NextRequest) {
               ? `/api/ai/weekly-podcast/audio?${row.delivery_key ? `deliveryKey=${encodeURIComponent(row.delivery_key)}` : `weekStart=${encodeURIComponent(row.week_start || '')}&weekEnd=${encodeURIComponent(row.week_end || '')}`}`
               : null,
           previewAudioUrl:
-            row.status !== 'ready' && row.first_chunk_base64
+            row.status !== 'ready' && (row.first_chunk_base64 || row.first_chunk_storage_path)
               ? `/api/ai/weekly-podcast/audio?preview=1&${row.delivery_key ? `deliveryKey=${encodeURIComponent(row.delivery_key)}` : `weekStart=${encodeURIComponent(row.week_start || '')}&weekEnd=${encodeURIComponent(row.week_end || '')}`}`
               : null,
         }

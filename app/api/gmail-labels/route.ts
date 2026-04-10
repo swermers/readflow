@@ -33,9 +33,9 @@ export async function GET() {
   }
 
   const { data: profile } = await supabase
-    .from('profiles')
+    .from('profile_integrations')
     .select('gmail_refresh_token, gmail_connected')
-    .eq('id', user.id)
+    .eq('user_id', user.id)
     .single();
 
   if (!profile?.gmail_refresh_token) {
@@ -47,12 +47,12 @@ export async function GET() {
 
     // Update stored access token
     await supabase
-      .from('profiles')
+      .from('profile_integrations')
       .update({
         gmail_access_token: accessToken,
         gmail_token_expires_at: expiresAt.toISOString(),
       })
-      .eq('id', user.id);
+      .eq('user_id', user.id);
 
     const allLabels = await listLabels(accessToken);
 
@@ -76,9 +76,9 @@ export async function GET() {
     // (invalid_grant means token was revoked or expired permanently)
     if (msg.includes('invalid_grant') || msg.includes('Token has been expired or revoked')) {
       await supabase
-        .from('profiles')
+        .from('profile_integrations')
         .update({ gmail_connected: false, gmail_access_token: null, gmail_refresh_token: null })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
       return NextResponse.json(
         { error: 'Gmail access was revoked. Please reconnect Gmail.', code: 'TOKEN_REVOKED' },
         { status: 401 }
@@ -147,10 +147,10 @@ export async function POST(request: Request) {
     adminAvailable = true;
 
     const { error, data } = await admin
-      .from('profiles')
+      .from('profile_integrations')
       .update({ gmail_sync_labels: body.labels })
-      .eq('id', user.id)
-      .select('id')
+      .eq('user_id', user.id)
+      .select('user_id')
       .single();
 
     if (error) {
@@ -172,10 +172,10 @@ export async function POST(request: Request) {
 
   // Fallback: authenticated server client
   const { error, data } = await supabase
-    .from('profiles')
+    .from('profile_integrations')
     .update({ gmail_sync_labels: body.labels })
-    .eq('id', user.id)
-    .select('id')
+    .eq('user_id', user.id)
+    .select('user_id')
     .single();
 
   if (error) {

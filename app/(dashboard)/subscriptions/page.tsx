@@ -25,9 +25,9 @@ export default function SourcesPage() {
     const { data: { user } } = await supabase.auth.getUser();
     if (user) {
       const { data: profile } = await supabase
-        .from('profiles')
+        .from('profile_billing')
         .select('plan_tier, unlimited_ai_access')
-        .eq('id', user.id)
+        .eq('user_id', user.id)
         .single();
 
       if (profile) {

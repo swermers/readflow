@@ -28,9 +28,9 @@ export async function GET() {
   const db = admin || supabase;
 
   const { data: profile } = await db
-    .from('profiles')
+    .from('profile_integrations')
     .select('gmail_refresh_token, gmail_connected')
-    .eq('id', user.id)
+    .eq('user_id', user.id)
     .single();
 
   // No refresh token stored — genuinely disconnected
@@ -49,13 +49,13 @@ export async function GET() {
 
     // Token is valid — fix the flag and update the access token
     await db
-      .from('profiles')
+      .from('profile_integrations')
       .update({
         gmail_connected: true,
         gmail_access_token: accessToken,
         gmail_token_expires_at: expiresAt.toISOString(),
       })
-      .eq('id', user.id);
+      .eq('user_id', user.id);
 
     return NextResponse.json({ connected: true, restored: true });
   } catch (err: any) {
@@ -64,13 +64,13 @@ export async function GET() {
     // Token permanently revoked — clear everything
     if (msg.includes('invalid_grant') || msg.includes('Token has been expired or revoked')) {
       await db
-        .from('profiles')
+        .from('profile_integrations')
         .update({
           gmail_connected: false,
           gmail_access_token: null,
           gmail_refresh_token: null,
         })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       return NextResponse.json({ connected: false, reason: 'revoked' });
     }

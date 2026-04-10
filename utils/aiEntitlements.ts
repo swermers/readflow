@@ -61,9 +61,9 @@ export async function ensureTokensAvailable(
   tokensNeeded: number,
 ): Promise<EnsureResult> {
   const { data: profile } = await supabase
-    .from('profiles')
+    .from('profile_billing')
     .select('token_balance, unlimited_ai_access, plan_tier')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .single<WalletProfile>();
 
   const tier = normalizeTier(profile?.plan_tier);
@@ -160,13 +160,13 @@ export async function consumeTokensAtomic(
   }
 
   // Fallback: RPC not available, do manual update
-  const { data: currentProfile } = await supabase
-    .from('profiles')
+  const { data: currentBilling } = await supabase
+    .from('profile_billing')
     .select('token_balance')
-    .eq('id', userId)
+    .eq('user_id', userId)
     .single<{ token_balance: number | null }>();
 
-  const currentBalance = Math.max(0, currentProfile?.token_balance ?? 0);
+  const currentBalance = Math.max(0, currentBilling?.token_balance ?? 0);
   if (currentBalance < tokens) {
     return {
       ...preflight,
@@ -179,9 +179,9 @@ export async function consumeTokensAtomic(
 
   const newBalance = currentBalance - tokens;
   await supabase
-    .from('profiles')
+    .from('profile_billing')
     .update({ token_balance: newBalance })
-    .eq('id', userId);
+    .eq('user_id', userId);
 
   return {
     ...preflight,

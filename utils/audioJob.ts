@@ -4,6 +4,7 @@ import { buildAudioHash, getGlobalAudioCache, normalizeAudioText, upsertGlobalAu
 import { latencyMs, recordAudioMetric } from '@/utils/audioMetrics';
 import { extractReadableTextFromHtml, sanitizeForSpeech, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
 import { generateAudioDigest } from '@/utils/audioDigest';
+import { uploadAudio } from '@/utils/audioStorage';
 
 const MAX_CHUNK_CHARS = 2500;
 const FIRST_CHUNK_CHARS = 420;
@@ -235,13 +236,23 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
 
   if (globalHit?.audio_base64) {
     await safeRecordMetric(supabase, 'audio_cache_hit');
+
+    // Upload to per-user storage path
+    const storagePath = await uploadAudio(supabase, {
+      userId,
+      type: 'article',
+      filename: `${issueId}.mp3`,
+      audioBuffer: Buffer.from(globalHit.audio_base64, 'base64'),
+    });
+
     await supabase.from('issue_audio_cache').upsert(
       {
         issue_id: issueId,
         user_id: userId,
         status: 'ready',
         mime_type: globalHit.mime_type || 'audio/mpeg',
-        audio_base64: globalHit.audio_base64,
+        audio_base64: storagePath ? null : globalHit.audio_base64,
+        audio_storage_path: storagePath,
         provider: globalHit.provider || 'openai',
         model: globalHit.model,
         audio_hash: audioHash,
@@ -265,7 +276,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   const audioChunks: Buffer[] = [];
   let usedModel = preferredModel;
 
-  // Process first chunk separately (needed for preview / first_chunk_base64)
+  // Process first chunk separately (needed for preview)
   {
     const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[0], voice, preferredModel);
     if (!tts.ok) {
@@ -280,8 +291,18 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     audioChunks.push(chunkBuffer);
 
     const firstChunkReadyAt = new Date();
+
+    // Upload preview chunk to storage
+    const previewPath = await uploadAudio(supabase, {
+      userId,
+      type: 'preview',
+      filename: `${issueId}-preview.mp3`,
+      audioBuffer: chunkBuffer,
+    });
+
     await setAudioStatus(supabase, userId, issueId, 'processing', usedModel, {
-      first_chunk_base64: chunkBuffer.toString('base64'),
+      first_chunk_base64: previewPath ? null : chunkBuffer.toString('base64'),
+      first_chunk_storage_path: previewPath,
       first_chunk_ready_at: firstChunkReadyAt.toISOString(),
       audio_hash: audioHash,
       digest_text: digestText || null,
@@ -336,7 +357,8 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     chargedAt = new Date().toISOString();
   }
 
-  const audioBase64 = Buffer.concat(audioChunks).toString('base64');
+  const fullAudioBuffer = Buffer.concat(audioChunks);
+  const audioBase64 = fullAudioBuffer.toString('base64');
 
   try {
     await upsertGlobalAudioCache(supabase, {
@@ -350,13 +372,22 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     });
   } catch {}
 
+  // Upload full audio to storage
+  const storagePath = await uploadAudio(supabase, {
+    userId,
+    type: 'article',
+    filename: `${issueId}.mp3`,
+    audioBuffer: fullAudioBuffer,
+  });
+
   await supabase.from('issue_audio_cache').upsert(
     {
       issue_id: issueId,
       user_id: userId,
       status: 'ready',
       mime_type: 'audio/mpeg',
-      audio_base64: audioBase64,
+      audio_base64: storagePath ? null : audioBase64,
+      audio_storage_path: storagePath,
       digest_text: digestText || null,
       provider: 'openai',
       model: usedModel,
@@ -460,13 +491,21 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
   } catch {}
 
   if (globalHit?.audio_base64) {
+    const storagePath = await uploadAudio(supabase, {
+      userId,
+      type: 'article',
+      filename: `${issueId}.mp3`,
+      audioBuffer: Buffer.from(globalHit.audio_base64, 'base64'),
+    });
+
     await supabase.from('issue_audio_cache').upsert(
       {
         issue_id: issueId,
         user_id: userId,
         status: 'pregenerated',
         mime_type: globalHit.mime_type || 'audio/mpeg',
-        audio_base64: globalHit.audio_base64,
+        audio_base64: storagePath ? null : globalHit.audio_base64,
+        audio_storage_path: storagePath,
         provider: globalHit.provider || 'openai',
         model: globalHit.model,
         audio_hash: audioHash,
@@ -540,7 +579,8 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
     }
   }
 
-  const audioBase64 = Buffer.concat(audioChunks).toString('base64');
+  const fullAudioBuffer = Buffer.concat(audioChunks);
+  const audioBase64 = fullAudioBuffer.toString('base64');
 
   // Store in global cache for cross-user dedup
   try {
@@ -555,6 +595,14 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
     });
   } catch {}
 
+  // Upload full audio to storage
+  const storagePath = await uploadAudio(supabase, {
+    userId,
+    type: 'article',
+    filename: `${issueId}.mp3`,
+    audioBuffer: fullAudioBuffer,
+  });
+
   // Store as 'pregenerated' — credits NOT charged yet
   await supabase.from('issue_audio_cache').upsert(
     {
@@ -562,7 +610,8 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
       user_id: userId,
       status: 'pregenerated',
       mime_type: 'audio/mpeg',
-      audio_base64: audioBase64,
+      audio_base64: storagePath ? null : audioBase64,
+      audio_storage_path: storagePath,
       digest_text: digestText || null,
       provider: 'openai',
       model: usedModel,

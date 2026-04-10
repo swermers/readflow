@@ -11,15 +11,15 @@ async function loadAudioState(issueId: string, userId: string) {
   const supabase = await createClient();
   const { data } = await supabase
     .from('issue_audio_cache')
-    .select('status, updated_at, audio_base64, first_chunk_base64')
+    .select('status, updated_at, audio_base64, audio_storage_path, first_chunk_base64, first_chunk_storage_path')
     .eq('issue_id', issueId)
     .eq('user_id', userId)
     .maybeSingle();
 
   if (!data) return null;
 
-  const isReady = (data.status === 'ready' || data.status === 'pregenerated') && Boolean(data.audio_base64);
-  const hasPreview = ['queued', 'processing'].includes(data.status || '') && Boolean(data.first_chunk_base64);
+  const isReady = (data.status === 'ready' || data.status === 'pregenerated') && Boolean(data.audio_base64 || data.audio_storage_path);
+  const hasPreview = ['queued', 'processing'].includes(data.status || '') && Boolean(data.first_chunk_base64 || data.first_chunk_storage_path);
 
   return {
     status: data.status || 'missing',

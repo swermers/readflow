@@ -83,7 +83,7 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
   await admin
-    .from('profiles')
+    .from('profile_integrations')
     .update({
       notion_access_token_enc: encryptNotionToken(tokenData.access_token),
       notion_workspace_id: tokenData.workspace_id || null,
@@ -92,7 +92,7 @@ export async function GET(request: Request) {
       notion_sync_status: 'queued',
       notion_last_error: null,
     })
-    .eq('id', user.id);
+    .eq('user_id', user.id);
 
   await enqueueJob(admin, 'notion.sync', { userId: user.id }, `notion-sync:${user.id}`, { maxAttempts: 5 });
 

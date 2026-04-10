@@ -21,9 +21,9 @@ export async function POST() {
   }
 
   const { data: profile, error } = await supabase
-    .from('profiles')
+    .from('profile_integrations')
     .select('notion_access_token_enc')
-    .eq('id', user.id)
+    .eq('user_id', user.id)
     .maybeSingle<{ notion_access_token_enc: string | null }>();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
@@ -33,9 +33,9 @@ export async function POST() {
 
   const admin = createAdminClient();
   await admin
-    .from('profiles')
+    .from('profile_integrations')
     .update({ notion_sync_status: 'queued', notion_last_error: null })
-    .eq('id', user.id);
+    .eq('user_id', user.id);
 
   await enqueueJob(admin, 'notion.sync', { userId: user.id }, `notion-sync:${user.id}`, { maxAttempts: 5 });
 

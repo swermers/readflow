@@ -174,9 +174,9 @@ export async function GET(request: Request) {
         }
 
         const { error: updateErr } = await db
-          .from('profiles')
+          .from('profile_integrations')
           .update(updates)
-          .eq('id', user.id);
+          .eq('user_id', user.id);
 
         if (updateErr) {
           console.error('[Auth Callback] Token save failed:', updateErr);

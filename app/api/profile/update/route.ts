@@ -3,12 +3,13 @@ import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
 
 /** Allowlist of profile columns that can be updated from the client. */
-const ALLOWED_FIELDS = new Set([
-  'full_name',
+const PROFILE_FIELDS = new Set(['full_name']);
+const PREFERENCE_FIELDS = new Set([
   'brief_delivery_days',
   'brief_delivery_hour',
   'brief_delivery_tz',
 ]);
+const ALLOWED_FIELDS = new Set([...PROFILE_FIELDS, ...PREFERENCE_FIELDS]);
 
 /**
  * POST /api/profile/update
@@ -42,55 +43,36 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
   }
 
-  // Try admin client first (bypasses RLS)
-  let adminAvailable = false;
+  // Split updates between profiles (core) and profile_preferences
+  const profileUpdates: Record<string, unknown> = {};
+  const prefUpdates: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(updates)) {
+    if (PROFILE_FIELDS.has(key)) profileUpdates[key] = val;
+    if (PREFERENCE_FIELDS.has(key)) prefUpdates[key] = val;
+  }
+
+  let db: ReturnType<typeof createAdminClient> | Awaited<ReturnType<typeof createClient>>;
   try {
-    const admin = createAdminClient();
-    adminAvailable = true;
-
-    const { error, data } = await admin
-      .from('profiles')
-      .update(updates)
-      .eq('id', user.id)
-      .select('id')
-      .single();
-
-    if (error) {
-      console.error('[Profile Update] Admin update error:', error);
-      return NextResponse.json({ error: `Save failed: ${error.message}` }, { status: 500 });
-    }
-
-    if (!data) {
-      console.error('[Profile Update] Admin update returned no rows for user:', user.id);
-      return NextResponse.json({ error: 'Profile not found' }, { status: 404 });
-    }
-
-    return NextResponse.json({ saved: true });
-  } catch (adminErr) {
-    if (adminAvailable) {
-      // Admin client was created but the query failed
-      console.error('[Profile Update] Admin query failed:', adminErr);
-      return NextResponse.json({ error: 'Save failed' }, { status: 500 });
-    }
-    console.warn('[Profile Update] Admin client unavailable, using server client');
+    db = createAdminClient();
+  } catch {
+    db = supabase;
   }
 
-  // Fallback: use the authenticated server client
-  const { error, data } = await supabase
-    .from('profiles')
-    .update(updates)
-    .eq('id', user.id)
-    .select('id')
-    .single();
+  const errors: string[] = [];
 
-  if (error) {
-    console.error('[Profile Update] Server update error:', error);
-    return NextResponse.json({ error: `Save failed: ${error.message}` }, { status: 500 });
+  if (Object.keys(profileUpdates).length > 0) {
+    const { error } = await db.from('profiles').update(profileUpdates).eq('id', user.id);
+    if (error) errors.push(error.message);
   }
 
-  if (!data) {
-    console.error('[Profile Update] Server update returned no rows — RLS may be blocking writes');
-    return NextResponse.json({ error: 'Save failed — no rows updated' }, { status: 500 });
+  if (Object.keys(prefUpdates).length > 0) {
+    const { error } = await db.from('profile_preferences').update(prefUpdates).eq('user_id', user.id);
+    if (error) errors.push(error.message);
+  }
+
+  if (errors.length > 0) {
+    console.error('[Profile Update] Errors:', errors);
+    return NextResponse.json({ error: `Save failed: ${errors.join('; ')}` }, { status: 500 });
   }
 
   return NextResponse.json({ saved: true });

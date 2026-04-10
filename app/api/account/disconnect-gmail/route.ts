@@ -22,7 +22,7 @@ export async function POST() {
   }
 
   const { error } = await db
-    .from('profiles')
+    .from('profile_integrations')
     .update({
       gmail_connected: false,
       gmail_access_token: null,
@@ -31,7 +31,7 @@ export async function POST() {
       gmail_sync_labels: [],
       gmail_last_sync_at: null,
     })
-    .eq('id', user.id);
+    .eq('user_id', user.id);
 
   if (error) {
     console.error('[Disconnect Gmail] Error:', error.message);
