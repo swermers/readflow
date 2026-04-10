@@ -9,7 +9,7 @@ const PREFERENCE_FIELDS = new Set([
   'brief_delivery_hour',
   'brief_delivery_tz',
 ]);
-const ALLOWED_FIELDS = new Set([...PROFILE_FIELDS, ...PREFERENCE_FIELDS]);
+const ALLOWED_FIELDS = new Set(Array.from(PROFILE_FIELDS).concat(Array.from(PREFERENCE_FIELDS)));
 
 /**
  * POST /api/profile/update
