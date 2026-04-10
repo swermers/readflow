@@ -36,11 +36,11 @@ export default async function BriefingPage() {
 
   let needsOnboarding = true;
   if (user) {
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('gmail_sync_labels, onboarding_completed')
-      .eq('id', user.id)
-      .single();
+    const [{ data: integrations }, { data: coreProfile }] = await Promise.all([
+      supabase.from('profile_integrations').select('gmail_sync_labels').eq('user_id', user.id).single(),
+      supabase.from('profiles').select('onboarding_completed').eq('id', user.id).single(),
+    ]);
+    const profile = { gmail_sync_labels: integrations?.gmail_sync_labels, onboarding_completed: coreProfile?.onboarding_completed };
     const labels = profile?.gmail_sync_labels ?? [];
     // Show onboarding if: not explicitly completed AND no Gmail labels AND no senders yet
     if (profile?.onboarding_completed) {

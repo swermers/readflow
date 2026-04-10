@@ -15,9 +15,9 @@ export async function GET() {
   // Try with token_balance first (from migration 030), fall back without it
   let profile: Record<string, unknown> | null = null;
   const { data: p1 } = await supabase
-    .from('profiles')
+    .from('profile_billing')
     .select('plan_tier, token_balance, unlimited_ai_access')
-    .eq('id', user.id)
+    .eq('user_id', user.id)
     .single();
 
   if (p1) {
@@ -25,9 +25,9 @@ export async function GET() {
   } else {
     // token_balance column may not exist if migration 030 wasn't run
     const { data: p2 } = await supabase
-      .from('profiles')
+      .from('profile_billing')
       .select('plan_tier, unlimited_ai_access')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .single();
     profile = p2;
   }

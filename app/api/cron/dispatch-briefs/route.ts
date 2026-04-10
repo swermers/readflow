@@ -7,7 +7,7 @@ import { getRollingWindowRange } from '@/utils/weeklyBrief';
 import { NextResponse } from 'next/server';
 
 type ProfileSchedule = {
-  id: string;
+  user_id: string;
   brief_delivery_days: number[] | null;
   brief_delivery_hour: number | null;
   brief_delivery_tz: string | null;
@@ -73,11 +73,25 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   const now = new Date();
 
-  const { data: users, error } = await supabase
-    .from('profiles')
-    .select('id, brief_delivery_days, brief_delivery_hour, brief_delivery_tz, brief_last_enqueued_for_date')
+  // Step 1: Get user_ids of elite+active users from profile_billing
+  const { data: billingUsers, error: billingError } = await supabase
+    .from('profile_billing')
+    .select('user_id')
     .eq('plan_tier', 'elite')
     .eq('plan_status', 'active');
+
+  if (billingError) return NextResponse.json({ error: billingError.message }, { status: 500 });
+
+  const eligibleUserIds = (billingUsers || []).map((b) => b.user_id);
+  if (eligibleUserIds.length === 0) {
+    return NextResponse.json({ ok: true, enqueued: 0 });
+  }
+
+  // Step 2: Get preferences for those users from profile_preferences
+  const { data: users, error } = await supabase
+    .from('profile_preferences')
+    .select('user_id, brief_delivery_days, brief_delivery_hour, brief_delivery_tz, brief_last_enqueued_for_date')
+    .in('user_id', eligibleUserIds);
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
 
@@ -87,28 +101,28 @@ export async function GET(request: Request) {
     if (!decision.should) continue;
 
     const { weekStartDate, weekEndDate } = getRollingWindowRange(7, now);
-    const deliveryKey = `${decision.localDate}:${profile.id}`;
+    const deliveryKey = `${decision.localDate}:${profile.user_id}`;
 
     await enqueueJob(
       supabase,
       'briefing.generate',
-      { userId: profile.id, weekStartDate, weekEndDate, deliveryKey },
-      `briefing:${profile.id}:${deliveryKey}`,
+      { userId: profile.user_id, weekStartDate, weekEndDate, deliveryKey },
+      `briefing:${profile.user_id}:${deliveryKey}`,
       { maxAttempts: 4 },
     );
 
     await enqueueJob(
       supabase,
       'podcast.weekly',
-      { userId: profile.id, weekStartDate, weekEndDate, deliveryKey },
-      `podcast:${profile.id}:${deliveryKey}`,
+      { userId: profile.user_id, weekStartDate, weekEndDate, deliveryKey },
+      `podcast:${profile.user_id}:${deliveryKey}`,
       { maxAttempts: 4 },
     );
 
     await supabase
-      .from('profiles')
+      .from('profile_preferences')
       .update({ brief_last_enqueued_for_date: decision.localDate })
-      .eq('id', profile.id);
+      .eq('user_id', profile.user_id);
 
     enqueued += 1;
   }

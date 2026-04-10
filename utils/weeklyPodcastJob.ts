@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { buildAudioHash, getGlobalAudioCache, upsertGlobalAudioCache } from '@/utils/audioCache';
 import { latencyMs, recordAudioMetric } from '@/utils/audioMetrics';
 import { buildAudioScript } from '@/utils/audioScriptEngine';
+import { uploadAudio } from '@/utils/audioStorage';
 
 type WeeklyPodcastPayload = {
   userId: string;
@@ -208,12 +209,21 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
 
   if (globalHit?.audio_base64) {
     await safeRecordMetric(supabase, 'audio_cache_hit');
+
+    const storagePath = await uploadAudio(supabase, {
+      userId: payload.userId,
+      type: 'podcast',
+      filename: `${payload.deliveryKey || `${payload.weekStartDate}-${payload.weekEndDate}`}.mp3`,
+      audioBuffer: Buffer.from(globalHit.audio_base64, 'base64'),
+    });
+
     await upsertStatus(supabase, payload, {
       status: 'ready',
       model: globalHit.model,
       script_text: globalHit.script_text || script,
       mime_type: globalHit.mime_type || 'audio/mpeg',
-      audio_base64: globalHit.audio_base64,
+      audio_base64: storagePath ? null : globalHit.audio_base64,
+      audio_storage_path: storagePath,
       audio_hash: audioHash,
       generation_completed_at: new Date().toISOString(),
       last_error: null,
@@ -258,10 +268,19 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
     audioChunks.push(chunkBuffer);
 
     const firstChunkReadyAt = new Date();
+
+    const previewPath = await uploadAudio(supabase, {
+      userId: payload.userId,
+      type: 'preview',
+      filename: `podcast-${payload.deliveryKey || `${payload.weekStartDate}-${payload.weekEndDate}`}-preview.mp3`,
+      audioBuffer: chunkBuffer,
+    });
+
     await upsertStatus(supabase, payload, {
       status: 'processing',
       model: usedModel,
-      first_chunk_base64: chunkBuffer.toString('base64'),
+      first_chunk_base64: previewPath ? null : chunkBuffer.toString('base64'),
+      first_chunk_storage_path: previewPath,
       first_chunk_ready_at: firstChunkReadyAt.toISOString(),
       audio_hash: audioHash,
     });
@@ -295,7 +314,8 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
     }
   }
 
-  const audioBase64 = Buffer.concat(audioChunks).toString('base64');
+  const fullAudioBuffer = Buffer.concat(audioChunks);
+  const audioBase64 = fullAudioBuffer.toString('base64');
 
   try {
     await upsertGlobalAudioCache(supabase, {
@@ -309,12 +329,20 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
     });
   } catch {}
 
+  const storagePath = await uploadAudio(supabase, {
+    userId: payload.userId,
+    type: 'podcast',
+    filename: `${payload.deliveryKey || `${payload.weekStartDate}-${payload.weekEndDate}`}.mp3`,
+    audioBuffer: fullAudioBuffer,
+  });
+
   await upsertStatus(supabase, payload, {
     status: 'ready',
     model: usedModel,
     script_text: script,
     mime_type: 'audio/mpeg',
-    audio_base64: audioBase64,
+    audio_base64: storagePath ? null : audioBase64,
+    audio_storage_path: storagePath,
     audio_hash: audioHash,
     generation_completed_at: new Date().toISOString(),
     last_error: null,

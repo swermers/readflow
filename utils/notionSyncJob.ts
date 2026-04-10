@@ -2,9 +2,11 @@ import { createHash } from 'crypto';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { decryptNotionToken } from '@/utils/notionCrypto';
 
-type ProfileRow = {
-  id: string;
+type BillingRow = {
   plan_tier: string | null;
+};
+
+type IntegrationRow = {
   notion_access_token_enc: string | null;
 };
 
@@ -140,23 +142,32 @@ async function upsertNotionPage(token: string, highlight: HighlightRow) {
 }
 
 export async function processNotionSyncJob(supabase: SupabaseClient, userId: string) {
-  const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('id, plan_tier, notion_access_token_enc')
-    .eq('id', userId)
-    .maybeSingle<ProfileRow>();
+  const { data: billing, error: billingError } = await supabase
+    .from('profile_billing')
+    .select('plan_tier')
+    .eq('user_id', userId)
+    .maybeSingle<BillingRow>();
 
-  if (profileError) throw profileError;
-  if (!profile) throw new Error('Profile not found');
-  if (profile.plan_tier !== 'elite') throw new Error('Notion sync requires elite tier');
-  if (!profile.notion_access_token_enc) throw new Error('Notion is not connected');
+  if (billingError) throw billingError;
+  if (!billing) throw new Error('Billing profile not found');
+  if (billing.plan_tier !== 'elite') throw new Error('Notion sync requires elite tier');
 
-  const notionToken = decryptNotionToken(profile.notion_access_token_enc);
+  const { data: integration, error: integrationError } = await supabase
+    .from('profile_integrations')
+    .select('notion_access_token_enc')
+    .eq('user_id', userId)
+    .maybeSingle<IntegrationRow>();
+
+  if (integrationError) throw integrationError;
+  if (!integration) throw new Error('Integration profile not found');
+  if (!integration.notion_access_token_enc) throw new Error('Notion is not connected');
+
+  const notionToken = decryptNotionToken(integration.notion_access_token_enc);
 
   await supabase
-    .from('profiles')
+    .from('profile_integrations')
     .update({ notion_sync_status: 'syncing', notion_last_error: null })
-    .eq('id', userId);
+    .eq('user_id', userId);
 
   const { data: highlights, error: highlightsError } = await supabase
     .from('highlights')
@@ -205,13 +216,13 @@ export async function processNotionSyncJob(supabase: SupabaseClient, userId: str
   }
 
   await supabase
-    .from('profiles')
+    .from('profile_integrations')
     .update({
       notion_sync_status: 'ok',
       notion_last_synced_at: new Date().toISOString(),
       notion_last_error: null,
     })
-    .eq('id', userId);
+    .eq('user_id', userId);
 
   return { syncedCount };
 }

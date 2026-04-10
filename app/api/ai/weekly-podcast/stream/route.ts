@@ -15,7 +15,7 @@ async function loadPodcastState(
 
   let query = supabase
     .from('weekly_podcast_cache')
-    .select('status, updated_at, audio_base64, first_chunk_base64, delivery_key, week_start, week_end')
+    .select('status, updated_at, audio_base64, audio_storage_path, first_chunk_base64, first_chunk_storage_path, delivery_key, week_start, week_end')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1);
@@ -29,8 +29,8 @@ async function loadPodcastState(
   const { data } = await query.maybeSingle();
   if (!data) return null;
 
-  const hasReady = data.status === 'ready' && Boolean(data.audio_base64);
-  const hasPreview = ['queued', 'processing'].includes(data.status || '') && Boolean(data.first_chunk_base64);
+  const hasReady = data.status === 'ready' && Boolean(data.audio_base64 || data.audio_storage_path);
+  const hasPreview = ['queued', 'processing'].includes(data.status || '') && Boolean(data.first_chunk_base64 || data.first_chunk_storage_path);
   const keyPart = data.delivery_key
     ? `deliveryKey=${encodeURIComponent(data.delivery_key)}`
     : `weekStart=${encodeURIComponent(data.week_start || '')}&weekEnd=${encodeURIComponent(data.week_end || '')}`;

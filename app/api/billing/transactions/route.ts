@@ -30,9 +30,9 @@ export async function GET(request: NextRequest) {
 
   // Also fetch current balance
   const { data: profile } = await supabase
-    .from('profiles')
+    .from('profile_billing')
     .select('token_balance, unlimited_ai_access')
-    .eq('id', user.id)
+    .eq('user_id', user.id)
     .single();
 
   return NextResponse.json({

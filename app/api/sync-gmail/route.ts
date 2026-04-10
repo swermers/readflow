@@ -82,9 +82,9 @@ async function handleSync() {
   let profile;
   try {
     const { data, error: profileError } = await db
-      .from('profiles')
+      .from('profile_integrations')
       .select('gmail_access_token, gmail_refresh_token, gmail_token_expires_at, gmail_connected, gmail_sync_labels')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .single();
 
     if (profileError) {
@@ -132,12 +132,12 @@ async function handleSync() {
 
     // Store the refreshed access token
     const { error: tokenUpdateErr } = await db
-      .from('profiles')
+      .from('profile_integrations')
       .update({
         gmail_access_token: accessToken,
         gmail_token_expires_at: expiresAt.toISOString(),
       })
-      .eq('id', user.id);
+      .eq('user_id', user.id);
 
     if (tokenUpdateErr) {
       console.error(`[Sync] Token update failed user=${user.id}:`, tokenUpdateErr.message);
@@ -170,9 +170,9 @@ async function handleSync() {
     if (messageIds.length === 0) {
       // Update last sync time even if nothing found
       await db
-        .from('profiles')
+        .from('profile_integrations')
         .update({ gmail_last_sync_at: new Date().toISOString() })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       if (failedLabels.length === syncLabels.length) {
         console.error(`[Sync] ALL labels failed user=${user.id} labels=${JSON.stringify(syncLabels)}`);
@@ -238,9 +238,9 @@ async function handleSync() {
 
     if (newMessageIds.length === 0) {
       await db
-        .from('profiles')
+        .from('profile_integrations')
         .update({ gmail_last_sync_at: new Date().toISOString() })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       return NextResponse.json({
         imported: 0,
@@ -379,9 +379,9 @@ async function handleSync() {
 
     // Update last sync time
     await db
-      .from('profiles')
+      .from('profile_integrations')
       .update({ gmail_last_sync_at: new Date().toISOString() })
-      .eq('id', user.id);
+      .eq('user_id', user.id);
 
     const elapsed = Date.now() - syncStart;
     console.log(`[Sync] Complete user=${user.id}: imported=${imported} errors=${skippedErrors} elapsed=${elapsed}ms`);
@@ -433,13 +433,13 @@ async function handleSync() {
     // Only clear tokens when Google permanently revoked them
     if (message.includes('invalid_grant') || message.includes('Token has been expired or revoked')) {
       await db
-        .from('profiles')
+        .from('profile_integrations')
         .update({
           gmail_connected: false,
           gmail_access_token: null,
           gmail_refresh_token: null,
         })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       return NextResponse.json(
         { error: 'Gmail access was revoked. Please reconnect Gmail in Settings.', code: 'TOKEN_REVOKED' },

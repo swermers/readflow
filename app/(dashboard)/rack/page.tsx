@@ -88,9 +88,9 @@ export default async function Home() {
 
   if (user) {
     const { data: profile } = await supabase
-      .from('profiles')
+      .from('profile_integrations')
       .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .single();
 
     gmailConnected = profile?.gmail_connected || false;

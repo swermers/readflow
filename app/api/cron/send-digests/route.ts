@@ -33,17 +33,63 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
   const now = new Date();
 
-  // Fetch Pro+ and Elite users who have email digests enabled (or who haven't disabled them)
-  const { data: users, error } = await supabase
-    .from('profiles')
-    .select('id, email, full_name, plan_tier, digest_enabled, digest_day, digest_hour, digest_tz, digest_last_sent_date')
+  // Step 1: Get user_ids of pro/elite active users from profile_billing
+  const { data: billingUsers, error: billingError } = await supabase
+    .from('profile_billing')
+    .select('user_id, plan_tier')
     .in('plan_tier', ['pro', 'elite'])
-    .eq('plan_status', 'active')
+    .eq('plan_status', 'active');
+
+  if (billingError) {
+    return NextResponse.json({ error: billingError.message }, { status: 500 });
+  }
+
+  const eligibleUserIds = (billingUsers || []).map((b) => b.user_id);
+  if (eligibleUserIds.length === 0) {
+    return NextResponse.json({ ok: true, sent: 0, skipped: 0 });
+  }
+
+  // Step 2: Batch-fetch profiles (email, full_name) for eligible users
+  const { data: profileRows, error: profileError } = await supabase
+    .from('profiles')
+    .select('id, email, full_name')
+    .in('id', eligibleUserIds);
+
+  if (profileError) {
+    return NextResponse.json({ error: profileError.message }, { status: 500 });
+  }
+
+  // Step 3: Batch-fetch preferences (digest fields) for eligible users
+  const { data: prefRows, error: prefError } = await supabase
+    .from('profile_preferences')
+    .select('user_id, digest_enabled, digest_day, digest_hour, digest_tz, digest_last_sent_date')
+    .in('user_id', eligibleUserIds)
     .neq('digest_enabled', false);
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (prefError) {
+    return NextResponse.json({ error: prefError.message }, { status: 500 });
   }
+
+  // Build lookup maps
+  const billingMap = new Map((billingUsers || []).map((b) => [b.user_id, b]));
+  const profileMap = new Map((profileRows || []).map((p) => [p.id, p]));
+
+  // Combine into a unified users list (only users who have preferences with digest not disabled)
+  const users = (prefRows || []).map((pref) => {
+    const profile = profileMap.get(pref.user_id);
+    const billing = billingMap.get(pref.user_id);
+    return {
+      id: pref.user_id,
+      email: profile?.email ?? null,
+      full_name: profile?.full_name ?? null,
+      plan_tier: billing?.plan_tier ?? null,
+      digest_enabled: pref.digest_enabled,
+      digest_day: pref.digest_day,
+      digest_hour: pref.digest_hour,
+      digest_tz: pref.digest_tz,
+      digest_last_sent_date: pref.digest_last_sent_date,
+    };
+  });
 
   let sent = 0;
   let skipped = 0;
@@ -111,9 +157,9 @@ export async function GET(request: Request) {
 
       // Mark as sent for today
       await supabase
-        .from('profiles')
+        .from('profile_preferences')
         .update({ digest_last_sent_date: localDate })
-        .eq('id', user.id);
+        .eq('user_id', user.id);
 
       sent++;
     } catch (err) {

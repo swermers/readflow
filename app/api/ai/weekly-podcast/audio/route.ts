@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
+import { downloadAudio } from '@/utils/audioStorage';
 import { NextRequest, NextResponse } from 'next/server';
 
 function buildAudioHeaders(mimeType: string, byteLength: number) {
@@ -21,7 +22,7 @@ async function getPodcastAudio(
 
   let query = supabase
     .from('weekly_podcast_cache')
-    .select('status, mime_type, audio_base64, first_chunk_base64')
+    .select('status, mime_type, audio_base64, audio_storage_path, first_chunk_base64, first_chunk_storage_path')
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
     .limit(1);
@@ -36,18 +37,23 @@ async function getPodcastAudio(
   if (!data) return null;
 
   if (opts.preview) {
-    return {
-      audioBase64: data.first_chunk_base64,
-      mimeType: data.mime_type,
-    };
+    let base64 = data.first_chunk_base64;
+    if (data.first_chunk_storage_path && !base64) {
+      const buf = await downloadAudio(supabase, data.first_chunk_storage_path);
+      if (buf) base64 = buf.toString('base64');
+    }
+    return { audioBase64: base64, mimeType: data.mime_type };
   }
 
   if (data.status !== 'ready') return null;
 
-  return {
-    audioBase64: data.audio_base64,
-    mimeType: data.mime_type,
-  };
+  let base64 = data.audio_base64;
+  if (data.audio_storage_path && !base64) {
+    const buf = await downloadAudio(supabase, data.audio_storage_path);
+    if (buf) base64 = buf.toString('base64');
+  }
+
+  return { audioBase64: base64, mimeType: data.mime_type };
 }
 
 export async function GET(request: NextRequest) {

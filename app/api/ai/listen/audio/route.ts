@@ -2,6 +2,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 import { createClient } from '@/utils/supabase/server';
+import { downloadAudio } from '@/utils/audioStorage';
 import { NextRequest, NextResponse } from 'next/server';
 
 function buildAudioHeaders(mimeType: string, byteLength: number) {
@@ -17,25 +18,33 @@ async function getAudio(issueId: string, userId: string, preview: boolean) {
   const supabase = await createClient();
   const { data: cachedAudio } = await supabase
     .from('issue_audio_cache')
-    .select('audio_base64, first_chunk_base64, mime_type, status')
+    .select('audio_base64, audio_storage_path, first_chunk_base64, first_chunk_storage_path, mime_type, status')
     .eq('issue_id', issueId)
     .eq('user_id', userId)
     .maybeSingle();
 
   if (!cachedAudio) return null;
+
   if (preview) {
-    return {
-      audioBase64: cachedAudio.first_chunk_base64,
-      mimeType: cachedAudio.mime_type,
-    };
+    // Prefer storage, fall back to inline base64
+    let base64 = cachedAudio.first_chunk_base64;
+    if (cachedAudio.first_chunk_storage_path && !base64) {
+      const buf = await downloadAudio(supabase, cachedAudio.first_chunk_storage_path);
+      if (buf) base64 = buf.toString('base64');
+    }
+    return { audioBase64: base64, mimeType: cachedAudio.mime_type };
   }
 
   if (cachedAudio.status !== 'ready' && cachedAudio.status !== 'pregenerated') return null;
 
-  return {
-    audioBase64: cachedAudio.audio_base64,
-    mimeType: cachedAudio.mime_type,
-  };
+  // Prefer storage, fall back to inline base64
+  let base64 = cachedAudio.audio_base64;
+  if (cachedAudio.audio_storage_path && !base64) {
+    const buf = await downloadAudio(supabase, cachedAudio.audio_storage_path);
+    if (buf) base64 = buf.toString('base64');
+  }
+
+  return { audioBase64: base64, mimeType: cachedAudio.mime_type };
 }
 
 export async function GET(request: NextRequest) {

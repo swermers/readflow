@@ -110,11 +110,18 @@ function SettingsContent() {
     setFirstName(fullNameRaw.split(' ')[0] || '');
     setLastName(fullNameRaw.split(' ').slice(1).join(' ') || '');
 
-    // Gmail + plan fields (only columns that exist in the DB schema)
+    // Gmail integration fields
     const { data: gmailProfile } = await supabase
-      .from('profiles')
-      .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels, plan_tier, unlimited_ai_access')
-      .eq('id', user.id)
+      .from('profile_integrations')
+      .select('gmail_connected, gmail_last_sync_at, gmail_sync_labels')
+      .eq('user_id', user.id)
+      .single();
+
+    // Plan/billing fields
+    const { data: billingProfile } = await supabase
+      .from('profile_billing')
+      .select('plan_tier, unlimited_ai_access')
+      .eq('user_id', user.id)
       .single();
 
     if (gmailProfile) {
@@ -123,15 +130,17 @@ function SettingsContent() {
       if (gmailProfile.gmail_last_sync_at) {
         setLastSync(new Date(gmailProfile.gmail_last_sync_at));
       }
-      setPlanTier((gmailProfile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
-      setUnlimitedAiAccess(Boolean(gmailProfile.unlimited_ai_access));
+    }
+    if (billingProfile) {
+      setPlanTier((billingProfile.plan_tier || 'free') as 'free' | 'pro' | 'elite');
+      setUnlimitedAiAccess(Boolean(billingProfile.unlimited_ai_access));
     }
 
     // Brief schedule
     const { data: briefPrefs } = await supabase
-      .from('profiles')
+      .from('profile_preferences')
       .select('brief_delivery_days, brief_delivery_hour, brief_delivery_tz')
-      .eq('id', user.id)
+      .eq('user_id', user.id)
       .maybeSingle<{
         brief_delivery_days: number[] | null;
         brief_delivery_hour: number | null;
