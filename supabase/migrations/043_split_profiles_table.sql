@@ -118,65 +118,160 @@ CREATE POLICY "Users can insert own preferences"
 
 -- ─── 4. Populate new tables from existing profiles data ──────────────────
 
-INSERT INTO public.profile_integrations (
-  user_id,
-  gmail_access_token, gmail_refresh_token, gmail_token_expires_at,
-  gmail_connected, gmail_last_sync_at, gmail_sync_labels,
-  notion_access_token_enc, notion_workspace_id, notion_workspace_name,
-  notion_connected_at, notion_sync_status, notion_last_synced_at, notion_last_error
-)
-SELECT
-  id,
-  gmail_access_token, gmail_refresh_token, gmail_token_expires_at,
-  COALESCE(gmail_connected, false), gmail_last_sync_at, COALESCE(gmail_sync_labels, '{}'),
-  COALESCE(notion_access_token_enc, notion_access_token_encrypted),
-  notion_workspace_id, notion_workspace_name,
-  notion_connected_at,
-  COALESCE(notion_sync_status, 'idle'),
-  COALESCE(notion_last_synced_at, notion_last_sync_at),
-  notion_last_error
-FROM public.profiles
-ON CONFLICT (user_id) DO NOTHING;
+-- Use dynamic SQL for integrations to handle columns that may not exist
+DO $$
+DECLARE
+  has_notion boolean;
+  has_notion_enc boolean;
+  has_notion_encrypted boolean;
+  notion_token_col text;
+  has_notion_last_synced boolean;
+  has_notion_last_sync boolean;
+  notion_sync_col text;
+BEGIN
+  -- Check which Notion token column name exists
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='notion_access_token_enc') INTO has_notion_enc;
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='notion_access_token_encrypted') INTO has_notion_encrypted;
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='notion_workspace_id') INTO has_notion;
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='notion_last_synced_at') INTO has_notion_last_synced;
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='notion_last_sync_at') INTO has_notion_last_sync;
 
-INSERT INTO public.profile_billing (
-  user_id,
-  plan_tier, plan_status, billing_cycle,
-  token_balance, unlimited_ai_access, access_granted_by_code,
-  ai_credits_used, ai_tokens_used, ai_cycle_started_at
-)
-SELECT
-  id,
-  COALESCE(plan_tier, 'free'),
-  COALESCE(plan_status, 'active'),
-  COALESCE(billing_cycle, 'monthly'),
-  COALESCE(token_balance, 30),
-  COALESCE(unlimited_ai_access, false),
-  access_granted_by_code,
-  COALESCE(ai_credits_used, 0),
-  COALESCE(ai_tokens_used, 0),
-  COALESCE(ai_cycle_started_at, now())
-FROM public.profiles
-ON CONFLICT (user_id) DO NOTHING;
+  IF has_notion_enc THEN notion_token_col := 'notion_access_token_enc';
+  ELSIF has_notion_encrypted THEN notion_token_col := 'notion_access_token_encrypted';
+  ELSE notion_token_col := NULL;
+  END IF;
 
-INSERT INTO public.profile_preferences (
-  user_id,
-  brief_delivery_days, brief_delivery_hour, brief_delivery_tz,
-  brief_last_enqueued_for_date,
-  digest_enabled, digest_day, digest_hour, digest_tz, digest_last_sent_date
-)
-SELECT
-  id,
-  COALESCE(brief_delivery_days, '{1}'),
-  COALESCE(brief_delivery_hour, 9),
-  COALESCE(brief_delivery_tz, 'UTC'),
-  brief_last_enqueued_for_date,
-  COALESCE(digest_enabled, true),
-  COALESCE(digest_day, 1),
-  COALESCE(digest_hour, 9),
-  COALESCE(digest_tz, 'America/New_York'),
-  digest_last_sent_date
-FROM public.profiles
-ON CONFLICT (user_id) DO NOTHING;
+  IF has_notion_last_synced THEN notion_sync_col := 'notion_last_synced_at';
+  ELSIF has_notion_last_sync THEN notion_sync_col := 'notion_last_sync_at';
+  ELSE notion_sync_col := NULL;
+  END IF;
+
+  IF has_notion AND notion_token_col IS NOT NULL THEN
+    EXECUTE format('
+      INSERT INTO public.profile_integrations (
+        user_id,
+        gmail_access_token, gmail_refresh_token, gmail_token_expires_at,
+        gmail_connected, gmail_last_sync_at, gmail_sync_labels,
+        notion_access_token_enc, notion_workspace_id, notion_workspace_name,
+        notion_connected_at, notion_sync_status, notion_last_synced_at, notion_last_error
+      )
+      SELECT
+        id,
+        gmail_access_token, gmail_refresh_token, gmail_token_expires_at,
+        COALESCE(gmail_connected, false), gmail_last_sync_at, COALESCE(gmail_sync_labels, ''{}''),
+        %I, notion_workspace_id, notion_workspace_name,
+        notion_connected_at,
+        COALESCE(notion_sync_status, ''idle''),
+        %s,
+        notion_last_error
+      FROM public.profiles
+      ON CONFLICT (user_id) DO NOTHING',
+      notion_token_col,
+      COALESCE(notion_sync_col, 'NULL::timestamptz')
+    );
+  ELSE
+    -- No Notion columns — just copy Gmail fields
+    EXECUTE '
+      INSERT INTO public.profile_integrations (
+        user_id,
+        gmail_access_token, gmail_refresh_token, gmail_token_expires_at,
+        gmail_connected, gmail_last_sync_at, gmail_sync_labels
+      )
+      SELECT
+        id,
+        gmail_access_token, gmail_refresh_token, gmail_token_expires_at,
+        COALESCE(gmail_connected, false), gmail_last_sync_at, COALESCE(gmail_sync_labels, ''{}'')
+      FROM public.profiles
+      ON CONFLICT (user_id) DO NOTHING';
+  END IF;
+END $$;
+
+-- Populate billing — these columns should all exist from earlier migrations
+DO $$
+DECLARE
+  has_token_balance boolean;
+  has_ai_tokens boolean;
+BEGIN
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='token_balance') INTO has_token_balance;
+  SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='profiles' AND column_name='ai_tokens_used') INTO has_ai_tokens;
+
+  IF has_token_balance AND has_ai_tokens THEN
+    EXECUTE '
+      INSERT INTO public.profile_billing (
+        user_id, plan_tier, plan_status, billing_cycle,
+        token_balance, unlimited_ai_access, access_granted_by_code,
+        ai_credits_used, ai_tokens_used, ai_cycle_started_at
+      )
+      SELECT id,
+        COALESCE(plan_tier, ''free''), COALESCE(plan_status, ''active''), COALESCE(billing_cycle, ''monthly''),
+        COALESCE(token_balance, 30), COALESCE(unlimited_ai_access, false), access_granted_by_code,
+        COALESCE(ai_credits_used, 0), COALESCE(ai_tokens_used, 0), COALESCE(ai_cycle_started_at, now())
+      FROM public.profiles
+      ON CONFLICT (user_id) DO NOTHING';
+  ELSE
+    EXECUTE '
+      INSERT INTO public.profile_billing (
+        user_id, plan_tier, plan_status,
+        unlimited_ai_access, access_granted_by_code,
+        ai_credits_used, ai_cycle_started_at
+      )
+      SELECT id,
+        COALESCE(plan_tier, ''free''), COALESCE(plan_status, ''active''),
+        COALESCE(unlimited_ai_access, false), access_granted_by_code,
+        COALESCE(ai_credits_used, 0), COALESCE(ai_cycle_started_at, now())
+      FROM public.profiles
+      ON CONFLICT (user_id) DO NOTHING';
+  END IF;
+END $$;
+
+-- Use dynamic SQL to handle digest columns that may not exist on profiles
+DO $$
+DECLARE
+  has_digest boolean;
+BEGIN
+  SELECT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'profiles' AND column_name = 'digest_enabled'
+  ) INTO has_digest;
+
+  IF has_digest THEN
+    EXECUTE '
+      INSERT INTO public.profile_preferences (
+        user_id,
+        brief_delivery_days, brief_delivery_hour, brief_delivery_tz,
+        brief_last_enqueued_for_date,
+        digest_enabled, digest_day, digest_hour, digest_tz, digest_last_sent_date
+      )
+      SELECT
+        id,
+        COALESCE(brief_delivery_days, ''{1}''),
+        COALESCE(brief_delivery_hour, 9),
+        COALESCE(brief_delivery_tz, ''UTC''),
+        brief_last_enqueued_for_date,
+        COALESCE(digest_enabled, true),
+        COALESCE(digest_day, 1),
+        COALESCE(digest_hour, 9),
+        COALESCE(digest_tz, ''America/New_York''),
+        digest_last_sent_date
+      FROM public.profiles
+      ON CONFLICT (user_id) DO NOTHING';
+  ELSE
+    EXECUTE '
+      INSERT INTO public.profile_preferences (
+        user_id,
+        brief_delivery_days, brief_delivery_hour, brief_delivery_tz,
+        brief_last_enqueued_for_date
+      )
+      SELECT
+        id,
+        COALESCE(brief_delivery_days, ''{1}''),
+        COALESCE(brief_delivery_hour, 9),
+        COALESCE(brief_delivery_tz, ''UTC''),
+        brief_last_enqueued_for_date
+      FROM public.profiles
+      ON CONFLICT (user_id) DO NOTHING';
+  END IF;
+END $$;
 
 -- ─── 5. Auto-create rows in new tables on profile insert ─────────────────
 
