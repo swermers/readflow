@@ -1,5 +1,6 @@
 import { createClient } from '@/utils/supabase/server';
 import { deriveAutoTags } from '@/utils/noteTags';
+import { syncHighlightToSift } from '@/utils/siftSync';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
@@ -147,6 +148,14 @@ export async function POST(request: NextRequest) {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Sync to Sift (fire-and-forget, never blocks response)
+  syncHighlightToSift(supabase, {
+    highlighted_text: data.highlighted_text,
+    note: data.note ?? null,
+    issue_id: data.issue_id ?? null,
+    ebook_id: data.ebook_id ?? null,
+  });
 
   return NextResponse.json(data, { status: 201 });
 }
