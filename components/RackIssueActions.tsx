@@ -37,27 +37,27 @@ export default function RackIssueActions({ issueId }: RackIssueActionsProps) {
   };
 
   return (
-    <div className="flex flex-wrap items-center justify-end gap-1.5">
+    <div className="flex items-center justify-end gap-1.5">
       <button
         onClick={(event) => updateStatus(event, 'read')}
         className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-ink-muted hover:border-accent hover:text-accent min-[420px]:px-2.5"
       >
         <BookmarkPlus className="h-3.5 w-3.5" />
-        <span className="hidden min-[420px]:inline">Save</span>
+        <span className="hidden min-[420px]:inline lg:hidden xl:inline">Save</span>
       </button>
       <button
         onClick={(event) => updateStatus(event, 'queued')}
         className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-ink-muted hover:border-accent hover:text-accent min-[420px]:px-2.5"
       >
         <Clock className="h-3.5 w-3.5" />
-        <span className="hidden min-[420px]:inline">Later</span>
+        <span className="hidden min-[420px]:inline lg:hidden xl:inline">Later</span>
       </button>
       <button
         onClick={(event) => updateStatus(event, 'archived')}
         className="inline-flex items-center gap-1 rounded-lg border border-line px-2 py-1.5 text-[10px] uppercase tracking-[0.08em] text-ink-muted hover:border-accent hover:text-accent min-[420px]:px-2.5"
       >
         <Archive className="h-3.5 w-3.5" />
-        <span className="hidden min-[420px]:inline">Archive</span>
+        <span className="hidden min-[420px]:inline lg:hidden xl:inline">Archive</span>
       </button>
       <IssueDeleteButton issueId={issueId} compact />
     </div>
