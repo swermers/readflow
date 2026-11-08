@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { chatCompletion, parseJsonFromText } from '@/utils/openrouter';
 
 type WeeklyBrief = {
   overview: string;
@@ -15,20 +16,6 @@ function stripHtml(html: string) {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-}
-
-function parseJsonFromText(text: string) {
-  const direct = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
-  try {
-    return JSON.parse(direct);
-  } catch {
-    const firstBrace = direct.indexOf('{');
-    const lastBrace = direct.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      return JSON.parse(direct.slice(firstBrace, lastBrace + 1));
-    }
-    throw new Error('Could not parse JSON payload');
-  }
 }
 
 function normalize(payload: unknown): WeeklyBrief | null {
@@ -51,34 +38,15 @@ function normalize(payload: unknown): WeeklyBrief | null {
   return { overview, themes: themes.slice(0, 5) };
 }
 
-async function summarizeWithAnthropic(input: string) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('Anthropic key is not configured');
-
+async function summarizeWithOpenRouter(input: string) {
   const prompt = `You are building a weekly cross-newsletter brief for a busy knowledge worker.\nReturn STRICT JSON with:\n- overview: string (2-4 concise sentences)\n- themes: array of 3-5 objects, each { title: string, consensus: string, sourceCount: number }\n\nFocus on synthesis across sources, not summary per newsletter.\n\nNewsletters:\n${input}`;
 
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: process.env.ANTHROPIC_MODEL || 'claude-3-5-haiku-latest',
-      max_tokens: 800,
-      temperature: 0.2,
-      messages: [{ role: 'user', content: prompt }],
-    }),
+  const { text } = await chatCompletion({
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens: 800,
+    temperature: 0.2,
+    json: true,
   });
-
-  if (!res.ok) throw new Error(`Anthropic weekly brief failed: ${res.status} ${await res.text()}`);
-  const data = await res.json();
-  const textBlock = Array.isArray(data?.content)
-    ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-    : null;
-  const text = textBlock?.text;
-  if (typeof text !== 'string') throw new Error('Anthropic response missing text');
   const normalized = normalize(parseJsonFromText(text));
   if (!normalized) throw new Error('Invalid weekly brief payload');
   return normalized;
@@ -169,7 +137,7 @@ export async function generateWeeklyBriefForUser(
     })
     .join('\n\n---\n\n');
 
-  const brief = await summarizeWithAnthropic(digestInput);
+  const brief = await summarizeWithOpenRouter(digestInput);
 
   const { error: insertError } = await supabase.from('weekly_briefs').insert({
     user_id: userId,

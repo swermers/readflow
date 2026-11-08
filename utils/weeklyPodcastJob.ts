@@ -3,6 +3,9 @@ import { buildAudioHash, getGlobalAudioCache, upsertGlobalAudioCache } from '@/u
 import { latencyMs, recordAudioMetric } from '@/utils/audioMetrics';
 import { buildAudioScript } from '@/utils/audioScriptEngine';
 import { uploadAudio } from '@/utils/audioStorage';
+import { hasOpenRouterKey } from '@/utils/openrouter';
+import { chainStartingAt, getUserVoiceChain, speakChunk, splitIntoSpeechChunks, TTS_PARALLEL_BATCH_SIZE } from '@/utils/tts';
+import type { VoiceOption } from '@/utils/voices';
 
 type WeeklyPodcastPayload = {
   userId: string;
@@ -16,55 +19,6 @@ type BriefTheme = {
   consensus: string;
   sourceCount: number;
 };
-
-const MAX_CHUNK_CHARS = 2500;
-const FIRST_CHUNK_CHARS = 420;
-const TTS_FETCH_TIMEOUT_MS = 60_000;
-const TTS_PARALLEL_BATCH_SIZE = 3;
-
-function splitIntoSpeechChunks(input: string) {
-  if (input.length <= FIRST_CHUNK_CHARS) return [input];
-
-  const sentences = input
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-
-  if (!sentences.length) {
-    return input.match(new RegExp(`.{1,${MAX_CHUNK_CHARS}}`, 'g')) || [input];
-  }
-
-  const chunks: string[] = [];
-  let current = '';
-
-  for (const sentence of sentences) {
-    const targetLimit = chunks.length === 0 ? FIRST_CHUNK_CHARS : MAX_CHUNK_CHARS;
-    const next = current ? `${current} ${sentence}` : sentence;
-    if (next.length <= targetLimit) {
-      current = next;
-      continue;
-    }
-
-    if (current) {
-      chunks.push(current);
-      current = sentence;
-      continue;
-    }
-
-    const hardLimit = chunks.length === 0 ? FIRST_CHUNK_CHARS : MAX_CHUNK_CHARS;
-    const parts = sentence.match(new RegExp(`.{1,${hardLimit}}`, 'g')) || [sentence];
-    chunks.push(parts[0]);
-    if (parts.length > 1) {
-      const rest = parts.slice(1).join(' ');
-      if (rest) current = rest;
-    } else {
-      current = '';
-    }
-  }
-
-  if (current) chunks.push(current);
-  return chunks;
-}
 
 function createPodcastScript(overview: string, themes: BriefTheme[]) {
   const sectionBlocks = themes
@@ -85,54 +39,6 @@ function createPodcastScript(overview: string, themes: BriefTheme[]) {
   });
 
   return built.script;
-}
-
-async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: string, voice: string, preferredModel: string) {
-  const models = Array.from(new Set([preferredModel, 'gpt-4o-mini-tts', 'tts-1']));
-
-  let lastStatus = 0;
-  let lastError = '';
-  for (const model of models) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TTS_FETCH_TIMEOUT_MS);
-    let res: Response;
-    try {
-      res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${openaiApiKey}`,
-        },
-        body: JSON.stringify({ model, input, voice, response_format: 'mp3' }),
-        signal: controller.signal,
-      });
-    } catch (fetchErr) {
-      clearTimeout(timeout);
-      lastStatus = 0;
-      lastError = fetchErr instanceof Error ? fetchErr.message : 'fetch failed';
-      continue;
-    }
-    clearTimeout(timeout);
-
-    if (res.ok) {
-      const audioBuffer = await res.arrayBuffer();
-      return { ok: true as const, model, audioBuffer };
-    }
-
-    lastStatus = res.status;
-    const errorBody = await res.text().catch(() => '');
-    lastError = errorBody.slice(0, 400);
-
-    if (res.status === 400 && /input|length|too\s+long|maximum/i.test(errorBody)) {
-      break;
-    }
-
-    if (res.status === 429 && /insufficient_quota|exceeded\s+your\s+current\s+quota/i.test(errorBody)) {
-      break;
-    }
-  }
-
-  return { ok: false as const, status: lastStatus, reason: lastError };
 }
 
 async function upsertStatus(
@@ -186,15 +92,18 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
 
   await upsertStatus(supabase, payload, {
     status: 'processing',
-    provider: 'openai',
+    provider: 'openrouter',
     generation_started_at: generationStartedAt,
   });
 
   const themes = (Array.isArray(brief.themes) ? brief.themes : []) as BriefTheme[];
   const script = createPodcastScript(brief.overview || '', themes);
 
+  const voiceChain = await getUserVoiceChain(supabase, payload.userId);
+
   const audioHash = buildAudioHash([
     'readflow-weekly-podcast',
+    voiceChain[0].key,
     brief.delivery_key || payload.deliveryKey || '',
     brief.week_start,
     brief.week_end,
@@ -234,36 +143,33 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
 
   await safeRecordMetric(supabase, 'audio_cache_miss');
 
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  if (!openaiApiKey) {
-    await upsertStatus(supabase, payload, { status: 'failed', last_error: 'OPENAI_API_KEY missing' });
-    await safeRecordMetric(supabase, 'audio_generation_failed', 1, 'OPENAI_API_KEY missing');
-    throw new Error('OPENAI_API_KEY missing');
+  if (!hasOpenRouterKey()) {
+    await upsertStatus(supabase, payload, { status: 'failed', last_error: 'OPENROUTER_API_KEY missing' });
+    await safeRecordMetric(supabase, 'audio_generation_failed', 1, 'OPENROUTER_API_KEY missing');
+    throw new Error('OPENROUTER_API_KEY missing');
   }
-
-  const preferredModel = process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts';
-  const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
-  const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
 
   const chunks = splitIntoSpeechChunks(script);
   const audioChunks: Buffer[] = [];
-  let usedModel = preferredModel;
+  let usedVoice: VoiceOption = voiceChain[0];
+  let usedModel = usedVoice.key;
 
   // Process first chunk separately (needed for preview / first_chunk_base64)
   {
-    const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[0], voice, preferredModel);
+    const tts = await speakChunk(chunks[0], voiceChain);
     if (!tts.ok) {
       const failReason = `Audio provider failed on chunk 1/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`;
       await upsertStatus(supabase, payload, {
         status: 'failed',
-        model: preferredModel,
+        model: usedModel,
         last_error: failReason,
       });
       await safeRecordMetric(supabase, 'audio_generation_failed', 1, failReason);
       throw new Error(failReason);
     }
 
-    usedModel = tts.model;
+    usedVoice = tts.voice;
+    usedModel = usedVoice.key;
     const chunkBuffer = Buffer.from(tts.audioBuffer);
     audioChunks.push(chunkBuffer);
 
@@ -293,7 +199,7 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
   for (let i = 1; i < chunks.length; i += TTS_PARALLEL_BATCH_SIZE) {
     const batch = chunks.slice(i, i + TTS_PARALLEL_BATCH_SIZE);
     const results = await Promise.all(
-      batch.map((chunkText) => requestTtsAudio(endpoint, openaiApiKey, chunkText, voice, preferredModel)),
+      batch.map((chunkText) => speakChunk(chunkText, chainStartingAt(voiceChain, usedVoice))),
     );
 
     for (let j = 0; j < results.length; j += 1) {
@@ -303,13 +209,13 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
         const failReason = `Audio provider failed on chunk ${chunkIdx + 1}/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`;
         await upsertStatus(supabase, payload, {
           status: 'failed',
-          model: preferredModel,
+          model: usedModel,
           last_error: failReason,
         });
         await safeRecordMetric(supabase, 'audio_generation_failed', 1, failReason);
         throw new Error(failReason);
       }
-      usedModel = tts.model;
+      usedModel = tts.voice.key;
       audioChunks.push(Buffer.from(tts.audioBuffer));
     }
   }
@@ -324,7 +230,7 @@ export async function processWeeklyPodcastJob(supabase: SupabaseClient, payload:
       mimeType: 'audio/mpeg',
       audioBase64,
       scriptText: script,
-      provider: 'openai',
+      provider: 'openrouter',
       model: usedModel,
     });
   } catch {}

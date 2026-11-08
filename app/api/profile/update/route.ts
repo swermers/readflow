@@ -1,6 +1,7 @@
 import { createClient } from '@/utils/supabase/server';
 import { createAdminClient } from '@/utils/supabase/admin';
 import { NextResponse } from 'next/server';
+import { isValidVoiceKey } from '@/utils/voices';
 
 /** Allowlist of profile columns that can be updated from the client. */
 const PROFILE_FIELDS = new Set(['full_name']);
@@ -8,6 +9,7 @@ const PREFERENCE_FIELDS = new Set([
   'brief_delivery_days',
   'brief_delivery_hour',
   'brief_delivery_tz',
+  'tts_voice',
 ]);
 const ALLOWED_FIELDS = new Set(Array.from(PROFILE_FIELDS).concat(Array.from(PREFERENCE_FIELDS)));
 
@@ -39,6 +41,10 @@ export async function POST(request: Request) {
     }
   }
 
+  if ('tts_voice' in updates && updates.tts_voice !== null && !isValidVoiceKey(updates.tts_voice)) {
+    return NextResponse.json({ error: 'Unknown voice' }, { status: 400 });
+  }
+
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No valid fields to update' }, { status: 400 });
   }
@@ -66,7 +72,9 @@ export async function POST(request: Request) {
   }
 
   if (Object.keys(prefUpdates).length > 0) {
-    const { error } = await db.from('profile_preferences').update(prefUpdates).eq('user_id', user.id);
+    const { error } = await db
+      .from('profile_preferences')
+      .upsert({ user_id: user.id, ...prefUpdates }, { onConflict: 'user_id' });
     if (error) errors.push(error.message);
   }
 

@@ -2,11 +2,12 @@
 
 import { useEffect, useState, Suspense, useCallback } from 'react';
 import { createClient } from '@/utils/supabase/client';
-import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, ChevronRight, X, Copy, Check, Inbox, Lock } from 'lucide-react';
+import { User, Mail, LogOut, Loader2, Save, RefreshCw, AlertTriangle, Tag, CalendarClock, Wallet, ArrowDownRight, ArrowUpRight, Trash2, ShieldAlert, ChevronDown, ChevronRight, X, Copy, Check, Inbox, Lock, Volume2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { triggerToast } from '@/components/Toast';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import VoicePicker from '@/components/VoicePicker';
 
 interface GmailLabel {
   id: string;
@@ -72,7 +73,7 @@ function SettingsContent() {
   const [regeneratingAlias, setRegeneratingAlias] = useState(false);
   const [gmailSectionOpen, setGmailSectionOpen] = useState<boolean | null>(null);
 
-  const COLLAPSIBLE_SECTIONS = ['profile', 'security', 'brief-schedule', 'gmail-sync', 'danger-zone'] as const;
+  const COLLAPSIBLE_SECTIONS = ['profile', 'security', 'listening-voice', 'brief-schedule', 'gmail-sync', 'danger-zone'] as const;
   const [collapsedSections, setCollapsedSections] = useState<Set<string>>(new Set());
 
   const toggleSection = (section: string) => {
@@ -1132,6 +1133,28 @@ function SettingsContent() {
             <p className="text-xs text-ink-faint border-t border-line pt-4">
               Your brief is generated from newsletters received at your Readflow email address. Forward emails or subscribe directly to keep your brief up to date.
             </p>
+          </div>
+        </div>}
+        </section>
+
+        {/* ─── Listening Voice ─── */}
+        <section className="pt-12 border-t border-line">
+          <button onClick={() => toggleSection('listening-voice')} className="w-full text-left grid grid-cols-1 md:grid-cols-12 gap-8">
+            <div className="md:col-span-4">
+              <h3 className="font-bold text-lg text-ink flex items-center gap-2">
+                {collapsedSections.has('listening-voice') ? <ChevronRight className="w-5 h-5 text-ink-faint" /> : <ChevronDown className="w-5 h-5 text-ink-faint" />}
+                <Volume2 className="w-5 h-5 text-ink-faint" />
+                Listening Voice
+              </h3>
+              <p className="text-sm text-ink-faint mt-1 ml-7">
+                Pick the voice that reads your audio digests and weekly podcast. Press play to hear a sample.
+              </p>
+            </div>
+          </button>
+          {!collapsedSections.has('listening-voice') && <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mt-8">
+          <div className="md:col-span-4" />
+          <div className="md:col-span-8 rounded-2xl bg-surface-raised border border-line p-6">
+            <VoicePicker />
           </div>
         </div>}
         </section>
