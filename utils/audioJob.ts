@@ -5,11 +5,9 @@ import { latencyMs, recordAudioMetric } from '@/utils/audioMetrics';
 import { extractReadableTextFromHtml, sanitizeForSpeech, stripHtmlForSpeech } from '@/utils/audioScriptEngine';
 import { generateAudioDigest } from '@/utils/audioDigest';
 import { uploadAudio } from '@/utils/audioStorage';
-
-const MAX_CHUNK_CHARS = 2500;
-const FIRST_CHUNK_CHARS = 420;
-const TTS_FETCH_TIMEOUT_MS = 60_000; // 60s timeout per TTS API call
-const TTS_PARALLEL_BATCH_SIZE = 3;   // Process up to 3 chunks in parallel
+import { hasOpenRouterKey } from '@/utils/openrouter';
+import { chainStartingAt, getUserVoiceChain, speakChunk, splitIntoSpeechChunks, TTS_PARALLEL_BATCH_SIZE } from '@/utils/tts';
+import type { VoiceOption } from '@/utils/voices';
 
 function truncateAtSignoff(text: string) {
   const lines = text
@@ -35,100 +33,6 @@ function truncateAtSignoff(text: string) {
   return text;
 }
 
-function splitIntoSpeechChunks(input: string) {
-  if (input.length <= FIRST_CHUNK_CHARS) return [input];
-
-  const sentences = input
-    .split(/(?<=[.!?])\s+/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-
-  if (!sentences.length) {
-    return input.match(new RegExp(`.{1,${MAX_CHUNK_CHARS}}`, 'g')) || [input];
-  }
-
-  const chunks: string[] = [];
-  let current = '';
-
-  for (const sentence of sentences) {
-    const targetLimit = chunks.length === 0 ? FIRST_CHUNK_CHARS : MAX_CHUNK_CHARS;
-    const next = current ? `${current} ${sentence}` : sentence;
-    if (next.length <= targetLimit) {
-      current = next;
-      continue;
-    }
-
-    if (current) {
-      chunks.push(current);
-      current = sentence;
-      continue;
-    }
-
-    const hardLimit = chunks.length === 0 ? FIRST_CHUNK_CHARS : MAX_CHUNK_CHARS;
-    const parts = sentence.match(new RegExp(`.{1,${hardLimit}}`, 'g')) || [sentence];
-    chunks.push(parts[0]);
-    if (parts.length > 1) {
-      const rest = parts.slice(1).join(' ');
-      if (rest) current = rest;
-    } else {
-      current = '';
-    }
-  }
-
-  if (current) chunks.push(current);
-  return chunks;
-}
-
-async function requestTtsAudio(endpoint: string, openaiApiKey: string, input: string, voice: string, preferredModel: string) {
-  // Use tts-1 as default (cheapest), with preferred model and gpt-4o-mini-tts as fallbacks
-  const models = Array.from(new Set([preferredModel, 'tts-1', 'gpt-4o-mini-tts']));
-
-  let lastStatus = 0;
-  let lastError = '';
-  for (const model of models) {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), TTS_FETCH_TIMEOUT_MS);
-    let res: Response;
-    try {
-      res = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          authorization: `Bearer ${openaiApiKey}`,
-        },
-        body: JSON.stringify({ model, input, voice, response_format: 'mp3' }),
-        signal: controller.signal,
-      });
-    } catch (fetchErr) {
-      clearTimeout(timeout);
-      lastStatus = 0;
-      lastError = fetchErr instanceof Error ? fetchErr.message : 'fetch failed';
-      continue;
-    }
-    clearTimeout(timeout);
-
-    if (res.ok) {
-      const audioBuffer = await res.arrayBuffer();
-      return { ok: true as const, model, audioBuffer };
-    }
-
-    lastStatus = res.status;
-    const errorBody = await res.text().catch(() => '');
-    lastError = errorBody.slice(0, 400);
-
-    if (res.status === 400 && /input|length|too\s+long|maximum/i.test(errorBody)) {
-      break;
-    }
-
-    if (res.status === 429 && /insufficient_quota|exceeded\s+your\s+current\s+quota/i.test(errorBody)) {
-      break;
-    }
-  }
-
-  return { ok: false as const, status: lastStatus, reason: lastError };
-}
-
-
 async function setAudioStatus(
   supabase: SupabaseClient,
   userId: string,
@@ -142,7 +46,7 @@ async function setAudioStatus(
       issue_id: issueId,
       user_id: userId,
       status,
-      provider: 'openai',
+      provider: 'openrouter',
       model,
       updated_at: new Date().toISOString(),
       ...patch,
@@ -182,11 +86,12 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   ).trim();
   const contentWithoutSignoff = truncateAtSignoff(articleText);
 
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  if (!openaiApiKey) {
+  if (!hasOpenRouterKey()) {
     await setAudioStatus(supabase, userId, issueId, 'failed');
-    throw new Error('OPENAI_API_KEY missing');
+    throw new Error('OPENROUTER_API_KEY missing');
   }
+
+  const voiceChain = await getUserVoiceChain(supabase, userId);
 
   // Check for a previously cached digest script (e.g. from a canceled generation)
   const { data: existingCache } = await supabase
@@ -227,6 +132,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
     publishDate,
     normalizedBody,
     'digest',
+    voiceChain[0].key,
   ]);
 
   let globalHit: Awaited<ReturnType<typeof getGlobalAudioCache>> = null;
@@ -253,7 +159,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
         mime_type: globalHit.mime_type || 'audio/mpeg',
         audio_base64: storagePath ? null : globalHit.audio_base64,
         audio_storage_path: storagePath,
-        provider: globalHit.provider || 'openai',
+        provider: globalHit.provider || 'openrouter',
         model: globalHit.model,
         audio_hash: audioHash,
         generation_completed_at: new Date().toISOString(),
@@ -267,26 +173,23 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
 
   await safeRecordMetric(supabase, 'audio_cache_miss');
 
-  // Default to tts-1 (cheapest model) — override via env var if needed
-  const preferredModel = process.env.OPENAI_TTS_MODEL || 'tts-1';
-  const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
-  const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
-
   const chunks = splitIntoSpeechChunks(fullScript);
   const audioChunks: Buffer[] = [];
-  let usedModel = preferredModel;
+  let usedVoice: VoiceOption = voiceChain[0];
+  let usedModel = usedVoice.key;
 
   // Process first chunk separately (needed for preview)
   {
-    const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[0], voice, preferredModel);
+    const tts = await speakChunk(chunks[0], voiceChain);
     if (!tts.ok) {
       const failReason = `Audio provider failed on chunk 1/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`;
-      await setAudioStatus(supabase, userId, issueId, 'failed', preferredModel);
+      await setAudioStatus(supabase, userId, issueId, 'failed', usedModel);
       await safeRecordMetric(supabase, 'audio_generation_failed', 1, failReason);
       throw new Error(failReason);
     }
 
-    usedModel = tts.model;
+    usedVoice = tts.voice;
+    usedModel = usedVoice.key;
     const chunkBuffer = Buffer.from(tts.audioBuffer);
     audioChunks.push(chunkBuffer);
 
@@ -316,7 +219,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
   for (let i = 1; i < chunks.length; i += TTS_PARALLEL_BATCH_SIZE) {
     const batch = chunks.slice(i, i + TTS_PARALLEL_BATCH_SIZE);
     const results = await Promise.all(
-      batch.map((chunkText) => requestTtsAudio(endpoint, openaiApiKey, chunkText, voice, preferredModel)),
+      batch.map((chunkText) => speakChunk(chunkText, chainStartingAt(voiceChain, usedVoice))),
     );
 
     for (let j = 0; j < results.length; j += 1) {
@@ -324,11 +227,11 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       const chunkIdx = i + j;
       if (!tts.ok) {
         const failReason = `Audio provider failed on chunk ${chunkIdx + 1}/${chunks.length}: ${tts.status}${tts.reason ? ` ${tts.reason}` : ''}`;
-        await setAudioStatus(supabase, userId, issueId, 'failed', preferredModel);
+        await setAudioStatus(supabase, userId, issueId, 'failed', usedModel);
         await safeRecordMetric(supabase, 'audio_generation_failed', 1, failReason);
         throw new Error(failReason);
       }
-      usedModel = tts.model;
+      usedModel = tts.voice.key;
       audioChunks.push(Buffer.from(tts.audioBuffer));
     }
   }
@@ -367,7 +270,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       mimeType: 'audio/mpeg',
       audioBase64,
       scriptText: fullScript,
-      provider: 'openai',
+      provider: 'openrouter',
       model: usedModel,
     });
   } catch {}
@@ -389,7 +292,7 @@ export async function processAudioRequestedJob(supabase: SupabaseClient, userId:
       audio_base64: storagePath ? null : audioBase64,
       audio_storage_path: storagePath,
       digest_text: digestText || null,
-      provider: 'openai',
+      provider: 'openrouter',
       model: usedModel,
       credits_charged: chargedCredits,
       credits_charged_at: chargedAt,
@@ -445,8 +348,9 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
 
   const contentWithoutSignoff = truncateAtSignoff(articleText);
 
-  const openaiApiKey = process.env.OPENAI_API_KEY;
-  if (!openaiApiKey) return; // No API key, skip silently
+  if (!hasOpenRouterKey()) return; // No API key, skip silently
+
+  const voiceChain = await getUserVoiceChain(supabase, userId);
 
   // Mark as processing for pregeneration
   await setAudioStatus(supabase, userId, issueId, 'processing', undefined, {
@@ -482,6 +386,7 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
     publishDate,
     normalizedBody,
     'digest',
+    voiceChain[0].key,
   ]);
 
   // Check global cache first — another user may have already generated this
@@ -506,7 +411,7 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
         mime_type: globalHit.mime_type || 'audio/mpeg',
         audio_base64: storagePath ? null : globalHit.audio_base64,
         audio_storage_path: storagePath,
-        provider: globalHit.provider || 'openai',
+        provider: globalHit.provider || 'openrouter',
         model: globalHit.model,
         audio_hash: audioHash,
         digest_text: digestText || null,
@@ -518,18 +423,31 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
     return;
   }
 
-  // Step 2: Generate TTS audio
-  const preferredModel = process.env.OPENAI_TTS_MODEL || 'tts-1';
-  const voice = process.env.OPENAI_TTS_VOICE || 'alloy';
-  const endpoint = process.env.OPENAI_AUDIO_ENDPOINT || 'https://api.openai.com/v1/audio/speech';
+  // Step 2: Generate TTS audio — only when pregeneration is switched on.
+  // Voicing every incoming newsletter costs money even if it is never played,
+  // so by default we keep just the (cheap) digest text and voice on demand.
+  if (process.env.AUDIO_PREGENERATE_TTS !== 'true') {
+    await supabase.from('issue_audio_cache').upsert(
+      {
+        issue_id: issueId,
+        user_id: userId,
+        status: 'missing',
+        digest_text: digestText || null,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'issue_id,user_id' },
+    );
+    return;
+  }
 
   const chunks = splitIntoSpeechChunks(fullScript);
   const audioChunks: Buffer[] = [];
-  let usedModel = preferredModel;
+  let usedVoice: VoiceOption = voiceChain[0];
+  let usedModel = usedVoice.key;
 
   // Generate all chunks (first chunk separately for preview support)
   {
-    const tts = await requestTtsAudio(endpoint, openaiApiKey, chunks[0], voice, preferredModel);
+    const tts = await speakChunk(chunks[0], voiceChain);
     if (!tts.ok) {
       // Store the digest text even if TTS fails — so on-demand generation can skip AI step
       await supabase.from('issue_audio_cache').upsert(
@@ -546,7 +464,8 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
       return;
     }
 
-    usedModel = tts.model;
+    usedVoice = tts.voice;
+    usedModel = usedVoice.key;
     audioChunks.push(Buffer.from(tts.audioBuffer));
   }
 
@@ -554,7 +473,7 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
   for (let i = 1; i < chunks.length; i += TTS_PARALLEL_BATCH_SIZE) {
     const batch = chunks.slice(i, i + TTS_PARALLEL_BATCH_SIZE);
     const results = await Promise.all(
-      batch.map((chunkText) => requestTtsAudio(endpoint, openaiApiKey, chunkText, voice, preferredModel)),
+      batch.map((chunkText) => speakChunk(chunkText, chainStartingAt(voiceChain, usedVoice))),
     );
 
     for (let j = 0; j < results.length; j += 1) {
@@ -574,7 +493,7 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
         );
         return;
       }
-      usedModel = tts.model;
+      usedModel = tts.voice.key;
       audioChunks.push(Buffer.from(tts.audioBuffer));
     }
   }
@@ -590,7 +509,7 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
       mimeType: 'audio/mpeg',
       audioBase64,
       scriptText: fullScript,
-      provider: 'openai',
+      provider: 'openrouter',
       model: usedModel,
     });
   } catch {}
@@ -613,7 +532,7 @@ export async function pregenerateAudioForIssue(supabase: SupabaseClient, userId:
       audio_base64: storagePath ? null : audioBase64,
       audio_storage_path: storagePath,
       digest_text: digestText || null,
-      provider: 'openai',
+      provider: 'openrouter',
       model: usedModel,
       audio_hash: audioHash,
       generation_completed_at: new Date().toISOString(),

@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/utils/supabase/server';
 import { consumeTokensAtomic, ensureTokensAvailable, format402Payload } from '@/utils/aiEntitlements';
 import { NextResponse } from 'next/server';
-import { ANTHROPIC_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
+import { chatCompletion, hasOpenRouterKey, parseJsonFromText } from '@/utils/openrouter';
 
 const MAX_ISSUES = 15;
 const MAX_BODY_CHARS = 600;
@@ -21,19 +21,6 @@ function stripHtml(html: string) {
     .trim();
 }
 
-function parseJsonFromText(text: string) {
-  const direct = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
-  try {
-    return JSON.parse(direct);
-  } catch {
-    const firstBrace = direct.indexOf('[');
-    const lastBrace = direct.lastIndexOf(']');
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      return JSON.parse(direct.slice(firstBrace, lastBrace + 1));
-    }
-    throw new Error('Could not parse JSON payload');
-  }
-}
 
 function normalizeTier(value: string): SignalTier {
   if (value === 'high_signal' || value === 'news' || value === 'reference') return value;
@@ -81,56 +68,31 @@ export async function POST() {
       };
     });
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: 'Anthropic key is not configured' }, { status: 500 });
+  if (!hasOpenRouterKey()) {
+    return NextResponse.json({ error: 'OPENROUTER_API_KEY is not configured' }, { status: 500 });
   }
 
   const prompt = `Classify each newsletter item into one tier: high_signal, news, or reference.\n- high_signal: likely actionable, strategic, or deeply relevant\n- news: timely updates worth scanning\n- reference: evergreen, optional, archive-worthy\nReturn STRICT JSON array with objects: { id, tier, reason } where reason is <= 12 words.\n\nItems:\n${JSON.stringify(payload)}`;
 
-  let llmPayload: any = null;
-
-  for (const model of ANTHROPIC_MODEL_CANDIDATES) {
-    const llmRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 1200,
-        temperature: 0.1,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-
-    if (!llmRes.ok) {
-      const details = await llmRes.text();
-      if (isModelNotFoundError(details)) continue;
-      return NextResponse.json({ error: `Signal sort failed: ${llmRes.status}` }, { status: 500 });
-    }
-
-    llmPayload = await llmRes.json();
-    break;
+  let text: string;
+  try {
+    ({ text } = await chatCompletion({
+      messages: [{ role: 'user', content: prompt }],
+      maxTokens: 1200,
+      temperature: 0.1,
+    }));
+  } catch (error) {
+    console.error('Signal sort failed:', error instanceof Error ? error.message : error);
+    return NextResponse.json({ error: 'Signal sort failed' }, { status: 500 });
   }
 
-  if (!llmPayload) {
-    return NextResponse.json({ error: 'Signal sort failed: no configured models are available' }, { status: 500 });
+  let parsedClassifications: unknown;
+  try {
+    parsedClassifications = parseJsonFromText(text);
+  } catch {
+    return NextResponse.json({ error: 'Signal sort returned unreadable output' }, { status: 500 });
   }
-
-  const data = llmPayload;
-  const textBlock = Array.isArray(data?.content)
-    ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-    : null;
-
-  const text = textBlock?.text;
-  if (typeof text !== 'string') {
-    return NextResponse.json({ error: 'Signal sort response missing text' }, { status: 500 });
-  }
-
-  const classifications = parseJsonFromText(text) as Array<{ id?: string; tier?: string; reason?: string }>;
+  const classifications = (Array.isArray(parsedClassifications) ? parsedClassifications : []) as Array<{ id?: string; tier?: string; reason?: string }>;
 
   const updates = classifications
     .filter((c) => typeof c.id === 'string' && c.id)

@@ -1,14 +1,10 @@
-import { ANTHROPIC_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
+import { chatCompletion } from '@/utils/openrouter';
 import { sanitizeForSpeech } from '@/utils/audioScriptEngine';
 
-const AI_FETCH_TIMEOUT_MS = 45_000; // 45s timeout for AI summarization calls
-
 /**
- * Generate a structured audio digest of a newsletter article using Anthropic Claude.
+ * Generate a structured audio digest of a newsletter article.
  * Targets 350-500 words (~2000-3000 chars) for a 2-3 minute listen.
- *
- * Falls back to OpenAI gpt-4o-mini if Anthropic is unavailable,
- * and to a local extractive summary as a last resort.
+ * Callers fall back to a local extractive excerpt if this returns null.
  */
 
 const DIGEST_SYSTEM_PROMPT = `You are a podcast host creating an audio digest of a newsletter article. Your job is to create a narration script that a text-to-speech engine will read aloud.
@@ -36,112 +32,26 @@ Article:
 ${snippet}`;
 }
 
-async function generateWithAnthropic(subject: string, articleText: string): Promise<string | null> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) return null;
-
-  const prompt = buildDigestPrompt(subject, articleText);
-
-  for (const model of ANTHROPIC_MODEL_CANDIDATES) {
-    try {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), AI_FETCH_TIMEOUT_MS);
-      const res = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          'x-api-key': apiKey,
-          'anthropic-version': '2023-06-01',
-        },
-        body: JSON.stringify({
-          model,
-          max_tokens: 800,
-          temperature: 0.3,
-          system: DIGEST_SYSTEM_PROMPT,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeout);
-
-      if (!res.ok) {
-        const details = await res.text();
-        if (isModelNotFoundError(details)) continue;
-        return null;
-      }
-
-      const data = await res.json();
-      const textBlock = Array.isArray(data?.content)
-        ? data.content.find((block: { type?: string; text?: string }) => block?.type === 'text' && typeof block?.text === 'string')
-        : null;
-
-      const text = textBlock?.text?.trim();
-      if (text && text.length > 100) return text;
-    } catch {
-      continue;
-    }
-  }
-
-  return null;
-}
-
-async function generateWithOpenAI(subject: string, articleText: string): Promise<string | null> {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) return null;
-
-  const model = process.env.OPENAI_ABBREVIATION_MODEL || 'gpt-4o-mini';
-  const endpoint = process.env.OPENAI_CHAT_ENDPOINT || 'https://api.openai.com/v1/chat/completions';
-  const snippet = articleText.slice(0, 16000);
-
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), AI_FETCH_TIMEOUT_MS);
-    const res = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.3,
-        messages: [
-          { role: 'system', content: DIGEST_SYSTEM_PROMPT },
-          { role: 'user', content: buildDigestPrompt(subject, snippet) },
-        ],
-        max_tokens: 800,
-      }),
-      signal: controller.signal,
-    });
-    clearTimeout(timeout);
-
-    if (!res.ok) return null;
-
-    const json = await res.json();
-    const text = json?.choices?.[0]?.message?.content?.trim();
-    if (text && text.length > 100) return text;
-  } catch {
-    // fall through
-  }
-
-  return null;
-}
-
 /**
- * Generate an audio digest script for a newsletter article.
- * Tries Anthropic first, then OpenAI, returns null if both fail.
+ * Generate an audio digest script for a newsletter article via OpenRouter.
+ * Returns null if generation fails so callers can fall back to an excerpt.
  */
 export async function generateAudioDigest(
   subject: string,
   articleText: string,
 ): Promise<string | null> {
-  // Try Anthropic (cheaper, preferred)
-  const anthropicResult = await generateWithAnthropic(subject, articleText);
-  if (anthropicResult) return sanitizeForSpeech(anthropicResult);
-
-  // Fallback to OpenAI
-  const openaiResult = await generateWithOpenAI(subject, articleText);
-  if (openaiResult) return sanitizeForSpeech(openaiResult);
-
+  try {
+    const { text } = await chatCompletion({
+      messages: [
+        { role: 'system', content: DIGEST_SYSTEM_PROMPT },
+        { role: 'user', content: buildDigestPrompt(subject, articleText) },
+      ],
+      maxTokens: 800,
+      temperature: 0.3,
+    });
+    if (text.length > 100) return sanitizeForSpeech(text);
+  } catch {
+    // fall through to null
+  }
   return null;
 }

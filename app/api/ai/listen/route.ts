@@ -76,8 +76,8 @@ function buildAudioHints(reason: string) {
   const lower = reason.toLowerCase();
   const hints: string[] = [];
 
-  if (lower.includes('openai_api_key')) {
-    hints.push('OPENAI_API_KEY is missing in deployment environment variables.');
+  if (lower.includes('openrouter_api_key')) {
+    hints.push('OPENROUTER_API_KEY is missing in deployment environment variables.');
   }
   if (lower.includes('supabase admin env configuration')) {
     hints.push('NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.');
@@ -85,8 +85,11 @@ function buildAudioHints(reason: string) {
   if (lower.includes('insufficient credits')) {
     hints.push('Your account ran out of AI credits/tokens for listen generation.');
   }
-  if (lower.includes('insufficient_quota') || lower.includes('exceeded your current quota') || lower.includes('429')) {
-    hints.push('OpenAI quota was exceeded. Update provider billing/quota limits or switch TTS provider/model.');
+  if (/:\s402\b/.test(lower)) {
+    hints.push('OpenRouter is out of credit. Add credit at openrouter.ai/settings/credits.');
+  }
+  if (/:\s429\b/.test(lower)) {
+    hints.push('The voice provider is rate limiting requests. Try again in a minute or pick a different voice.');
   }
 
   if (!hints.length) {
@@ -125,7 +128,7 @@ async function triggerInlineProcessingDetached(supabase: UserSupabase, userId: s
           issue_id: issueId,
           user_id: userId,
           status: 'failed',
-          provider: 'openai',
+          provider: 'openrouter',
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'issue_id,user_id' },
@@ -173,7 +176,7 @@ export async function GET(request: NextRequest) {
         issue_id: issueId,
         user_id: user.id,
         status: 'queued',
-        provider: 'openai',
+        provider: 'openrouter',
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'issue_id,user_id' },
@@ -185,7 +188,7 @@ export async function GET(request: NextRequest) {
           issue_id: issueId,
           user_id: user.id,
           status: 'failed',
-          provider: 'openai',
+          provider: 'openrouter',
           updated_at: new Date().toISOString(),
         },
         { onConflict: 'issue_id,user_id' },
@@ -313,7 +316,7 @@ export async function POST(request: NextRequest) {
       issue_id: issueId,
       user_id: user.id,
       status: 'queued',
-      provider: 'openai',
+      provider: 'openrouter',
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'issue_id,user_id' },
@@ -343,7 +346,7 @@ export async function POST(request: NextRequest) {
         issue_id: issueId,
         user_id: user.id,
         status: 'failed',
-        provider: 'openai',
+        provider: 'openrouter',
         updated_at: new Date().toISOString(),
       },
       { onConflict: 'issue_id,user_id' },

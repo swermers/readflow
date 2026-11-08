@@ -4,7 +4,7 @@ export const dynamic = 'force-dynamic';
 import { createClient } from '@/utils/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { checkEntitlement, consumeTokensAtomic, format402Payload } from '@/utils/aiEntitlements';
-import { ANTHROPIC_MODEL_CANDIDATES, XAI_MODEL_CANDIDATES, isModelNotFoundError } from '@/utils/aiModels';
+import { chatCompletion, OpenRouterError, parseJsonFromText } from '@/utils/openrouter';
 import { checkRateLimit, rateLimitResponse } from '@/utils/rateLimit';
 
 import type { SignalTier } from '@/utils/signalSortHeuristics';
@@ -73,21 +73,6 @@ function assertSummaryLanguage(summary: SummaryResult, expectedCode: string, min
 }
 
 
-function parseJsonFromText(text: string) {
-  const direct = text.trim().replace(/^```(?:json)?\s*/i, '').replace(/```$/, '').trim();
-  try {
-    return JSON.parse(direct);
-  } catch {
-    const firstBrace = direct.indexOf('{');
-    const lastBrace = direct.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace > firstBrace) {
-      const slice = direct.slice(firstBrace, lastBrace + 1);
-      return JSON.parse(slice);
-    }
-    throw new Error('Could not parse JSON payload');
-  }
-}
-
 function stripHtml(html: string) {
   return html
     .replace(/<style[\s\S]*?<\/style>/gi, ' ')
@@ -124,97 +109,21 @@ function normalizeSummaryPayload(payload: unknown): SummaryResult | null {
   return { summary, takeaways, signal_tier, signal_reason };
 }
 
-async function summarizeWithAnthropic(input: string, expectedLanguageCode: string) {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error('Anthropic key is not configured');
+async function summarizeWithOpenRouter(input: string, expectedLanguageCode: string) {
+  const languageLabel = LANGUAGE_LABELS[expectedLanguageCode] || 'English';
+  const prompt = `You are helping summarize a newsletter article for a reader app.\nThe article language is ${languageLabel} (${expectedLanguageCode}).\nWrite summary and takeaways ONLY in ${languageLabel}. Never translate to another language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings), signal_tier (string), signal_reason (string).\n\nFor signal_tier, classify this newsletter into exactly one of:\n- high_signal: Actionable strategies, deep analysis, original research, frameworks\n- news: Daily/weekly recaps, headlines, roundups, timely updates\n- reference: Guides, tutorials, evergreen resources, documentation\n- unclassified: Promotions, thin content, or unclear fit\n\nFor signal_reason, write a short phrase (under 12 words) explaining why.\n\nArticle:\n${input}`;
 
-  const prompt = `You are helping summarize a newsletter article for a reader app.\nThe article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}).\nWrite summary and takeaways ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\nRespond ONLY as strict JSON with keys: summary (string), takeaways (array of 3 concise strings), signal_tier (string), signal_reason (string).\n\nFor signal_tier, classify this newsletter into exactly one of:\n- high_signal: Actionable strategies, deep analysis, original research, frameworks\n- news: Daily/weekly recaps, headlines, roundups, timely updates\n- reference: Guides, tutorials, evergreen resources, documentation\n- unclassified: Promotions, thin content, or unclear fit\n\nFor signal_reason, write a short phrase (under 12 words) explaining why.\n\nArticle:\n${input}`;
+  const { text, model } = await chatCompletion({
+    messages: [{ role: 'user', content: prompt }],
+    maxTokens: 600,
+    temperature: 0.2,
+    json: true,
+  });
 
-  let lastError: Error | null = null;
-
-  for (const model of ANTHROPIC_MODEL_CANDIDATES) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model,
-        max_tokens: 600,
-        temperature: 0.2,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-
-    if (!res.ok) {
-      const details = await res.text();
-      lastError = new Error(`Anthropic request failed: ${res.status} ${details}`);
-      if (isModelNotFoundError(details)) {
-        continue;
-      }
-      throw lastError;
-    }
-
-    const data = await res.json();
-    const textBlock = Array.isArray(data?.content)
-      ? data.content.find((block: any) => block?.type === 'text' && typeof block?.text === 'string')
-      : null;
-    const text = textBlock?.text;
-    if (typeof text !== 'string') throw new Error('Anthropic response missing text');
-
-    const parsed = normalizeSummaryPayload(parseJsonFromText(text));
-    if (!parsed) throw new Error('Anthropic summary parsing failed');
-    assertSummaryLanguage(parsed, expectedLanguageCode);
-    return parsed;
-  }
-
-  throw lastError || new Error('Anthropic request failed for all configured models');
-}
-
-async function summarizeWithGrok(input: string, expectedLanguageCode: string) {
-  const apiKey = process.env.XAI_API_KEY || process.env.GROK_API_KEY;
-  if (!apiKey) throw new Error('Grok key is not configured');
-
-  const prompt = `The article language is ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'} (${expectedLanguageCode}). Return strict JSON only with keys: summary (string), takeaways (array of 3 short strings), signal_tier (string), signal_reason (string).\nWrite ONLY in ${LANGUAGE_LABELS[expectedLanguageCode] || 'English'}. Never translate to another language.\n\nFor signal_tier, classify this newsletter into exactly one of:\n- high_signal: Actionable strategies, deep analysis, original research, frameworks\n- news: Daily/weekly recaps, headlines, roundups, timely updates\n- reference: Guides, tutorials, evergreen resources, documentation\n- unclassified: Promotions, thin content, or unclear fit\n\nFor signal_reason, write a short phrase (under 12 words) explaining why.\n\nArticle:\n${input}`;
-
-  let lastError: Error | null = null;
-
-  for (const model of XAI_MODEL_CANDIDATES) {
-    const res = await fetch('https://api.x.ai/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0.2,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-
-    if (!res.ok) {
-      const details = await res.text();
-      lastError = new Error(`Grok request failed: ${res.status} ${details}`);
-      if (isModelNotFoundError(details)) {
-        continue;
-      }
-      throw lastError;
-    }
-
-    const data = await res.json();
-    const text = data?.choices?.[0]?.message?.content;
-    if (typeof text !== 'string') throw new Error('Grok response missing text');
-
-    const parsed = normalizeSummaryPayload(parseJsonFromText(text));
-    if (!parsed) throw new Error('Grok summary parsing failed');
-    assertSummaryLanguage(parsed, expectedLanguageCode);
-    return parsed;
-  }
-
-  throw lastError || new Error('Grok request failed for all configured models');
+  const parsed = normalizeSummaryPayload(parseJsonFromText(text));
+  if (!parsed) throw new Error('Summary parsing failed');
+  assertSummaryLanguage(parsed, expectedLanguageCode);
+  return { result: parsed, model };
 }
 
 /**
@@ -270,7 +179,6 @@ export async function POST(request: NextRequest) {
 
   const body = await request.json();
   const issueId = body?.issueId as string | undefined;
-  const provider = body?.provider === 'grok' ? 'grok' : 'anthropic';
 
   const entitlement = await checkEntitlement(supabase, user.id, "tldr");
   if (!entitlement.allowed) {
@@ -326,59 +234,33 @@ export async function POST(request: NextRequest) {
     return 'Unknown provider error';
   };
 
-  try {
-    const result = provider === 'grok'
-      ? await summarizeWithGrok(input, expectedLanguageCode)
-      : await summarizeWithAnthropic(input, expectedLanguageCode);
-
-    // Cache the summary for future requests (fire-and-forget)
-    supabase
-      .from('issue_summaries')
-      .upsert({
-        issue_id: issueId,
-        user_id: user.id,
-        summary: result.summary,
-        takeaways: result.takeaways,
-        provider,
-      }, { onConflict: 'issue_id' })
-      .then(() => {});
-
-    // Upgrade signal classification with AI result (fire-and-forget)
-    if (result.signal_tier) {
-      supabase
-        .from('issues')
-        .update({
-          signal_tier: result.signal_tier,
-          signal_reason: result.signal_reason || null,
-        })
-        .eq('id', issueId)
-        .eq('user_id', user.id)
-        .then(() => {});
-    }
-
-    const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required, 'TL;DR summary');
-    return NextResponse.json({
-      provider,
-      ...result,
-      tokensRemaining: consumeResult.available,
-      tokenBalance: consumeResult.available,
-      planTier: consumeResult.tier,
-      unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
-    });
-  } catch (primaryError) {
-    const fallbackProvider = provider === 'anthropic' ? 'grok' : 'anthropic';
-
+  // Two attempts: OpenRouter already fails over between models, so a retry
+  // mainly covers malformed JSON or a summary in the wrong language.
+  const errors: string[] = [];
+  for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      const fallback = fallbackProvider === 'grok'
-        ? await summarizeWithGrok(input, expectedLanguageCode)
-        : await summarizeWithAnthropic(input, expectedLanguageCode);
+      const { result, model } = await summarizeWithOpenRouter(input, expectedLanguageCode);
+      const provider = `openrouter:${model}`;
 
-      if (fallback.signal_tier) {
+      // Cache the summary for future requests (fire-and-forget)
+      supabase
+        .from('issue_summaries')
+        .upsert({
+          issue_id: issueId,
+          user_id: user.id,
+          summary: result.summary,
+          takeaways: result.takeaways,
+          provider,
+        }, { onConflict: 'issue_id' })
+        .then(() => {});
+
+      // Upgrade signal classification with AI result (fire-and-forget)
+      if (result.signal_tier) {
         supabase
           .from('issues')
           .update({
-            signal_tier: fallback.signal_tier,
-            signal_reason: fallback.signal_reason || null,
+            signal_tier: result.signal_tier,
+            signal_reason: result.signal_reason || null,
           })
           .eq('id', issueId)
           .eq('user_id', user.id)
@@ -387,19 +269,22 @@ export async function POST(request: NextRequest) {
 
       const consumeResult = await consumeTokensAtomic(supabase, user.id, entitlement.required, 'TL;DR summary');
       return NextResponse.json({
-        provider: fallbackProvider,
-        ...fallback,
+        provider,
+        ...result,
         tokensRemaining: consumeResult.available,
         tokenBalance: consumeResult.available,
         planTier: consumeResult.tier,
         unlimitedAiAccess: consumeResult.unlimitedAiAccess || false,
       });
-    } catch (fallbackError) {
-      console.error('AI summarize failed:', serializeError(primaryError), serializeError(fallbackError));
-      return NextResponse.json(
-        { error: 'Failed to generate summary. Please try again later.' },
-        { status: 500 }
-      );
+    } catch (err) {
+      errors.push(serializeError(err));
+      if (err instanceof OpenRouterError && (err.status === 401 || err.status === 402 || err.status === 0)) break;
     }
   }
+
+  console.error('AI summarize failed:', errors.join(' | '));
+  return NextResponse.json(
+    { error: 'Failed to generate summary. Please try again later.' },
+    { status: 500 }
+  );
 }
