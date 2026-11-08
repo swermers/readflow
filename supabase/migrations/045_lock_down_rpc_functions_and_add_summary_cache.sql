@@ -16,6 +16,12 @@
 --
 -- Only ReadFlow objects are touched. Sift's ke_* tables, functions and cron
 -- jobs are not referenced here.
+--
+-- Applied to Supabase on 2026-11-08 in two parts:
+--   readflow_045a_summary_cache_and_caller_check (table + caller check)
+--   readflow_045b_lock_down_rpc_functions        (function rewrites + grants)
+-- Verified afterwards: anon and cross-user calls are refused, negative spends
+-- are rejected, and the service role and same-user calls still work.
 
 -- ─── Caller check ─────────────────────────────────────────────────────────
 -- Raises unless the request comes from the server (service role or a direct
